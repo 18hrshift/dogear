@@ -1,0 +1,27 @@
+name: Bug report
+description: Dogear crashed, gave a wrong result, or a book came out wrong.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the full error message if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The command you ran. Please don't attach copyrighted books; describe the file instead (format, roughly how long, where it came from).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Dogear version
+      description: Output of `dogear --version`.
+  - type: input
+    id: system
+    attributes:
+      label: Operating system

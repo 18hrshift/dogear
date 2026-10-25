@@ -1,0 +1,14 @@
+name: Idea
+description: Suggest something Dogear should do.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Dogear to do?
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who would it help, and how?

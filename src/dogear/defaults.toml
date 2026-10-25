@@ -1,0 +1,91 @@
+# Dogear default settings. This file is the single source of truth for defaults.
+# A user config file overrides any of these keys; unknown keys are rejected.
+
+[pdf]
+# Chapter detection methods, tried in order. The first one that finds two or more
+# chapters wins. Options: bookmarks, chapter_dividers, font_size, pattern, page_split.
+chapter_detection = ["bookmarks", "chapter_dividers", "font_size", "pattern", "page_split"]
+# Pages per section when falling back to page_split.
+page_split_size = 20
+# A line counts as a heading when its font is this many times larger than body text.
+heading_size_ratio = 1.4
+# If pages average fewer text characters than this, the PDF is treated as scanned.
+min_chars_per_page = 25
+# A page's top or bottom line is a running header or footer (and removed) when the same
+# text, ignoring digits and case, opens or closes at least this many pages...
+running_line_min_pages = 3
+# ...and at least this share of the pages between its first and last appearance.
+running_line_min_share = 0.4
+# A new paragraph starts where the space between two lines is this many times the usual
+# line spacing.
+paragraph_gap_ratio = 1.3
+# A new paragraph starts where a line is indented at least this many times the body font
+# size from the page's left margin.
+paragraph_indent_ratio = 0.7
+
+[ocr]
+dpi = 300
+language = "eng"  # Tesseract language code(s), such as "eng" or "eng+fra"
+
+[speech]
+# Longest piece of text sent to a voice engine at once. Longer sentences are split at
+# commas, semicolons, or colons first.
+max_sentence_chars = 400
+# A period after these never ends a sentence. Titles before names (the table below)
+# and single initials such as "J." are also never sentence ends.
+no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
+
+# Always expanded.
+[speech.abbreviations]
+"etc." = "etcetera"
+"vs." = "versus"
+"e.g." = "for example"
+"i.e." = "that is"
+"viz." = "namely"
+"approx." = "approximately"
+
+# Expanded only before a capitalized word, so "Elm Dr." stays put.
+[speech.abbreviations_before_name]
+"Dr." = "Doctor"
+"Mr." = "Mister"
+"Mrs." = "Missus"
+"Ms." = "Miz"
+"Prof." = "Professor"
+"St." = "Saint"
+"Mt." = "Mount"
+"Gov." = "Governor"
+"Gen." = "General"
+"Lt." = "Lieutenant"
+"Col." = "Colonel"
+"Capt." = "Captain"
+"Sgt." = "Sergeant"
+"Cpl." = "Corporal"
+"Pvt." = "Private"
+"Rev." = "Reverend"
+"Hon." = "Honorable"
+
+# Expanded only before a number, so "He said no." stays put.
+[speech.abbreviations_before_number]
+"No." = "number"
+"no." = "number"
+"Nos." = "numbers"
+"p." = "page"
+"pp." = "pages"
+"vol." = "volume"
+"Vol." = "volume"
+"ch." = "chapter"
+"Ch." = "chapter"
+"fig." = "figure"
+"Fig." = "figure"
+
+[audio]
+mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
+m4b_bitrate = "128k"
+
+[tools]
+# Command name or full path for each external program.
+# An empty value means: search PATH, then common install locations.
+ffmpeg = ""
+ffprobe = ""
+tesseract = ""
+ebook_convert = ""
