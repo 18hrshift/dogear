@@ -33,3 +33,7 @@ class ToolNotFoundError(DogearError):
 
 class ToolFailedError(DogearError):
     """An external program ran but reported an error."""
+
+
+class OutputFolderError(DogearError):
+    """The output folder holds files Dogear must not overwrite, such as another book's audio."""
