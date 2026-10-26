@@ -89,6 +89,12 @@ def test_curly_quotes_dashes_and_ellipsis(say):
     assert say("“Hi,” she said—quietly…") == '"Hi," she said, quietly...'
 
 
+def test_invisible_formatting_characters_removed(say):
+    # Standard Ebooks puts a word joiner before each em dash.
+    assert say("the fire\u2060\u2014a large man") == "the fire, a large man"
+    assert say("zero\u200bwidth soft\u00adhyphen") == "zerowidth softhyphen"
+
+
 def test_markup_characters_removed(say):
     assert say("a *bold* _word_") == "a bold word"
 

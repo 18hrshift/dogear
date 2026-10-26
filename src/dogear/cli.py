@@ -21,6 +21,7 @@ from dogear.document import (
     ListBlock,
     PageMarker,
     Paragraph,
+    SceneBreak,
     Section,
     Table,
     block_text,
@@ -183,12 +184,15 @@ def _block_lines(block, say) -> list[str]:
     match block:
         case PageMarker(label=label):
             return [f"[Print page {label}]"]
+        case SceneBreak():
+            return ["[Scene break]", ""]
         case Heading() | Paragraph():
             return show(block.text, block.lang) + [""]
         case ListBlock(items=items):
             return [line for item in items for line in show(item, block.lang, "- ")] + [""]
         case Footnote(label=label, text=text):
-            return show(text, block.lang, f"Note {label or block.note_id}: ") + [""]
+            # The note id is a file path plus an anchor: noise when read aloud.
+            return show(text, block.lang, f"Note {label}: " if label else "Note: ") + [""]
         case Image(alt=alt, caption=caption):
             described = alt if alt else ("no description" if alt is None else "decorative")
             return [f"Image: {described}." + (f" Caption: {caption}" if caption else ""), ""]

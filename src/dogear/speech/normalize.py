@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from num2words import num2words
@@ -92,6 +93,9 @@ def _expand(match: re.Match[str], expansion: str) -> str:
 
 
 def _normalize_punctuation(text: str) -> str:
+    # Invisible formatting characters (word joiners, zero-width spaces, soft hyphens) help
+    # page layout but can trip a voice engine.
+    text = "".join(c for c in text if unicodedata.category(c) != "Cf")
     for char, replacement in _PUNCTUATION.items():
         text = text.replace(char, replacement)
     text = _EN_DASH_RANGE.sub(" to ", text)
