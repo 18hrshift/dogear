@@ -10,15 +10,22 @@ import copy
 import tomllib
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dogear.errors import ConfigError
 
-# Tables whose keys are user-chosen (word lists), so any string key is allowed.
-FREEFORM_TABLES = {
-    ("speech", "abbreviations"),
-    ("speech", "abbreviations_before_name"),
-    ("speech", "abbreviations_before_number"),
+# Tables whose keys are user-chosen (word lists), so any key is allowed, and what each
+# value must be: text, or a pair of texts for singular and plural ("mile", "miles").
+WordTableValues = Literal["text", "pair"]
+FREEFORM_TABLES: dict[tuple[str, str], WordTableValues] = {
+    ("speech", "abbreviations"): "text",
+    ("speech", "abbreviations_before_name"): "text",
+    ("speech", "abbreviations_before_number"): "text",
+    ("speech", "time_suffixes"): "text",
+    ("speech", "currency"): "pair",
+    ("speech", "currency_cents"): "pair",
+    ("speech", "currency_scales"): "text",
+    ("speech", "units"): "pair",
 }
 
 Config = dict[str, Any]
@@ -59,7 +66,7 @@ def _merge(base: Config, override: Config, where: tuple[str, ...]) -> Config:
             if not isinstance(value, dict):
                 raise ConfigError(f"Setting '{name}' must be a table like [{name}].")
             if here in FREEFORM_TABLES:
-                _check_string_table(name, value)
+                _check_word_table(name, value, FREEFORM_TABLES[here])
                 merged[key] = {**default, **value}
             else:
                 merged[key] = _merge(default, value, here)
@@ -69,10 +76,21 @@ def _merge(base: Config, override: Config, where: tuple[str, ...]) -> Config:
     return merged
 
 
-def _check_string_table(name: str, table: dict[str, Any]) -> None:
+def _check_word_table(name: str, table: dict[str, Any], values: WordTableValues) -> None:
     for k, v in table.items():
-        if not isinstance(v, str):
+        if not k:
+            raise ConfigError(f"'{name}' has an empty key (\"\"). Remove it or name a word.")
+        if values == "text" and not isinstance(v, str):
             raise ConfigError(f"'{name}.{k}' must be text in quotes, got {v!r}.")
+        if values == "pair" and not _is_pair(v):
+            raise ConfigError(
+                f"'{name}.{k}' must be two texts in brackets, singular then plural, got {v!r}.",
+                hint='For example: "km" = ["kilometer", "kilometers"]',
+            )
+
+
+def _is_pair(value: Any) -> bool:
+    return isinstance(value, list) and len(value) == 2 and all(isinstance(v, str) for v in value)
 
 
 def _check_type(name: str, default: Any, value: Any) -> None:

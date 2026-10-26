@@ -82,6 +82,85 @@ no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
 "fig." = "figure"
 "Fig." = "figure"
 
+# The rest of [speech] is English only, and leaves other languages' text as written.
+
+# What follows a clock time ("3:30 pm", "10 a.m."), matched in any case, and how to say it.
+[speech.time_suffixes]
+"am" = "a.m."
+"a.m." = "a.m."
+"pm" = "p.m."
+"p.m." = "p.m."
+
+# Currency symbols written before an amount, as [singular, plural]: "$1" is "one dollar",
+# "$5" is "five dollars".
+[speech.currency]
+"$" = ["dollar", "dollars"]
+"£" = ["pound", "pounds"]
+"€" = ["euro", "euros"]
+"¥" = ["yen", "yen"]
+"₹" = ["rupee", "rupees"]
+
+# The hundredth part of a currency above, for amounts with two decimal places: "$5.99" is
+# "five dollars and ninety-nine cents". A currency missing here reads "¥5.99" as "five
+# point nine nine yen".
+[speech.currency_cents]
+"$" = ["cent", "cents"]
+"£" = ["penny", "pence"]
+"€" = ["cent", "cents"]
+"₹" = ["paisa", "paise"]
+
+# Words for large amounts after a currency, matched in any case: "$1.5 million" is "one
+# point five million dollars", "£5m" is "five million pounds".
+[speech.currency_scales]
+"thousand" = "thousand"
+"million" = "million"
+"billion" = "billion"
+"trillion" = "trillion"
+"k" = "thousand"
+"m" = "million"
+"bn" = "billion"
+"b" = "billion"
+"tn" = "trillion"
+
+# Units written after a number, as [singular, plural]: "1 km" is "one kilometer", "1.5 km"
+# is "one point five kilometers". Units that misfire in prose are left out on purpose:
+# "in" ("5 in the morning"), "m" (meters or minutes), "s", "l", "t", and "pt".
+[speech.units]
+"%" = ["percent", "percent"]
+"°" = ["degree", "degrees"]
+"°C" = ["degree Celsius", "degrees Celsius"]
+"°F" = ["degree Fahrenheit", "degrees Fahrenheit"]
+"¢" = ["cent", "cents"]
+"mm" = ["millimeter", "millimeters"]
+"cm" = ["centimeter", "centimeters"]
+"km" = ["kilometer", "kilometers"]
+"m²" = ["square meter", "square meters"]
+"km²" = ["square kilometer", "square kilometers"]
+"ft" = ["foot", "feet"]
+"ft." = ["foot", "feet"]
+"yd" = ["yard", "yards"]
+"yd." = ["yard", "yards"]
+"mi" = ["mile", "miles"]
+"mg" = ["milligram", "milligrams"]
+"g" = ["gram", "grams"]
+"kg" = ["kilogram", "kilograms"]
+"oz" = ["ounce", "ounces"]
+"oz." = ["ounce", "ounces"]
+"lb" = ["pound", "pounds"]
+"lb." = ["pound", "pounds"]
+"lbs" = ["pound", "pounds"]
+"lbs." = ["pound", "pounds"]
+"ml" = ["milliliter", "milliliters"]
+"mL" = ["milliliter", "milliliters"]
+"fl oz" = ["fluid ounce", "fluid ounces"]
+"tsp" = ["teaspoon", "teaspoons"]
+"tbsp" = ["tablespoon", "tablespoons"]
+"qt" = ["quart", "quarts"]
+"gal" = ["gallon", "gallons"]
+"mph" = ["mile per hour", "miles per hour"]
+"km/h" = ["kilometer per hour", "kilometers per hour"]
+"kph" = ["kilometer per hour", "kilometers per hour"]
+
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
