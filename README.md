@@ -3,8 +3,26 @@
 **An open talking-book maker.** Turn the books you own into audiobooks that blind and
 low-vision listeners can actually navigate: by chapter, by heading, by print page.
 
-> **Status: planning.** There is no code yet. This README describes what Dogear is being built
-> to do. [`ROADMAP.md`](ROADMAP.md) has the plan and what each phase must deliver.
+> **Status: early.** Dogear can read books and prepare their text, but it **does not make
+> audio yet**; voices arrive in Phase 1. The rest of this README describes what Dogear is
+> being built to do. [`ROADMAP.md`](ROADMAP.md) has the plan.
+
+## What works today
+
+Dogear reads EPUB and PDF files (and Kindle MOBI/AZW3, if [Calibre](https://calibre-ebook.com)
+is installed) into chapters, headings, notes, image descriptions, and print page numbers.
+
+```bash
+git clone https://github.com/18hrshift/dogear && cd dogear
+uv sync                                    # needs uv: https://docs.astral.sh/uv/
+
+uv run dogear outline mybook.epub          # title, authors, and every section
+uv run dogear text mybook.epub --section 3 # the text Dogear found in section 3
+uv run dogear text mybook.epub --spoken    # each sentence the way the voice will say it
+uv run dogear ocr scanned.pdf              # add a text layer to a scanned PDF (needs Tesseract)
+```
+
+Output is plain text written to read well with a screen reader.
 
 ## Why another audiobook tool?
 

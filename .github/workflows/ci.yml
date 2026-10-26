@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    env:
+      # Tests that need these programs fail instead of skipping, so a broken runner
+      # can't quietly skip whole areas. Calibre isn't installed here; its test skips.
+      DOGEAR_REQUIRE_TOOLS: ffmpeg,ffprobe,tesseract
+    steps:
+      # Actions are pinned to commit SHAs; the comment says which release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install ffmpeg and Tesseract (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          # Skip the man-db index rebuild, which can stall apt on hosted runners.
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends ffmpeg tesseract-ocr tesseract-ocr-eng
+      - name: Install ffmpeg and Tesseract (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        run: brew install ffmpeg tesseract
+      - name: Install ffmpeg and Tesseract (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          choco install -y --no-progress ffmpeg tesseract
+          echo "C:\\Program Files\\Tesseract-OCR" >> "$GITHUB_PATH"
+
+      - name: Lint and test
+        shell: bash
+        run: bash test.sh

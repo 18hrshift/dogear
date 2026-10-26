@@ -1,0 +1,231 @@
+"""Build PDF test fixtures at test time with reportlab, so no PDF files are committed.
+
+Sample prose is from Lewis Carroll, "Alice's Adventures in Wonderland" (1865), which is
+in the public domain. Source: Project Gutenberg eBook #11,
+https://www.gutenberg.org/ebooks/11 (chapter I, "Down the Rabbit-Hole").
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import Any
+
+from PIL import Image
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.pdfencrypt import StandardEncryption
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen.canvas import Canvas
+
+PAGE_WIDTH, PAGE_HEIGHT = letter
+MARGIN = 72
+TEXT_WIDTH = PAGE_WIDTH - 2 * MARGIN
+FONT = "Times-Roman"
+BODY_SIZE = 11
+LEADING = 14
+INDENT = 18
+HEADING_SIZE = 22
+TOP = PAGE_HEIGHT - MARGIN
+
+ALICE = (
+    "Alice was beginning to get very tired of sitting by her sister on the bank, and of "
+    "having nothing to do: once or twice she had peeped into the book her sister was "
+    "reading, but it had no pictures or conversations in it, “and what is the use of a "
+    "book,” thought Alice “without pictures or conversations?”",
+    "So she was considering in her own mind (as well as she could, for the hot day made her "
+    "feel very sleepy and stupid), whether the pleasure of making a daisy-chain would be "
+    "worth the trouble of getting up and picking the daisies, when suddenly a White Rabbit "
+    "with pink eyes ran close by her.",
+    "There was nothing so very remarkable in that; nor did Alice think it so very much out "
+    "of the way to hear the Rabbit say to itself, “Oh dear! Oh dear! I shall be late!”",
+    "The rabbit-hole went straight on like a tunnel for some way, and then dipped suddenly "
+    "down, so suddenly that Alice had not a moment to think about stopping herself before "
+    "she found herself falling down a very deep well.",
+    "Either the well was very deep, or she fell very slowly, for she had plenty of time as "
+    "she went down to look about her and to wonder what was going to happen next.",
+)
+CHAPTER_TITLES = (
+    "Down the Rabbit-Hole",
+    "The Pool of Tears",
+    "A Caucus-Race and a Long Tale",
+    "The Rabbit Sends in a Little Bill",
+)
+RUNNING_HEADER = "ALICE’S ADVENTURES IN WONDERLAND"
+
+PageText = Callable[[int], str | None]
+
+
+class PdfBuilder:
+    """Lays out lines and paragraphs page by page, like a very small typesetter.
+
+    `style` is "indent" (first lines indented) or "gap" (a blank line between paragraphs).
+    `header` and `footer` get the 0-based page index and return the text to print, if any.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        title: str = "",
+        author: str = "",
+        lang: str | None = None,
+        user_password: str | None = None,
+        owner_password: str | None = None,
+        style: str = "indent",
+        header: PageText | None = None,
+        footer: PageText | None = None,
+    ) -> None:
+        encrypt = None
+        if user_password is not None or owner_password is not None:
+            encrypt = StandardEncryption(user_password or "", ownerPassword=owner_password)
+        self.path = path
+        self._canvas = Canvas(str(path), pagesize=letter, lang=lang, encrypt=encrypt)
+        # Always set: reportlab otherwise writes "untitled" and "anonymous".
+        self._canvas.setTitle(title)
+        self._canvas.setAuthor(author)
+        self._style = style
+        self._header = header
+        self._footer = footer
+        self.page = 0  # 0-based index of the page being drawn
+        self._y = TOP
+        self._drawn = False
+        self._bookmarks = 0
+
+    def line(self, text: str, *, x: float = MARGIN, size: float = BODY_SIZE) -> None:
+        if self._y < MARGIN:
+            self.new_page()
+        self._canvas.setFont(FONT, size)
+        self._canvas.drawString(x, self._y, text)
+        self._y -= LEADING if size == BODY_SIZE else size * 1.3
+        self._drawn = True
+
+    def space(self, points: float) -> None:
+        self._y -= points
+
+    def heading(self, text: str, *, size: float = HEADING_SIZE) -> None:
+        self.line(text, size=size)
+        self.space(LEADING)
+
+    def paragraph(self, text: str) -> None:
+        indent = INDENT if self._style == "indent" else 0
+        for i, line in enumerate(wrap(text, [TEXT_WIDTH - indent])):
+            self.line(line, x=MARGIN + (indent if i == 0 else 0))
+        self._end_paragraph()
+
+    def drop_cap_paragraph(self, text: str, *, size: float = 40, beside: int = 3) -> None:
+        """A paragraph whose first letter is a drop cap set beside its first lines."""
+        cap, rest = text[0], text[1:]
+        cap_width = stringWidth(cap, FONT, size) + 4
+        self._canvas.setFont(FONT, size)
+        self._canvas.drawString(MARGIN, self._y - (beside - 1) * LEADING, cap)
+        for i, line in enumerate(wrap(rest, [TEXT_WIDTH - cap_width] * beside)):
+            self.line(line, x=MARGIN + (cap_width if i < beside else 0))
+        self._end_paragraph()
+
+    def _end_paragraph(self) -> None:
+        if self._style == "gap":
+            self.space(LEADING)
+
+    def image(self) -> None:
+        """A grey square, like a scanned page with no text layer."""
+        self._canvas.drawInlineImage(Image.new("L", (40, 40), 128), MARGIN, 200, 400, 400)
+        self._drawn = True
+
+    def bookmark(self, title: str, level: int = 0) -> None:
+        """A bookmark to the current page. Each gets its own key, or titles overwrite."""
+        key = f"bookmark{self._bookmarks}"
+        self._bookmarks += 1
+        self._canvas.bookmarkPage(key)
+        self._canvas.addOutlineEntry(title, key, level=level)
+
+    def page_label(self, style: str, start: int = 1) -> None:
+        """Number pages from here on: style is ARABIC, ROMAN_LOWER, ROMAN_UPPER, ..."""
+        self._canvas.addPageLabel(self.page, style=style, start=start)
+
+    def new_page(self) -> None:
+        for text_of, y in ((self._header, PAGE_HEIGHT - 45), (self._footer, 40)):
+            text = text_of(self.page) if text_of else None
+            if text:
+                self._canvas.setFont(FONT, 9)
+                self._canvas.drawCentredString(PAGE_WIDTH / 2, y, text)
+        self._canvas.showPage()
+        self.page += 1
+        self._y = TOP
+        self._drawn = False
+
+    def save(self) -> Path:
+        if self._drawn:
+            self.new_page()
+        self._canvas.save()
+        return self.path
+
+
+def wrap(text: str, first_widths: Sequence[float] = (), width: float = TEXT_WIDTH) -> list[str]:
+    """Greedy line breaking in the body font. The first lines can be set narrower."""
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        limit = first_widths[len(lines)] if len(lines) < len(first_widths) else width
+        if current and stringWidth(candidate, FONT, BODY_SIZE) > limit:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def alice(count: int, start: int = 0) -> list[str]:
+    """`count` paragraphs of sample prose, cycling through the passage."""
+    return [ALICE[(start + i) % len(ALICE)] for i in range(count)]
+
+
+def novel(
+    path: Path,
+    *,
+    headings: Sequence[str | None] = CHAPTER_TITLES[:3],
+    heading_size: float = HEADING_SIZE,
+    bookmarks: Sequence[str] | None = None,
+    paragraphs: int = 24,
+    front: Sequence[str] = (),
+    back: Sequence[str] = (),
+    running_header: bool = True,
+    page_numbers: bool = True,
+    **options: Any,
+) -> Path:
+    """A small book: front pages, one chapter per heading, then back-matter pages.
+
+    Each chapter starts on a new page and runs about two pages. Pages other than section
+    openings get a running header; every page gets a page number at the bottom.
+    """
+    openings: set[int] = set()
+
+    def header(page: int) -> str | None:
+        return RUNNING_HEADER if running_header and page not in openings else None
+
+    def footer(page: int) -> str | None:
+        return str(page + 1) if page_numbers else None
+
+    pdf = PdfBuilder(path, header=header, footer=footer, **options)
+    for text in front:
+        openings.add(pdf.page)
+        pdf.paragraph(text)
+        pdf.new_page()
+    for n, heading in enumerate(headings):
+        openings.add(pdf.page)
+        if bookmarks is not None:
+            pdf.bookmark(bookmarks[n])
+        if heading is not None:
+            pdf.heading(heading, size=heading_size)
+        for text in alice(paragraphs, start=n):
+            pdf.paragraph(text)
+        pdf.new_page()
+    for title in back:
+        openings.add(pdf.page)
+        pdf.heading(title)
+        for text in alice(3):
+            pdf.paragraph(text)
+        pdf.new_page()
+    return pdf.save()

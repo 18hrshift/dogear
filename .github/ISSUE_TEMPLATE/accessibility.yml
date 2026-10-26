@@ -1,0 +1,35 @@
+name: Accessibility barrier
+description: Something in Dogear, its output, or its docs is hard or impossible to use with your setup.
+title: "Accessibility: "
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Barriers are treated as bugs. Answer what you can; every field except the first is optional.
+  - type: textarea
+    id: barrier
+    attributes:
+      label: What got in your way?
+      description: What you were trying to do, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where did it happen?
+      description: For example the dogear command, an audiobook file, a player app, or a page of the docs.
+  - type: input
+    id: assistive-tech
+    attributes:
+      label: Assistive technology
+      description: For example NVDA, JAWS, VoiceOver, TalkBack, Orca, a magnifier, or a braille display, with version if you know it.
+  - type: input
+    id: device
+    attributes:
+      label: Device, system, or player
+      description: For example Windows 11, an iPhone with BookPlayer, or a Victor Reader Stream.
+  - type: textarea
+    id: better
+    attributes:
+      label: What would work better for you?

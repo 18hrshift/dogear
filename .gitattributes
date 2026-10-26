@@ -1,0 +1,4 @@
+# Keep LF everywhere, including Windows checkouts, so test.sh and other scripts run in bash.
+* text=auto eol=lf
+*.epub binary
+*.pdf binary

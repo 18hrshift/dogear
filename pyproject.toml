@@ -1,0 +1,58 @@
+[project]
+name = "dogear"
+version = "0.0.1"
+description = "Open talking-book maker: navigable audiobooks for blind and low-vision listeners."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Dogear contributors" }]
+keywords = ["accessibility", "audiobook", "daisy", "epub", "text-to-speech", "blind", "low-vision"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Topic :: Adaptive Technologies",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+# Licenses are checked before adding anything here: see AGENTS.md rule 3.
+dependencies = [
+    "lxml>=5.0",          # BSD-3-Clause: EPUB/XHTML parsing
+    "num2words>=0.5.13",  # LGPL-2.1, used unmodified: numbers to words
+    "pdfplumber>=0.11",   # MIT: PDF text, positions, font sizes
+    "pypdf>=5.0",         # BSD-3-Clause: PDF outline, page labels, merging
+    "pypdfium2>=4.30",    # BSD-3-Clause / Apache-2.0: rendering pages for OCR
+    "Pillow>=10.0",       # MIT-CMU: images for OCR
+]
+
+[project.urls]
+Homepage = "https://github.com/18hrshift/dogear"
+Issues = "https://github.com/18hrshift/dogear/issues"
+
+[project.scripts]
+dogear = "dogear.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "reportlab>=4",  # BSD: builds PDF test fixtures
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dogear"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

@@ -29,24 +29,31 @@ which output Phase 1 polishes first.
 
 ## Phase 0: Foundation
 
-- [ ] Python package skeleton (`src/dogear/`), `pyproject.toml`, `uv` lockfile.
-- [ ] `bash test.sh` runs lint plus tests; CI runs it on Linux, macOS, and Windows.
-- [ ] Port what works from `18hrshift/audiobook-maker`, with its tests: PDF chapter detection
+- [x] Python package skeleton (`src/dogear/`), `pyproject.toml`, `uv` lockfile.
+- [x] `bash test.sh` runs lint plus tests; CI runs it on Linux, macOS, and Windows.
+- [x] Port what works from `18hrshift/audiobook-maker`, with its tests: PDF chapter detection
       cascade (bookmarks, chapter dividers, font size, patterns, page split), text cleanup,
       number and abbreviation expansion, the Tesseract OCR helper, ffmpeg M4B assembly
       (fixing its Windows `which` bug).
-- [ ] **Document model.** Extractors output a structured book (sections, headings with levels,
+- [x] **Document model.** Extractors output a structured book (sections, headings with levels,
       paragraphs, lists, tables, footnotes, images with alt text, print-page markers, language
       tags), not flat text. Everything downstream works from this.
-- [ ] Test fixtures from public-domain books only (Standard Ebooks or Project Gutenberg), with
+- [x] Test fixtures from public-domain books only (Standard Ebooks or Project Gutenberg), with
       the source recorded next to each fixture.
-- [ ] `CODE_OF_CONDUCT.md`, issue templates (including an "accessibility barrier" template).
+- [x] Issue templates (including an "accessibility barrier" template).
+- [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant), once there's a contact address for reports.
 
 ## Phase 1: First listen
 
 Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with no GPU.
 
-- [ ] EPUB and PDF ingest into the document model.
+- [x] EPUB and PDF ingest into the document model (done in Phase 0).
+- [ ] PDF reading gaps found in Phase 0: multi-column pages, footnotes at the foot of a page
+      (read as paragraphs today), mid-chapter subheadings, images, two-line running headers,
+      and compounds hyphenated at a line end ("well-" + "known" becomes "wellknown").
+- [ ] EPUB sections built from the table of contents, not one per file, so books that split a
+      chapter across files (common in Calibre and Project Gutenberg EPUBs) navigate cleanly.
+- [ ] More speech normalization: currency ("$5"), times, units, and roman numerals in titles.
 - [ ] Kokoro engine (ONNX, CPU) behind a voice-engine interface.
 - [ ] Sentence-level rendering with a cache keyed on text, voice, engine, and settings. A crash
       resumes where it stopped. Fixing one word re-renders only the sentences that contain it.
