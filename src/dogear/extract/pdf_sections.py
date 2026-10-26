@@ -9,6 +9,7 @@ from dogear.document import Block, Heading, PageMarker, Paragraph, Section, Sect
 from dogear.extract.pdf_chapters import PATTERN_LINES, Boundary
 from dogear.extract.pdf_text import (
     HEADING_MAX_LINES,
+    KeepHyphen,
     Layout,
     Line,
     Page,
@@ -22,17 +23,28 @@ FRONT_MATTER_TITLE = "Front matter"
 
 
 def build_sections(
-    pages: Sequence[Page], boundaries: Sequence[Boundary], layout: Layout, lang: str | None
+    pages: Sequence[Page],
+    boundaries: Sequence[Boundary],
+    layout: Layout,
+    lang: str | None,
+    keep_hyphen: KeepHyphen | None = None,
 ) -> list[Section]:
-    """One section per boundary, plus front matter for any text before the first one."""
+    """One section per boundary, plus front matter for any text before the first one.
+
+    `keep_hyphen` decides line-end hyphens before lowercase letters; see `join_lines`.
+    """
     sections = []
+
+    def add(title: str, kind: SectionKind, span: Sequence[Page], heading: str | None) -> None:
+        writer = _BlockWriter(layout, keep_hyphen)
+        sections.append(_section(title, kind, span, heading, writer, lang))
+
     front = pages[: boundaries[0].page]
     if any(page.lines for page in front):
-        sections.append(_section(FRONT_MATTER_TITLE, "front", front, None, layout, lang))
+        add(FRONT_MATTER_TITLE, "front", front, None)
     ends = [b.page for b in boundaries[1:]] + [len(pages)]
     for boundary, end in zip(boundaries, ends, strict=True):
-        span = pages[boundary.page : end]
-        sections.append(_section(boundary.title, boundary.kind, span, boundary.title, layout, lang))
+        add(boundary.title, boundary.kind, pages[boundary.page : end], boundary.title)
     return sections
 
 
@@ -41,10 +53,10 @@ def _section(
     kind: SectionKind,
     pages: Sequence[Page],
     heading_title: str | None,
-    layout: Layout,
+    writer: _BlockWriter,
     lang: str | None,
 ) -> Section:
-    writer = _BlockWriter(layout)
+    layout = writer.layout
     for i, page in enumerate(pages):
         span = find_heading(page.lines, heading_title, layout) if i == 0 and heading_title else None
         if span is None:
@@ -52,7 +64,7 @@ def _section(
             continue
         start, count = span
         writer.page(page.label, page.lines[:start])
-        writer.heading(join_lines(line.text for line in page.lines[start : start + count]))
+        writer.heading(page.lines[start : start + count])
         writer.same_page(page.lines[start + count :])
     return Section(
         title=title, kind=kind, blocks=writer.finish(), lang=lang, source=_page_span(pages)
@@ -92,15 +104,16 @@ class _BlockWriter:
     """Collects a section's blocks, holding back each page's last paragraph in case the
     next page carries it on."""
 
-    def __init__(self, layout: Layout) -> None:
-        self._layout = layout
+    def __init__(self, layout: Layout, keep_hyphen: KeepHyphen | None) -> None:
+        self.layout = layout
+        self._keep_hyphen = keep_hyphen
         self._blocks: list[Block] = []
         self._open: tuple[Line, ...] = ()
 
     def page(self, label: str, lines: Sequence[Line]) -> None:
-        text = split_paragraphs(lines, self._layout)
+        text = split_paragraphs(lines, self.layout)
         paragraphs = list(text.paragraphs)
-        if continues(self._open, text, self._layout):
+        if continues(self._open, text, self.layout):
             # The paragraph started on the previous page. Its marker goes before the whole
             # merged paragraph, so jumping to this page starts a little early, never late.
             paragraphs[0] = self._open + paragraphs[0]
@@ -112,11 +125,11 @@ class _BlockWriter:
 
     def same_page(self, lines: Sequence[Line]) -> None:
         self._flush()
-        self._add(list(split_paragraphs(lines, self._layout).paragraphs))
+        self._add(list(split_paragraphs(lines, self.layout).paragraphs))
 
-    def heading(self, text: str) -> None:
+    def heading(self, lines: Sequence[Line]) -> None:
         self._flush()
-        self._blocks.append(Heading(level=1, text=text))
+        self._blocks.append(Heading(level=1, text=self._join(lines)))
 
     def finish(self) -> list[Block]:
         self._flush()
@@ -124,14 +137,13 @@ class _BlockWriter:
 
     def _add(self, paragraphs: list[tuple[Line, ...]]) -> None:
         for lines in paragraphs[:-1]:
-            self._blocks.append(_paragraph(lines))
+            self._blocks.append(Paragraph(self._join(lines)))
         self._open = paragraphs[-1] if paragraphs else ()
 
     def _flush(self) -> None:
         if self._open:
-            self._blocks.append(_paragraph(self._open))
+            self._blocks.append(Paragraph(self._join(self._open)))
             self._open = ()
 
-
-def _paragraph(lines: Sequence[Line]) -> Paragraph:
-    return Paragraph(join_lines(line.text for line in lines))
+    def _join(self, lines: Sequence[Line]) -> str:
+        return join_lines((line.text for line in lines), self._keep_hyphen)

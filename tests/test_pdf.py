@@ -152,6 +152,8 @@ def test_unknown_method_fails_before_reading(tmp_path, config):
         ("running_line_max_lines", 0),
         ("paragraph_gap_ratio", 0.9),
         ("paragraph_indent_ratio", 0),
+        ("hyphen_evidence_min", 0),
+        ("hyphen_without_evidence", "sometimes"),
     ],
 )
 def test_out_of_range_settings(tmp_path, config, key, value):
@@ -237,6 +239,50 @@ def test_hyphenation_rejoined(tmp_path, config):
         "The rabbit-hole went straight on like a tunnel for some way, and then dipped "
         "suddenly down."
     )
+
+
+# ALICE[1] and ALICE[2], set with chosen line breaks. "daisy-" + "chain" is a compound the
+# book prints whole elsewhere; nothing else in the book says how to spell "remark-able".
+DAISY_CHAIN = (
+    "So she was considering in her own mind (as well as she could, for the hot day",
+    "made her feel very sleepy and stupid), whether the pleasure of making a daisy-",
+    "chain would be worth the trouble of getting up and picking the daisies, when",
+    "suddenly a White Rabbit with pink eyes ran close by her.",
+)
+REMARKABLE = (
+    "There was nothing so very remark-",
+    "able in that; nor did Alice think it so very much out of the way to hear the Rabbit",
+    "say to itself, “Oh dear! Oh dear! I shall be late!”",
+)
+
+
+def hyphen_book(path):
+    """ALICE[1] and ALICE[3] set normally, as evidence, then the broken paragraphs."""
+    pdf = PdfBuilder(path)
+    pdf.paragraph(ALICE[1])
+    pdf.paragraph(ALICE[3])
+    for lines in (DAISY_CHAIN, REMARKABLE):
+        pdf.line(lines[0], x=MARGIN + INDENT)
+        for line in lines[1:]:
+            pdf.line(line)
+    return pdf.save()
+
+
+def test_line_end_hyphens_decided_by_the_book(tmp_path, config):
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2:] == [ALICE[1], ALICE[2]]  # "daisy-chain" kept, "remarkable" joined
+
+
+def test_hyphen_without_evidence_comes_from_config(tmp_path, config):
+    config["pdf"]["hyphen_without_evidence"] = "keep"
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2:] == [ALICE[1], ALICE[2].replace("remarkable", "remark-able")]
+
+
+def test_hyphen_evidence_min_comes_from_config(tmp_path, config):
+    config["pdf"]["hyphen_evidence_min"] = 2  # "daisy-chain" is printed only once
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2] == ALICE[1].replace("daisy-chain", "daisychain")
 
 
 # Paragraphs

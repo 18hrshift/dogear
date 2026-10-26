@@ -25,6 +25,14 @@ paragraph_gap_ratio = 1.3
 # A new paragraph starts where a line is indented at least this many times the body font
 # size from the page's left margin.
 paragraph_indent_ratio = 0.7
+# A hyphen at a line end before a lowercase letter is either a break inside a word
+# ("exam-" + "ple") or part of a compound ("well-" + "known"). The book decides: whichever
+# spelling, "example" or "well-known", appears more often elsewhere in it wins, if it
+# appears at least this many times...
+hyphen_evidence_min = 1
+# ...and with no evidence either way: "join" (most line-end hyphens are the typesetter's)
+# or "keep".
+hyphen_without_evidence = "join"
 
 [epub]
 # Largest size, in megabytes, that one file inside an EPUB may unpack to (zip-bomb guard).

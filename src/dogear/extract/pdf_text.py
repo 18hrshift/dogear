@@ -10,11 +10,15 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from itertools import pairwise
 
 log = logging.getLogger(__name__)
+
+# Given the word before a line-end hyphen and the word after it, whether the hyphen is
+# part of the word ("well-known") rather than a break in it ("exam-ple").
+KeepHyphen = Callable[[str, str], bool]
 
 # Two font sizes within this fraction of each other count as the same size.
 _SAME_SIZE = 0.1
@@ -29,6 +33,10 @@ HEADING_MAX_LINES = 3
 # on a line are more often a chapter number or a word than a page number.
 ROMAN = r"(?=[ivxlcdm])m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})"
 _SPLIT_WORD = re.compile(r"[^\W\d_]-$")  # a letter, then a hyphen, at the end of a line
+# The word before a line-end hyphen, and the word that starts the next line. Words may
+# already hold hyphens: "out-of-the-" + "way".
+_WORD_BEFORE_HYPHEN = re.compile(r"([^\W\d_]+(?:-[^\W\d_]+)*)-$")
+_WORD_AT_START = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")
 _OPEN_DASH = re.compile(r"\S[—–]$")  # a dash touching the last word, as in "and then—"
 _SENTENCE_END = re.compile(r"[.!?…][\"'”’»)\]]*$|[—–-][\"'”’»]+$")
 _SOFT_HYPHEN = "\u00ad"
@@ -175,10 +183,12 @@ def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:
     return count if sum(c.isalnum() for c in text) >= 2 else 0
 
 
-def join_lines(lines: Iterable[str]) -> str:
+def join_lines(lines: Iterable[str], keep_hyphen: KeepHyphen | None = None) -> str:
     """Join a paragraph's lines into one string, undoing line-end hyphenation.
 
-    "beauti-" + "ful" becomes "beautiful". A hyphen before a capital or a digit is kept
+    "beauti-" + "ful" becomes "beautiful". A hyphen before a lowercase letter is dropped
+    unless `keep_hyphen(left, right)` says the two parts make a hyphenated compound, as
+    "well-" + "known" does; see `pdf_hyphens`. A hyphen before a capital or a digit is kept
     without a space ("Anglo-" + "Saxon" is "Anglo-Saxon"). Other lines join with a space.
     """
     text = ""
@@ -191,12 +201,19 @@ def join_lines(lines: Iterable[str]) -> str:
         elif text.endswith(_SOFT_HYPHEN):
             text = text[:-1] + line
         elif _SPLIT_WORD.search(text):
-            text = (text[:-1] if line[0].islower() else text) + line
+            soft = line[0].islower() and not (keep_hyphen and _compound(text, line, keep_hyphen))
+            text = (text[:-1] if soft else text) + line
         elif _OPEN_DASH.search(text):
             text += line
         else:
             text += " " + line
     return text.replace(_SOFT_HYPHEN, "")
+
+
+def _compound(text: str, line: str, keep_hyphen: KeepHyphen) -> bool:
+    left = _WORD_BEFORE_HYPHEN.search(text)
+    right = _WORD_AT_START.match(line)
+    return bool(left and right) and keep_hyphen(left.group(1), right.group(0))
 
 
 def split_paragraphs(lines: Sequence[Line], layout: Layout) -> PageText:

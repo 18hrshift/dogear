@@ -34,6 +34,7 @@ from dogear.extract.pdf_chapters import (
     mark_back_matter,
 )
 from dogear.extract.pdf_furniture import strip_furniture
+from dogear.extract.pdf_hyphens import HyphenEvidence
 from dogear.extract.pdf_sections import build_sections
 from dogear.extract.pdf_text import Line, Page, measure_layout, merge_drop_caps
 
@@ -60,6 +61,8 @@ class PdfSettings:
     running_line_max_lines: int
     paragraph_gap_ratio: float
     paragraph_indent_ratio: float
+    hyphen_evidence_min: int
+    hyphen_without_evidence: str
 
     @classmethod
     def from_config(cls, config: Config) -> PdfSettings:
@@ -75,6 +78,8 @@ class PdfSettings:
             running_line_max_lines=table["running_line_max_lines"],
             paragraph_gap_ratio=table["paragraph_gap_ratio"],
             paragraph_indent_ratio=table["paragraph_indent_ratio"],
+            hyphen_evidence_min=table["hyphen_evidence_min"],
+            hyphen_without_evidence=table["hyphen_without_evidence"],
         )
         _require("page_split_size", settings.page_split_size >= 1, "at least 1")
         _require("heading_size_ratio", settings.heading_size_ratio > 1, "more than 1")
@@ -86,6 +91,12 @@ class PdfSettings:
         _require("running_line_max_lines", settings.running_line_max_lines >= 1, "at least 1")
         _require("paragraph_gap_ratio", settings.paragraph_gap_ratio > 1, "more than 1")
         _require("paragraph_indent_ratio", settings.paragraph_indent_ratio > 0, "more than 0")
+        _require("hyphen_evidence_min", settings.hyphen_evidence_min >= 1, "at least 1")
+        _require(
+            "hyphen_without_evidence",
+            settings.hyphen_without_evidence in ("join", "keep"),
+            '"join" or "keep"',
+        )
         return settings
 
 
@@ -130,7 +141,14 @@ def extract(path: Path, config: Config) -> Book:
     else:
         boundaries = found[1]
     boundaries = mark_back_matter(boundaries, pages)
-    sections = build_sections(pages, boundaries, layout, catalog.metadata.language)
+    hyphens = HyphenEvidence.from_texts(
+        (line.text for page in pages for line in page.lines),
+        min_count=settings.hyphen_evidence_min,
+        keep_by_default=settings.hyphen_without_evidence == "keep",
+    )
+    sections = build_sections(
+        pages, boundaries, layout, catalog.metadata.language, keep_hyphen=hyphens.keep
+    )
     log.info("Read %d pages and %d sections from %s", len(pages), len(sections), path.name)
     return Book(metadata=catalog.metadata, sections=sections, source_path=path, source_format="pdf")
 
