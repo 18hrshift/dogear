@@ -776,3 +776,5 @@ def test_standard_ebooks_jekyll_and_hyde(config):
     assert all(isinstance(s.blocks[0], Heading) for s in body)
     assert 20_000 < sum(s.word_count() for s in body) < 30_000
     assert " " in all_text(book)  # Standard Ebooks writes "Mr.&nbsp;Utterson"
+    assert meta.cover is not None and meta.cover.media_type == "image/jpeg"
+    assert len(meta.cover.data) == 248_997  # epub/images/cover.jpg, read whole

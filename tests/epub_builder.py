@@ -4,7 +4,7 @@
 META-INF/container.xml, an OPF, a navigation document, and one XHTML file per `Doc`.
 With `nav=False, ncx=True` it writes an EPUB 2 with an NCX table of contents instead.
 The table of contents lists each `Doc` with a `toc_title`, or the `Toc` tree passed as
-`toc`.
+`toc`. `Resource`s are other manifest files, such as images.
 Text arguments are inserted as raw XML, so tests can use entities and markup in them.
 """
 
@@ -37,6 +37,15 @@ class Toc:
     href: str  # relative to the OPF folder, not URL-encoded, with an optional "#fragment"
     title: str
     children: Sequence[Toc] = ()
+
+
+@dataclass
+class Resource:
+    href: str  # relative to the OPF folder, not URL-encoded
+    data: bytes | None  # None: listed in the manifest but not written to the archive
+    media_type: str
+    properties: str = ""
+    id: str | None = None  # default: res1, res2, ...
 
 
 def xhtml(body: str, *, body_attrs: str = "", html_attrs: str = "", title: str = "Doc") -> str:
@@ -93,6 +102,9 @@ def build_epub(
     opf_dir: str = "OEBPS",
     files: Mapping[str, str | bytes] | None = None,  # archive path -> content, added last
     toc: Sequence[Toc] | None = None,  # default: a flat list of the docs with a toc_title
+    resources: Sequence[Resource] = (),
+    cover_meta: str | None = None,  # content of an EPUB 2 <meta name="cover">
+    guide: Sequence[tuple[str, str]] = (),  # (type, href) references
 ) -> Path:
     def in_opf_dir(name: str) -> str:
         return f"{opf_dir}/{name}" if opf_dir else name
@@ -116,6 +128,9 @@ def build_epub(
             nav_in_spine=nav_in_spine,
             ncx=ncx,
             spine=spine,
+            resources=resources,
+            cover_meta=cover_meta,
+            guide=guide,
         ),
     }
     if nav:
@@ -129,6 +144,9 @@ def build_epub(
         if content is None:
             content = xhtml(doc.body, body_attrs=doc.body_attrs, html_attrs=doc.html_attrs)
         contents[in_opf_dir(doc.href)] = content
+    for resource in resources:
+        if resource.data is not None:
+            contents[in_opf_dir(resource.href)] = resource.data
     contents.update(files or {})
 
     with zipfile.ZipFile(path, "w") as zf:
@@ -152,12 +170,16 @@ def _opf(
     nav_in_spine: bool,
     ncx: bool,
     spine: Sequence[str] | None,
+    resources: Sequence[Resource],
+    cover_meta: str | None,
+    guide: Sequence[tuple[str, str]],
 ) -> str:
     meta = [f'<dc:identifier id="{id_}">{value}</dc:identifier>' for id_, value in identifiers]
     meta += [f"<dc:title>{title}</dc:title>"] if title is not None else []
     meta += [f"<dc:creator>{c}</dc:creator>" for c in creators]
     meta += [f"<dc:language>{language}</dc:language>"] if language else []
     meta += [f"<dc:publisher>{publisher}</dc:publisher>"] if publisher else []
+    meta += [f'<meta name="cover" content="{cover_meta}"/>'] if cover_meta is not None else []
     items = [
         f'<item id="{id_}" href="{quote(d.href)}" media-type="{d.media_type}"/>'
         for id_, d in zip(ids, docs, strict=True)
@@ -168,6 +190,16 @@ def _opf(
         )
     if ncx:
         items.append('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>')
+    for i, r in enumerate(resources, start=1):
+        props = f' properties="{r.properties}"' if r.properties else ""
+        items.append(
+            f'<item id="{r.id or f"res{i}"}" href="{quote(r.href)}" '
+            f'media-type="{r.media_type}"{props}/>'
+        )
+    refs_xml = "".join(
+        f'<reference type="{kind}" href="{quote(href)}" title="{kind}"/>' for kind, href in guide
+    )
+    guide_xml = f"<guide>{refs_xml}</guide>" if guide else ""
     linear = {id_: d.linear for id_, d in zip(ids, docs, strict=True)}
     order = list(spine) if spine is not None else list(ids)
     if nav_in_spine:
@@ -183,7 +215,7 @@ def _opf(
     {"".join(meta)}
   </metadata>
   <manifest>{"".join(items)}</manifest>
-  <spine{' toc="ncx"' if ncx else ""}>{"".join(refs)}</spine>
+  <spine{' toc="ncx"' if ncx else ""}>{"".join(refs)}</spine>{guide_xml}
 </package>
 """
 

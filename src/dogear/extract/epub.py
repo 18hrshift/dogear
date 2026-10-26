@@ -2,7 +2,8 @@
 
 The archive is read in memory with `zipfile` and every XML file goes through
 `safe_xml.parse_xml`, so a book can't make Dogear touch the network or other files.
-Sections come from the table of contents (see `epub_sections`).
+Sections come from the table of contents (see `epub_sections`); the cover image from the
+package (see `epub_cover`).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 from dogear.config import Config
 from dogear.document import Book, Footnote, Paragraph, Section
 from dogear.errors import ConfigError, ExtractionError
+from dogear.extract.epub_cover import read_cover
 from dogear.extract.epub_nav import read_navigation
 from dogear.extract.epub_package import (
     XHTML_MEDIA_TYPE,
@@ -48,6 +50,7 @@ def extract(path: Path, config: Config) -> Book:
         nav = read_navigation(archive, package)
         note_markers: dict[str, str] = {}
         sections = read_sections(archive, package, nav, toc_depth, note_markers)
+        cover = read_cover(archive, package, nav, encrypted)
     if not sections:
         raise ExtractionError(
             f"{path.name} has no readable text: every document in its reading order is empty.",
@@ -55,7 +58,7 @@ def extract(path: Path, config: Config) -> Book:
         )
     _link_notes(sections, note_markers)
     return Book(
-        metadata=package.metadata,
+        metadata=replace(package.metadata, cover=cover),
         sections=sections,
         source_path=path,
         source_format="epub",
