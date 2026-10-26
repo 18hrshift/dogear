@@ -112,7 +112,7 @@ def test_filter_chain_limits_at_four_times_the_rate_and_returns_to_it():
     ("key", "value", "reading"),
     [
         ("loudness_target_lufs", -23, Loudness(-30.0, -20.0)),  # an int is fine for a float
-        ("true_peak_ceiling_dbtp", -6.0, Loudness(-24.0, -10.0)),
+        ("true_peak_ceiling_dbtp", -6.0, Loudness(-24.0, -8.0)),
         ("max_limiting_db", 0.0, Loudness(-24.0, -5.0)),
         ("silence_threshold_lufs", -25.0, Loudness(-30.0, -20.0)),
     ],

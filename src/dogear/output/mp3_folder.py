@@ -30,9 +30,15 @@ log = logging.getLogger(__name__)
 
 
 def build_mp3_folder(
-    chapters: list[ChapterAudio], metadata: Metadata, folder: Path, config: Config
+    chapters: list[ChapterAudio],
+    metadata: Metadata,
+    folder: Path,
+    config: Config,
+    *,
+    normalized: bool = False,
 ) -> list[Path]:
     """Write one loudness-normalized MP3 per chapter and a playlist into `folder`.
+    `normalized` means `normalize_chapters` already set the loudness, so it's kept.
 
     Returns the MP3 paths in reading order. The folder is created if needed. Files that
     Dogear didn't make there are left alone; see `folder_record`.
@@ -52,7 +58,9 @@ def build_mp3_folder(
         cover = write_cover(metadata.cover, work)
         for number, (chapter, name) in enumerate(zip(chapters, names, strict=True), start=1):
             label = f"Chapter {number} of {len(chapters)}"
-            audio_filter = normalize_filter(chapter.path, label, settings, config)
+            audio_filter = (
+                "anull" if normalized else normalize_filter(chapter.path, label, settings, config)
+            )
             # Encode into the work folder first, so a failed run never leaves a cut-off
             # track under a real name.
             partial = work / name

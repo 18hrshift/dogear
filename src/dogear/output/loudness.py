@@ -23,6 +23,7 @@ from pathlib import Path
 
 from dogear.config import Config
 from dogear.errors import ConfigError, ToolFailedError
+from dogear.output.chapter import ChapterAudio
 from dogear.output.ffmpeg import probe_sample_rate
 from dogear.tools import find_tool, run_tool
 
@@ -124,6 +125,33 @@ def normalize_filter(path: Path, label: str, settings: LoudnessSettings, config:
     plan = plan_gain(measured, settings)
     _log_plan(label, measured, plan, settings)
     return filter_chain(plan, settings, probe_sample_rate(path, config))
+
+
+def normalize_chapters(
+    chapters: list[ChapterAudio], work: Path, config: Config
+) -> list[ChapterAudio]:
+    """Each chapter at the target loudness, as a WAV in `work`, all at one sample rate.
+
+    Packagers do this themselves; a caller building several formats can do it once and
+    pass the result with `normalized=True`.
+    """
+    settings = LoudnessSettings.from_config(config)
+    ffmpeg = find_tool("ffmpeg", config)
+    # The first chapter's rate for all of them, so a joined stream stays in time.
+    sample_rate = probe_sample_rate(chapters[0].path, config)
+    normalized = []
+    for number, chapter in enumerate(chapters, start=1):
+        audio_filter = normalize_filter(
+            chapter.path, f"Chapter {number} of {len(chapters)}", settings, config
+        )
+        wav = work / f"normalized-{number:05d}.wav"
+        run_tool(
+            [ffmpeg, "-y", "-v", "error", "-nostdin", "-i", str(chapter.path)]
+            + ["-map", "0:a:0", "-af", audio_filter, "-ar", str(sample_rate)]
+            + ["-c:a", "pcm_s16le", str(wav)]
+        )
+        normalized.append(ChapterAudio(title=chapter.title, path=wav))
+    return normalized
 
 
 def measure_loudness(path: Path, config: Config) -> Loudness:
