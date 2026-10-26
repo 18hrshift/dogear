@@ -11,6 +11,7 @@ from dogear.document import (
     Metadata,
     PageMarker,
     Paragraph,
+    SceneBreak,
     Section,
     Table,
     block_text,
@@ -76,3 +77,8 @@ def test_book_word_count():
         "epub",
     )
     assert book.word_count() == 3
+
+
+def test_scene_break_has_no_words():
+    assert block_text(SceneBreak()) == ""
+    assert Section("S", blocks=[Paragraph("one"), SceneBreak()]).word_count() == 1

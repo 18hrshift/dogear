@@ -102,7 +102,12 @@ class PageMarker:
         _require_text(self.label, "page label")
 
 
-Block = Heading | Paragraph | ListBlock | Table | Image | Footnote | PageMarker
+@dataclass(frozen=True)
+class SceneBreak:
+    """A break between scenes, printed as a rule, a blank line, or "* * *". Heard as a pause."""
+
+
+Block = Heading | Paragraph | ListBlock | Table | Image | Footnote | PageMarker | SceneBreak
 
 
 def block_text(block: Block) -> str:
@@ -117,7 +122,7 @@ def block_text(block: Block) -> str:
             return f"{caption}\n{cells}".strip()
         case Image(alt=alt, caption=caption):
             return f"{alt or ''}\n{caption}".strip()
-        case PageMarker():
+        case PageMarker() | SceneBreak():
             return ""
     raise TypeError(f"not a block: {block!r}")
 

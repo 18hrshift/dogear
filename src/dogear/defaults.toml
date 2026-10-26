@@ -23,6 +23,10 @@ paragraph_gap_ratio = 1.3
 # size from the page's left margin.
 paragraph_indent_ratio = 0.7
 
+[epub]
+# Largest size, in megabytes, that one file inside an EPUB may unpack to (zip-bomb guard).
+max_member_mb = 64
+
 [ocr]
 dpi = 300
 language = "eng"  # Tesseract language code(s), such as "eng" or "eng+fra"
@@ -81,6 +85,10 @@ no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
+
+[kindle]
+# Converting a Kindle book with Calibre stops after this many seconds.
+convert_timeout_seconds = 600
 
 [tools]
 # Command name or full path for each external program.
