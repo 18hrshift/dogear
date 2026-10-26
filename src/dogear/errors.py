@@ -41,3 +41,7 @@ class DownloadError(DogearError):
 
 class VoiceError(DogearError):
     """The voice engine can't be set up as configured, or can't speak this book."""
+
+
+class OutputFolderError(DogearError):
+    """The output folder holds files Dogear must not overwrite, such as another book's audio."""

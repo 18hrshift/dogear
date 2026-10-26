@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from dogear.audio import ChapterAudio
+from dogear.output import ChapterAudio
 from dogear.config import Config
 from dogear.narration import SectionNarration
 from dogear.paths import cache_dir

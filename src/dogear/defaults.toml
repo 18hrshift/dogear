@@ -178,6 +178,22 @@ roman_numeral_keywords = [
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
+# Each chapter is turned up or down by one fixed amount (linear gain, so nothing pumps)
+# to land at this integrated loudness. -18 LUFS is loud enough for phone speakers and
+# cars, matches the loud end of the -18 to -23 dB RMS range ACX (Audible) asks of
+# audiobooks, and leaves 15 dB under the ceiling below for speech peaks.
+loudness_target_lufs = -18.0
+# No peak may go above this, measured as true peak (including peaks between samples).
+# -3 dBTP matches ACX's peak limit and leaves headroom for the small overshoot that MP3
+# and AAC encoding add.
+true_peak_ceiling_dbtp = -3.0
+# When reaching the target would push peaks over the ceiling, a limiter shaves them off,
+# by at most this many dB. Brief peaks (plosives, clicks) lose a few dB without audible
+# change; past this, the chapter is left quieter than the target instead, with a warning.
+max_limiting_db = 6.0
+# A chapter measuring quieter than this (or too short to measure) is treated as silence
+# and left as it is, so near-silence is never boosted into audible noise.
+silence_threshold_lufs = -50.0
 
 [kindle]
 # Converting a Kindle book with Calibre stops after this many seconds.

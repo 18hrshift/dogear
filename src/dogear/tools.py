@@ -83,6 +83,8 @@ def run_tool(
     """
     name = Path(cmd[0]).name
     try:
+        # These programs print UTF-8 (file names, tags). Decoding with the system code page
+        # instead, as Windows would by default, can crash on a byte it doesn't map.
         result = subprocess.run(
             cmd,
             capture_output=True,
