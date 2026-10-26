@@ -68,7 +68,16 @@ def run_tool(cmd: list[str], *, timeout: float | None = None) -> subprocess.Comp
     """Run a program, raising ToolFailedError with the tail of its output on failure."""
     name = Path(cmd[0]).name
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # These programs print UTF-8 (file names, tags). Decoding with the system code page
+        # instead, as Windows would by default, can crash on a byte it doesn't map.
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
     except subprocess.TimeoutExpired:
         raise ToolFailedError(
             f"{name} took longer than {timeout} seconds and was stopped."

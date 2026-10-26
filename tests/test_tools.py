@@ -34,6 +34,12 @@ def test_run_tool_failure_includes_output():
         run_tool([sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"])
 
 
+def test_run_tool_reads_output_as_utf8_and_survives_bad_bytes():
+    script = "import sys; sys.stderr.buffer.write('caf\\u00e9 \\xff'.encode('utf-8') + b'\\xff')"
+    result = run_tool([sys.executable, "-c", script])
+    assert result.stderr == "café ÿ�"
+
+
 def test_run_tool_timeout():
     with pytest.raises(ToolFailedError, match="longer than"):
         run_tool([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.2)
