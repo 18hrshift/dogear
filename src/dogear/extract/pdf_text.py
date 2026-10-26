@@ -8,6 +8,7 @@ numbers and running headers. Words are never rewritten; speech normalization hap
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
@@ -54,6 +55,7 @@ class Line:
     x1: float
     size: float  # the most common character size in the line
     chars: int  # non-space characters
+    bold: bool = False  # most of its characters are in a bold font
     # The line cut at gaps wide enough to be a column gutter, left to right; empty when
     # there are none. Set when reading and used only by `pdf_columns`.
     parts: tuple[Line, ...] = ()
@@ -69,6 +71,7 @@ def merge_lines(pieces: Sequence[Line]) -> Line:
     if len(pieces) == 1:
         return pieces[0]
     main = max(pieces, key=lambda piece: piece.chars)
+    chars = sum(piece.chars for piece in pieces)
     return Line(
         text=" ".join(piece.text for piece in pieces),
         top=min(piece.top for piece in pieces),
@@ -76,7 +79,8 @@ def merge_lines(pieces: Sequence[Line]) -> Line:
         x0=min(piece.x0 for piece in pieces),
         x1=max(piece.x1 for piece in pieces),
         size=main.size,
-        chars=sum(piece.chars for piece in pieces),
+        chars=chars,
+        bold=2 * sum(piece.chars for piece in pieces if piece.bold) > chars,
     )
 
 
@@ -101,9 +105,16 @@ class Layout:
     line_pitch: float  # usual distance between the baselines of two body lines
     gap_ratio: float
     indent: float  # how far in, in points, a line must start to count as indented
+    # Lines at least this size are subheadings inside a section; infinity turns size-based
+    # subheadings off.
+    subheading_size: float = math.inf
+    body_bold: bool = False  # body text is set in bold, so bold lines are not headings
 
     def is_heading(self, line: Line) -> bool:
         return line.size >= self.heading_size - _SIZE_SLACK
+
+    def is_subheading_size(self, line: Line) -> bool:
+        return line.size >= self.subheading_size - _SIZE_SLACK
 
     def is_body(self, line: Line) -> bool:
         return same_size(line.size, self.body_size)
@@ -127,7 +138,12 @@ def same_size(a: float, b: float) -> bool:
 
 
 def measure_layout(
-    pages: Sequence[Page], *, heading_ratio: float, gap_ratio: float, indent_ratio: float
+    pages: Sequence[Page],
+    *,
+    heading_ratio: float,
+    subheading_ratio: float,
+    gap_ratio: float,
+    indent_ratio: float,
 ) -> Layout:
     body = body_size(pages)
     return Layout(
@@ -136,7 +152,14 @@ def measure_layout(
         line_pitch=_line_pitch(pages, body),
         gap_ratio=gap_ratio,
         indent=body * indent_ratio,
+        subheading_size=body * subheading_ratio,
+        body_bold=_mostly_bold(pages, body),
     )
+
+
+def _mostly_bold(pages: Sequence[Page], body: float) -> bool:
+    lines = [line for page in pages for line in page.lines if same_size(line.size, body)]
+    return 2 * sum(line.chars for line in lines if line.bold) > sum(line.chars for line in lines)
 
 
 def body_size(pages: Sequence[Page]) -> float:

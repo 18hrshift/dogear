@@ -147,6 +147,7 @@ def test_unknown_method_fails_before_reading(tmp_path, config):
     [
         ("page_split_size", 0),
         ("heading_size_ratio", 1.0),
+        ("subheading_size_ratio", 1.0),
         ("running_line_min_pages", 1),
         ("running_line_min_share", 0),
         ("running_line_max_lines", 0),
@@ -419,6 +420,46 @@ def test_back_matter_running_header_is_one_section(tmp_path, config, opening_siz
     assert len(notes.page_labels()) >= 3
     assert "NOTES" not in paragraphs(notes)
     assert paragraphs(notes) == alice(50)
+
+
+def subheaded_chapter(path):
+    """One chapter with subheadings: 14 pt ones, one of them opening a page, and a bold
+    one in body size."""
+    pdf = PdfBuilder(path)
+    pdf.heading(CHAPTER_TITLES[0])
+    pdf.paragraph(ALICE[0])
+    pdf.heading(CHAPTER_TITLES[1], size=14)
+    pdf.paragraph(ALICE[1])
+    pdf.heading(CHAPTER_TITLES[2], size=11, bold=True)
+    pdf.paragraph(ALICE[2])
+    pdf.new_page()
+    pdf.heading(CHAPTER_TITLES[3], size=14)
+    pdf.paragraph(ALICE[3])
+    return pdf.save()
+
+
+def test_subheadings_inside_a_chapter(tmp_path, config):
+    [section] = extract(subheaded_chapter(tmp_path / "sub.pdf"), config).sections
+    assert [b for b in section.blocks if not isinstance(b, PageMarker)] == [
+        Heading(1, CHAPTER_TITLES[0]),
+        Paragraph(ALICE[0]),
+        Heading(2, CHAPTER_TITLES[1]),
+        Paragraph(ALICE[1]),
+        Heading(3, CHAPTER_TITLES[2]),
+        Paragraph(ALICE[2]),
+        Heading(2, CHAPTER_TITLES[3]),
+        Paragraph(ALICE[3]),
+    ]
+
+
+def test_subheading_size_ratio_comes_from_config(tmp_path, config):
+    config["pdf"]["subheading_size_ratio"] = 1.3  # more than the 14 pt subheadings
+    [section] = extract(subheaded_chapter(tmp_path / "sub.pdf"), config).sections
+    assert [b for b in section.blocks if isinstance(b, Heading)] == [
+        Heading(1, CHAPTER_TITLES[0]),
+        Heading(2, CHAPTER_TITLES[2]),  # the bold one is still a subheading
+    ]
+    assert CHAPTER_TITLES[1] in paragraphs(section)
 
 
 def test_drop_cap_is_not_a_heading(tmp_path, config):

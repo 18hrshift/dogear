@@ -62,3 +62,11 @@ def test_column_gap_ratio_sets_where_lines_are_cut(tmp_path):
     assert len(page.lines[0].parts) == 2
     [page] = read(path, ReadSettings(column_gap_ratio=8.0))
     assert page.lines[0].parts == ()
+
+
+def test_bold_lines(tmp_path):
+    pdf = PdfBuilder(tmp_path / "bold.pdf")
+    pdf.line("The Pool of Tears", bold=True)
+    pdf.paragraph(ALICE[0])
+    [page] = read(pdf.save())
+    assert [line.bold for line in page.lines[:2]] == [True, False]

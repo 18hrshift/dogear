@@ -1,5 +1,7 @@
 """Page-text cleanup and paragraph rules, tested on hand-placed lines (no PDF needed)."""
 
+from dataclasses import replace
+
 import pytest
 from pdf_lines import BODY, PITCH, body_lines, layout_for, ln
 
@@ -151,10 +153,22 @@ def test_body_size_weighted_by_characters():
 def test_measure_layout_uses_config_ratios(config):
     pages = [Page(0, "1", tuple(body_lines(72, 5)))]
     pdf = config["pdf"]
-    layout = measure_layout(pages, heading_ratio=2.0, gap_ratio=1.5, indent_ratio=1.0)
+    layout = measure_layout(
+        pages, heading_ratio=2.0, subheading_ratio=1.5, gap_ratio=1.5, indent_ratio=1.0
+    )
     assert (layout.heading_size, layout.indent, layout.line_pitch) == (22.0, 11.0, PITCH)
+    assert layout.subheading_size == 16.5
     assert layout.paragraph_gap == PITCH * 1.5
+    assert not layout.body_bold
     assert pdf["heading_size_ratio"] != 2.0  # the call above used its own ratios
+
+
+def test_body_bold_measured():
+    pages = [Page(0, "1", tuple(replace(line, bold=True) for line in body_lines(72, 5)))]
+    layout = measure_layout(
+        pages, heading_ratio=2.0, subheading_ratio=1.5, gap_ratio=1.5, indent_ratio=1.0
+    )
+    assert layout.body_bold
 
 
 def test_leading_heading_lines(layout):

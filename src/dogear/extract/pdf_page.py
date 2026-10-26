@@ -8,6 +8,7 @@ to be a column gutter.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -20,6 +21,9 @@ Char = dict[str, Any]
 # between words without a character behind it; one character can give several letters
 # ("ﬁ" gives "f" and "i").
 Cell = tuple[str, Char | None]
+
+# Font names such as "Times-Bold", "ABCDEF+Minion-Semibold", or "Arial-BlackItalic".
+_BOLD_FONT = re.compile(r"bold|black|heavy|demi", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,7 @@ def _line(cells: Sequence[Cell], box: Sequence[Char]) -> Line:
         x1=max(char["x1"] for char in box),
         size=sizes.most_common(1)[0][0],
         chars=len(chars),
+        bold=2 * sum(bool(_BOLD_FONT.search(char["fontname"])) for char in chars) > len(chars),
     )
 
 

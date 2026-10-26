@@ -48,5 +48,6 @@ def layout_for(config: Config, **overrides) -> Layout:
         line_pitch=PITCH,
         gap_ratio=pdf["paragraph_gap_ratio"],
         indent=BODY * pdf["paragraph_indent_ratio"],
+        subheading_size=BODY * pdf["subheading_size_ratio"],
     )
     return Layout(**{**fields, **overrides})

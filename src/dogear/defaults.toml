@@ -9,6 +9,10 @@ chapter_detection = ["bookmarks", "chapter_dividers", "font_size", "pattern", "p
 page_split_size = 20
 # A line counts as a heading when its font is this many times larger than body text.
 heading_size_ratio = 1.4
+# Inside a chapter, up to three lines at least this many times larger than body text,
+# or bold where body text isn't, are a subheading. Subheading styles are ranked across
+# the book, largest first, as heading levels 2 to 6.
+subheading_size_ratio = 1.15
 # If pages average fewer text characters than this, the PDF is treated as scanned.
 min_chars_per_page = 25
 # A page's top or bottom line is a running header or footer (and removed) when the same

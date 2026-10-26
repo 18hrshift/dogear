@@ -56,6 +56,7 @@ class PdfSettings:
     chapter_detection: tuple[str, ...]
     page_split_size: int
     heading_size_ratio: float
+    subheading_size_ratio: float
     min_chars_per_page: float
     running_line_min_pages: int
     running_line_min_share: float
@@ -76,6 +77,7 @@ class PdfSettings:
             chapter_detection=tuple(table["chapter_detection"]),
             page_split_size=table["page_split_size"],
             heading_size_ratio=table["heading_size_ratio"],
+            subheading_size_ratio=table["subheading_size_ratio"],
             min_chars_per_page=table["min_chars_per_page"],
             running_line_min_pages=table["running_line_min_pages"],
             running_line_min_share=table["running_line_min_share"],
@@ -90,6 +92,7 @@ class PdfSettings:
         )
         _require("page_split_size", settings.page_split_size >= 1, "at least 1")
         _require("heading_size_ratio", settings.heading_size_ratio > 1, "more than 1")
+        _require("subheading_size_ratio", settings.subheading_size_ratio > 1, "more than 1")
         _require("min_chars_per_page", settings.min_chars_per_page >= 0, "0 or more")
         _require("running_line_min_pages", settings.running_line_min_pages >= 2, "at least 2")
         _require(
@@ -166,6 +169,7 @@ def _measure(pages: list[Page], settings: PdfSettings) -> Layout:
     return measure_layout(
         pages,
         heading_ratio=settings.heading_size_ratio,
+        subheading_ratio=settings.subheading_size_ratio,
         gap_ratio=settings.paragraph_gap_ratio,
         indent_ratio=settings.paragraph_indent_ratio,
     )

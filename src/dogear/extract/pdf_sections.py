@@ -1,13 +1,19 @@
-"""Build document sections from cleaned PDF pages and the boundaries between them."""
+"""Build document sections from cleaned PDF pages and the boundaries between them.
+
+Each page is first cut into runs of body text and subheadings (`pdf_headings`), so that
+subheading styles can be ranked across the whole book before any section is written.
+"""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import groupby
 
 from dogear.document import Block, Heading, PageMarker, Paragraph, Section, SectionKind
 from dogear.extract.pdf_chapters import PATTERN_LINES, Boundary
+from dogear.extract.pdf_headings import Run, Style, find_subheadings, heading_levels
 from dogear.extract.pdf_text import (
     HEADING_MAX_LINES,
     KeepHyphen,
@@ -34,41 +40,73 @@ def build_sections(
 
     `keep_hyphen` decides line-end hyphens before lowercase letters; see `join_lines`.
     """
-    sections = []
-
-    def add(title: str, kind: SectionKind, span: Sequence[Page], heading: str | None) -> None:
-        writer = _BlockWriter(layout, keep_hyphen)
-        sections.append(_section(title, kind, span, heading, writer, lang))
-
+    plans = []
     front = pages[: boundaries[0].page]
     if any(page.lines for page in front):
-        add(FRONT_MATTER_TITLE, "front", front, None)
+        plans.append(_plan(FRONT_MATTER_TITLE, "front", front, None, layout))
     ends = [b.page for b in boundaries[1:]] + [len(pages)]
     for boundary, end in zip(boundaries, ends, strict=True):
-        add(boundary.title, boundary.kind, pages[boundary.page : end], boundary.title)
-    return sections
+        span = pages[boundary.page : end]
+        plans.append(_plan(boundary.title, boundary.kind, span, boundary.title, layout))
+    # Ranked over the whole book, so a style is the same level in every section.
+    levels = heading_levels(
+        run.style
+        for plan in plans
+        for page in plan.pages
+        for run in (*page.before, *page.after)
+        if run.style is not None
+    )
+    return [_write(plan, _BlockWriter(layout, levels, keep_hyphen), lang) for plan in plans]
 
 
-def _section(
+@dataclass(frozen=True)
+class _PagePlan:
+    """A page of a section, around the section's title if it is printed here."""
+
+    label: str
+    before: list[Run]
+    title: tuple[Line, ...]  # empty when the title isn't on this page
+    after: list[Run]
+
+
+@dataclass(frozen=True)
+class _SectionPlan:
+    title: str
+    kind: SectionKind
+    source: str
+    pages: list[_PagePlan]
+
+
+def _plan(
     title: str,
     kind: SectionKind,
     pages: Sequence[Page],
     heading_title: str | None,
-    writer: _BlockWriter,
-    lang: str | None,
-) -> Section:
-    layout = writer.layout
+    layout: Layout,
+) -> _SectionPlan:
+    planned = []
     for i, page in enumerate(pages):
         span = find_heading(page.lines, heading_title, layout) if i == 0 and heading_title else None
-        if span is None:
-            writer.page(page.label, page.lines)
-            continue
-        start, count = span
-        writer.page(page.label, page.lines[:start])
-        writer.heading(page.lines[start : start + count])
-        writer.same_page(page.lines[start + count :])
+        start, count = span or (len(page.lines), 0)
+        planned.append(
+            _PagePlan(
+                page.label,
+                find_subheadings(page.lines[:start], layout),
+                page.lines[start : start + count],
+                find_subheadings(page.lines[start + count :], layout),
+            )
+        )
+    return _SectionPlan(title, kind, _page_span(pages), planned)
+
+
+def _write(plan: _SectionPlan, writer: _BlockWriter, lang: str | None) -> Section:
+    for page in plan.pages:
+        writer.page(page.label, page.before)
+        if page.title:
+            writer.heading(page.title, level=1)
+            writer.same_page(page.after)
     return Section(
-        title=title, kind=kind, blocks=writer.finish(), lang=lang, source=_page_span(pages)
+        title=plan.title, kind=plan.kind, blocks=writer.finish(), lang=lang, source=plan.source
     )
 
 
@@ -105,35 +143,45 @@ class _BlockWriter:
     """Collects a section's blocks, holding back the last paragraph of each page, and of
     each column, in case the text that follows carries it on."""
 
-    def __init__(self, layout: Layout, keep_hyphen: KeepHyphen | None) -> None:
+    def __init__(
+        self, layout: Layout, levels: dict[Style, int], keep_hyphen: KeepHyphen | None
+    ) -> None:
         self.layout = layout
+        self._levels = levels
         self._keep_hyphen = keep_hyphen
         self._blocks: list[Block] = []
         self._open: tuple[Line, ...] = ()
 
-    def page(self, label: str, lines: Sequence[Line]) -> None:
-        flows = _flows(lines)
+    def page(self, label: str, runs: Sequence[Run]) -> None:
+        body = runs[0].lines if runs and runs[0].style is None else ()
+        flows = _flows(body)
         first = split_paragraphs(flows[0], self.layout) if flows else None
         if first is None or not continues(self._open, first, self.layout):
             self._flush()
         # A paragraph carried on from the last page is still open, so this page's marker
         # goes before the whole of it: jumping to the page starts a little early, never late.
         self._blocks.append(PageMarker(label))
-        for flow in flows:
-            self._text(flow)
+        self._runs(runs)
 
-    def same_page(self, lines: Sequence[Line]) -> None:
+    def same_page(self, runs: Sequence[Run]) -> None:
         self._flush()
-        for flow in _flows(lines):
-            self._text(flow)
+        self._runs(runs)
 
-    def heading(self, lines: Sequence[Line]) -> None:
+    def heading(self, lines: Sequence[Line], level: int) -> None:
         self._flush()
-        self._blocks.append(Heading(level=1, text=self._join(lines)))
+        self._blocks.append(Heading(level=level, text=self._join(lines)))
 
     def finish(self) -> list[Block]:
         self._flush()
         return self._blocks
+
+    def _runs(self, runs: Sequence[Run]) -> None:
+        for run in runs:
+            if run.style is not None:
+                self.heading(run.lines, self._levels[run.style])
+                continue
+            for flow in _flows(run.lines):
+                self._text(flow)
 
     def _text(self, lines: Sequence[Line]) -> None:
         """Paragraphs from one flow of text, the first carrying on the open one if it can."""

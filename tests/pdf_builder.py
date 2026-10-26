@@ -21,6 +21,7 @@ PAGE_WIDTH, PAGE_HEIGHT = letter
 MARGIN = 72
 TEXT_WIDTH = PAGE_WIDTH - 2 * MARGIN
 FONT = "Times-Roman"
+BOLD_FONT = "Times-Bold"
 BODY_SIZE = 11
 LEADING = 14
 INDENT = 18
@@ -96,10 +97,12 @@ class PdfBuilder:
         self._drawn = False
         self._bookmarks = 0
 
-    def line(self, text: str, *, x: float = MARGIN, size: float = BODY_SIZE) -> None:
+    def line(
+        self, text: str, *, x: float = MARGIN, size: float = BODY_SIZE, bold: bool = False
+    ) -> None:
         if self._y < MARGIN:
             self.new_page()
-        self._canvas.setFont(FONT, size)
+        self._canvas.setFont(BOLD_FONT if bold else FONT, size)
         self._canvas.drawString(x, self._y, text)
         self._y -= LEADING if size == BODY_SIZE else size * 1.3
         self._drawn = True
@@ -107,8 +110,8 @@ class PdfBuilder:
     def space(self, points: float) -> None:
         self._y -= points
 
-    def heading(self, text: str, *, size: float = HEADING_SIZE) -> None:
-        self.line(text, size=size)
+    def heading(self, text: str, *, size: float = HEADING_SIZE, bold: bool = False) -> None:
+        self.line(text, size=size, bold=bold)
         self.space(LEADING)
 
     def paragraph(
