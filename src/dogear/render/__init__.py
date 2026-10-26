@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 
-from dogear.output import ChapterAudio
 from dogear.config import Config
 from dogear.narration import SectionNarration
+from dogear.output import ChapterAudio
 from dogear.paths import cache_dir
 from dogear.render.cache import SpeechCache
 from dogear.render.progress import Progress, Report
