@@ -27,6 +27,9 @@ _SAME_SIZE = 0.1
 _SIZE_SLACK = 0.05
 # Line spacing to assume when a book has no two consecutive body lines to measure.
 _DEFAULT_LEADING = 1.2
+# Measuring line spacing, look this many lines ahead for the next line of the same
+# column: enough for three columns whose lines don't line up.
+_COLUMN_LOOKAHEAD = 3
 # A heading set in large type wraps onto at most this many lines.
 HEADING_MAX_LINES = 3
 
@@ -246,13 +249,25 @@ def _line_pitch(pages: Sequence[Page], body: float) -> float:
     # median, because books of short paragraphs have nearly as many gaps as plain lines.
     pitches: Counter[float] = Counter()
     for page in pages:
-        for a, b in pairwise(page.lines):
+        for a, b in _line_pairs(page.lines):
             if same_size(a.size, body) and same_size(b.size, body) and b.bottom > a.bottom:
                 pitches[round((b.bottom - a.bottom) * 2) / 2] += 1
     if not pitches:
         return body * _DEFAULT_LEADING
     # Ties go to the smaller distance: plain line spacing is never wider than a gap.
     return min(pitches.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _line_pairs(lines: Sequence[Line]) -> Iterable[tuple[Line, Line]]:
+    """Each line with the next one below it in the same column: the first of the next few
+    that overlaps it across the page. In one column that is simply the next line; where
+    columns' lines don't line up, pdfplumber reads them interleaved, and the line just
+    after is the other column's."""
+    for i, line in enumerate(lines):
+        below = lines[i + 1 : i + 1 + _COLUMN_LOOKAHEAD]
+        found = next((b for b in below if b.x0 < line.x1 and line.x0 < b.x1), None)
+        if found is not None:
+            yield line, found
 
 
 def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:

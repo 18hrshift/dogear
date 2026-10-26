@@ -11,11 +11,12 @@ from pdf_builder import (
     RUNNING_HEADER,
     PdfBuilder,
     alice,
+    marked,
     novel,
     wrap,
 )
 
-from dogear.document import Heading, PageMarker, Paragraph
+from dogear.document import Footnote, Heading, PageMarker, Paragraph
 from dogear.errors import ConfigError, ExtractionError, ScannedPdfError
 from dogear.extract import extract_book
 from dogear.extract.pdf import extract
@@ -596,3 +597,31 @@ def test_extract_book_reads_pdf(tmp_path, config):
     book = extract_book(novel(tmp_path / "dispatch.pdf"), config)
     assert book.source_format == "pdf"
     assert titles(book) == THREE
+
+
+def test_columns_notes_running_lines_and_subheadings_together(tmp_path, config):
+    # Two-line running headers, page numbers, a subheading over two columns (lined up on
+    # odd pages, offset on even ones), a note reference inside a column, and a note
+    # across the foot of the page.
+    def header(page: int) -> list[str] | None:
+        return [RUNNING_HEADER, CHAPTER_TITLES[0]] if page else None
+
+    pdf = PdfBuilder(tmp_path / "mixed.pdf", header=header, footer=lambda page: str(page + 1))
+    for n in range(4):
+        pdf.heading(f"{CHAPTER_TITLES[0]}, part {n + 1}", size=14)
+        columns = [[marked(ALICE[1], "daisy-chain", "1"), ALICE[2]], [ALICE[3], ALICE[4]]]
+        pdf.columns(columns, drop=7 * (n % 2))
+        pdf.footnotes([("1", ALICE[2])])
+        pdf.new_page()
+    [section] = extract(pdf.save(), config).sections
+    expected = []
+    for n in range(4):
+        note = f"page{n + 1}-note1"
+        expected += [
+            PageMarker(str(n + 1)),
+            Heading(2, f"{CHAPTER_TITLES[0]}, part {n + 1}"),
+            Paragraph(ALICE[1], note_refs=(note,)),
+            *(Paragraph(text) for text in ALICE[2:5]),
+            Footnote(note, ALICE[2], label="1"),
+        ]
+    assert section.blocks == expected

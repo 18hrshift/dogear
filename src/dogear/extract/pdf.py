@@ -4,6 +4,13 @@ pypdf reads the document catalog (metadata, bookmarks, page labels, encryption) 
 pdfplumber reads the text with its positions and sizes. Each file is opened once per
 library, and the pages are read in a single pass that every later step reuses.
 PyMuPDF is not used because it is AGPL.
+
+The steps, in order: read each page's lines and figures (`pdf_page`); remove page numbers
+and running headers and footers (`pdf_furniture`); take footnotes off the foot of each
+page (`pdf_notes`); put columns in reading order (`pdf_columns`); link note markers in
+the text to their notes; attach captions to figures (`pdf_figures`); find chapters
+(`pdf_chapters`); and write sections (`pdf_sections`, with subheadings from
+`pdf_headings` and line-end hyphens decided by `pdf_hyphens`).
 """
 
 from __future__ import annotations
@@ -156,10 +163,7 @@ def extract(path: Path, config: Config) -> Book:
     # Notes are found before columns are ordered, while the foot of the page is still
     # the last lines read; markers are linked after, on the lines in reading order.
     pages = find_notes(pages, layout)
-    pages, columned = _order_columns(pages, settings)
-    if columned:
-        # Line spacing measured across interleaved columns is too tight; measure again.
-        layout = _measure(pages, settings)
+    pages = _order_columns(pages, settings)
     pages = link_note_refs(pages)
     pages = attach_captions(pages, layout)
     source = ChapterSource(pages, catalog.outline, layout, settings.page_split_size)
@@ -198,8 +202,8 @@ def _measure(pages: list[Page], settings: PdfSettings) -> Layout:
     )
 
 
-def _order_columns(pages: list[Page], settings: PdfSettings) -> tuple[list[Page], int]:
-    """Pages with their lines in reading order, and how many of them were in columns."""
+def _order_columns(pages: list[Page], settings: PdfSettings) -> list[Page]:
+    """Pages with their lines in reading order."""
     rules = ColumnRules(
         settings.column_gap_ratio, settings.column_min_lines, settings.column_min_width_ratio
     )
@@ -210,7 +214,7 @@ def _order_columns(pages: list[Page], settings: PdfSettings) -> tuple[list[Page]
     )
     if columned:
         log.info("Read %d pages in columns", columned)
-    return ordered, columned
+    return ordered
 
 
 def _read_catalog(path: Path) -> _Catalog:

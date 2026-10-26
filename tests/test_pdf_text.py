@@ -207,3 +207,20 @@ def test_drop_cap_joins_its_word():
 def test_large_numeral_heading_is_not_a_drop_cap():
     lines = [ln("I", 40, size=30), *body_lines(90, 3)]
     assert merge_drop_caps(lines) == tuple(lines)
+
+
+def test_line_pitch_measured_within_columns_that_dont_line_up():
+    # pdfplumber reads two offset columns interleaved, 7 points apart; the spacing within
+    # each column is still 14.
+    lines = []
+    for i in range(6):
+        lines.append(ln(f"left line {i} of the page", 72 + i * PITCH, x1=290))
+        lines.append(ln(f"right line {i} of the page", 79 + i * PITCH, x0=318, x1=540))
+    layout = measure_layout(
+        [Page(0, "1", tuple(lines))],
+        heading_ratio=1.4,
+        subheading_ratio=1.15,
+        gap_ratio=1.3,
+        indent_ratio=0.7,
+    )
+    assert layout.line_pitch == PITCH
