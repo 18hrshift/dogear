@@ -72,7 +72,8 @@ def loudness(path: Path, start: float | None = None, seconds: float | None = Non
         text=True,
         encoding="utf-8",
     )
-    report = json.loads(result.stderr[result.stderr.rfind("{") :])
+    # Newer ffmpeg prints a final stats line after the JSON, so decode just the object.
+    report, _ = json.JSONDecoder().raw_decode(result.stderr[result.stderr.rfind("{") :])
     return float(report["input_i"]), float(report["input_tp"])
 
 
