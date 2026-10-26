@@ -50,9 +50,11 @@ which output Phase 1 polishes first.
 Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with no GPU.
 
 - [x] EPUB and PDF ingest into the document model (done in Phase 0).
-- [ ] PDF reading gaps found in Phase 0: multi-column pages, footnotes at the foot of a page
+- [x] PDF reading gaps found in Phase 0: multi-column pages, footnotes at the foot of a page
       (read as paragraphs today), mid-chapter subheadings, images, two-line running headers,
       and compounds hyphenated at a line end ("well-" + "known" becomes "wellknown").
+      Known limits: footnotes need a raised marker to be found, vector drawings aren't
+      found as images, and a wide table on a two-column page is read column by column.
 - [x] EPUB sections built from the table of contents, not one per file, so books that split a
       chapter across files (common in Calibre and Project Gutenberg EPUBs) navigate cleanly.
       Also reads the cover image from EPUB (and Kindle books, through Calibre).
