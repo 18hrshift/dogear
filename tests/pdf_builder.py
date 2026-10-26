@@ -111,11 +111,42 @@ class PdfBuilder:
         self.line(text, size=size)
         self.space(LEADING)
 
-    def paragraph(self, text: str) -> None:
-        indent = INDENT if self._style == "indent" else 0
-        for i, line in enumerate(wrap(text, [TEXT_WIDTH - indent])):
-            self.line(line, x=MARGIN + (indent if i == 0 else 0))
+    def paragraph(
+        self, text: str, *, x: float = MARGIN, width: float = TEXT_WIDTH, indent: bool = True
+    ) -> None:
+        """`indent=False` sets the first line at the margin, as text carried on from the
+        last page or column is."""
+        first = INDENT if self._style == "indent" and indent else 0
+        for i, line in enumerate(wrap(text, [width - first], width)):
+            self.line(line, x=x + (first if i == 0 else 0))
         self._end_paragraph()
+
+    def columns(
+        self,
+        columns: Sequence[Sequence[str]],
+        *,
+        gutter: float = 24,
+        drop: float = 0,
+        carried: bool = False,
+    ) -> None:
+        """Paragraphs side by side in columns, starting at the current line; the text after
+        them starts below the longest. Each column after the first is set `drop` points
+        lower, so its lines fall between the first column's. With `carried`, each column
+        after the first opens with text carried on from the column before, not indented.
+        Nothing here turns a page."""
+        width = (TEXT_WIDTH - gutter * (len(columns) - 1)) / len(columns)
+        top = bottom = self._y
+        for i, texts in enumerate(columns):
+            self._y = top - (drop if i else 0)
+            for n, text in enumerate(texts):
+                indent = not (carried and i and n == 0)
+                self.paragraph(text, x=MARGIN + i * (width + gutter), width=width, indent=indent)
+            bottom = min(bottom, self._y)
+        self._y = bottom
+
+    @staticmethod
+    def column_width(count: int, gutter: float = 24) -> float:
+        return (TEXT_WIDTH - gutter * (count - 1)) / count
 
     def drop_cap_paragraph(self, text: str, *, size: float = 40, beside: int = 3) -> None:
         """A paragraph whose first letter is a drop cap set beside its first lines."""

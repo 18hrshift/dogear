@@ -19,6 +19,16 @@ running_line_min_share = 0.4
 # A running header or footer can be up to this many lines deep, such as the book's title
 # with the chapter's title under it. Each line must repeat on its own to be removed.
 running_line_max_lines = 2
+# Pages set in columns are read one column at a time, top to bottom, left to right.
+# Lines that cross the space between columns, such as a title above them, are read
+# where they sit. A column gutter is a gap at least this many times the size of the
+# page's main font...
+column_gap_ratio = 0.8
+# ...with at least this many lines on each side of it...
+column_min_lines = 3
+# ...and each side at least this many times the main font size wide, so the page numbers
+# down the side of a table of contents stay beside their titles.
+column_min_width_ratio = 8.0
 # A new paragraph starts where the space between two lines is this many times the usual
 # line spacing.
 paragraph_gap_ratio = 1.3

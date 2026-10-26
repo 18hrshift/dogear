@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,10 +32,12 @@ from dogear.extract.pdf_chapters import (
     is_section_label,
     mark_back_matter,
 )
+from dogear.extract.pdf_columns import ColumnRules, order_columns
 from dogear.extract.pdf_furniture import strip_furniture
 from dogear.extract.pdf_hyphens import HyphenEvidence
+from dogear.extract.pdf_page import ReadSettings, read_page
 from dogear.extract.pdf_sections import build_sections
-from dogear.extract.pdf_text import Line, Page, measure_layout, merge_drop_caps
+from dogear.extract.pdf_text import Layout, Page, measure_layout
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,9 @@ class PdfSettings:
     paragraph_indent_ratio: float
     hyphen_evidence_min: int
     hyphen_without_evidence: str
+    column_gap_ratio: float
+    column_min_lines: int
+    column_min_width_ratio: float
 
     @classmethod
     def from_config(cls, config: Config) -> PdfSettings:
@@ -80,6 +84,9 @@ class PdfSettings:
             paragraph_indent_ratio=table["paragraph_indent_ratio"],
             hyphen_evidence_min=table["hyphen_evidence_min"],
             hyphen_without_evidence=table["hyphen_without_evidence"],
+            column_gap_ratio=table["column_gap_ratio"],
+            column_min_lines=table["column_min_lines"],
+            column_min_width_ratio=table["column_min_width_ratio"],
         )
         _require("page_split_size", settings.page_split_size >= 1, "at least 1")
         _require("heading_size_ratio", settings.heading_size_ratio > 1, "more than 1")
@@ -97,6 +104,9 @@ class PdfSettings:
             settings.hyphen_without_evidence in ("join", "keep"),
             '"join" or "keep"',
         )
+        _require("column_gap_ratio", settings.column_gap_ratio > 0, "more than 0")
+        _require("column_min_lines", settings.column_min_lines >= 1, "at least 1")
+        _require("column_min_width_ratio", settings.column_min_width_ratio > 0, "more than 0")
         return settings
 
 
@@ -117,14 +127,9 @@ class _Catalog:
 def extract(path: Path, config: Config) -> Book:
     settings = PdfSettings.from_config(config)
     catalog = _read_catalog(path)
-    pages = _read_pages(path, catalog.labels)
+    pages = _read_pages(path, catalog.labels, ReadSettings(settings.column_gap_ratio))
     _require_text_layer(path, pages, settings.min_chars_per_page)
-    layout = measure_layout(
-        pages,
-        heading_ratio=settings.heading_size_ratio,
-        gap_ratio=settings.paragraph_gap_ratio,
-        indent_ratio=settings.paragraph_indent_ratio,
-    )
+    layout = _measure(pages, settings)
     pages = strip_furniture(
         pages,
         layout,
@@ -133,6 +138,10 @@ def extract(path: Path, config: Config) -> Book:
         min_share=settings.running_line_min_share,
         max_lines=settings.running_line_max_lines,
     )
+    pages, columned = _order_columns(pages, settings)
+    if columned:
+        # Line spacing measured across interleaved columns is too tight; measure again.
+        layout = _measure(pages, settings)
     source = ChapterSource(pages, catalog.outline, layout, settings.page_split_size)
     found = detect_chapters(settings.chapter_detection, source)
     if found is None:
@@ -151,6 +160,30 @@ def extract(path: Path, config: Config) -> Book:
     )
     log.info("Read %d pages and %d sections from %s", len(pages), len(sections), path.name)
     return Book(metadata=catalog.metadata, sections=sections, source_path=path, source_format="pdf")
+
+
+def _measure(pages: list[Page], settings: PdfSettings) -> Layout:
+    return measure_layout(
+        pages,
+        heading_ratio=settings.heading_size_ratio,
+        gap_ratio=settings.paragraph_gap_ratio,
+        indent_ratio=settings.paragraph_indent_ratio,
+    )
+
+
+def _order_columns(pages: list[Page], settings: PdfSettings) -> tuple[list[Page], int]:
+    """Pages with their lines in reading order, and how many of them were in columns."""
+    rules = ColumnRules(
+        settings.column_gap_ratio, settings.column_min_lines, settings.column_min_width_ratio
+    )
+    ordered = [order_columns(page, rules) for page in pages]
+    columned = sum(
+        [line.text for line in before.lines] != [line.text for line in after.lines]
+        for before, after in zip(pages, ordered, strict=True)
+    )
+    if columned:
+        log.info("Read %d pages in columns", columned)
+    return ordered, columned
 
 
 def _read_catalog(path: Path) -> _Catalog:
@@ -244,7 +277,7 @@ def _resolve(value: Any) -> Any:
     return value.get_object() if hasattr(value, "get_object") else value
 
 
-def _read_pages(path: Path, labels: list[str]) -> list[Page]:
+def _read_pages(path: Path, labels: list[str], settings: ReadSettings) -> list[Page]:
     try:
         with pdfplumber.open(path) as pdf:
             if len(pdf.pages) != len(labels):
@@ -258,40 +291,13 @@ def _read_pages(path: Path, labels: list[str]) -> list[Page]:
             pages = []
             for index, plumber_page in enumerate(pdf.pages):
                 label = labels[index] if index < len(labels) else str(index + 1)
-                pages.append(_read_page(plumber_page, index, label))
+                pages.append(read_page(plumber_page, index, label, settings))
                 plumber_page.close()  # frees the parsed page; big books stay small in memory
             return pages
     except (PdfminerException, PSException) as e:
         raise ExtractionError(
             f"Can't read the text in {path.name}: it is damaged ({e}).", hint=_DAMAGED_HINT
         ) from e
-
-
-def _read_page(plumber_page: Any, index: int, label: str) -> Page:
-    lines = []
-    for raw in plumber_page.extract_text_lines(strip=True, return_chars=True):
-        chars = [c for c in raw["chars"] if not c["text"].isspace()]
-        text = " ".join(raw["text"].split())
-        if not text or not chars:
-            continue
-        sizes = Counter(round(c["size"], 1) for c in chars)
-        lines.append(
-            Line(
-                text=text,
-                top=raw["top"],
-                bottom=raw["bottom"],
-                x0=raw["x0"],
-                x1=raw["x1"],
-                size=sizes.most_common(1)[0][0],
-                chars=len(chars),
-            )
-        )
-    return Page(
-        index=index,
-        label=label,
-        lines=merge_drop_caps(lines),
-        has_images=bool(plumber_page.images),
-    )
 
 
 def _require_text_layer(path: Path, pages: list[Page], min_chars: float) -> None:

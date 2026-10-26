@@ -54,6 +54,30 @@ class Line:
     x1: float
     size: float  # the most common character size in the line
     chars: int  # non-space characters
+    # The line cut at gaps wide enough to be a column gutter, left to right; empty when
+    # there are none. Set when reading and used only by `pdf_columns`.
+    parts: tuple[Line, ...] = ()
+    seq: int = 0  # position in reading order on its page, set by `pdf_columns`
+    # Which run of text on its page the line is in: one column, or the full-width text
+    # between blocks of columns. Paragraphs are found within a flow, each with its own
+    # margin, and carry on from one flow to the next as they do from page to page.
+    flow: int = 0
+
+
+def merge_lines(pieces: Sequence[Line]) -> Line:
+    """One line made of pieces of a row, left to right, joined with spaces."""
+    if len(pieces) == 1:
+        return pieces[0]
+    main = max(pieces, key=lambda piece: piece.chars)
+    return Line(
+        text=" ".join(piece.text for piece in pieces),
+        top=min(piece.top for piece in pieces),
+        bottom=max(piece.bottom for piece in pieces),
+        x0=min(piece.x0 for piece in pieces),
+        x1=max(piece.x1 for piece in pieces),
+        size=main.size,
+        chars=sum(piece.chars for piece in pieces),
+    )
 
 
 @dataclass(frozen=True)
@@ -117,10 +141,14 @@ def measure_layout(
 
 def body_size(pages: Sequence[Page]) -> float:
     """The font size that most characters are set in."""
+    return common_size(line for page in pages for line in page.lines)
+
+
+def common_size(lines: Iterable[Line]) -> float:
+    """The font size that most characters in `lines` are set in."""
     weights: Counter[float] = Counter()
-    for page in pages:
-        for line in page.lines:
-            weights[line.size] += line.chars
+    for line in lines:
+        weights[line.size] += line.chars
     if not weights:
         raise ValueError("no text to measure")
     return weights.most_common(1)[0][0]
@@ -145,7 +173,8 @@ def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
 
     pdfplumber reads the letter as a line of its own, after the line it starts. The lines
     beside it are indented to make room; they are moved back to the letter's margin so
-    the paragraph doesn't look like it starts over.
+    the paragraph doesn't look like it starts over. A line beside the letter starts within
+    a letter's width of it: text further right, such as a second column, is left alone.
     """
     result = list(lines)
     for cap in lines:
@@ -155,7 +184,7 @@ def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
             line
             for line in result
             if line is not cap
-            and line.x0 >= cap.x1 - _SIZE_SLACK
+            and cap.x1 - _SIZE_SLACK <= line.x0 <= cap.x1 + (cap.x1 - cap.x0)
             and line.bottom > cap.top
             and line.top < cap.bottom
             and line.size < cap.size
@@ -165,12 +194,20 @@ def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
             continue  # nothing beside it: a heading such as "I", not a drop cap
         first = min(beside, key=lambda line: line.top)
         for line in beside:
-            merged = replace(line, x0=cap.x0)
-            if line is first:
-                merged = replace(merged, text=cap.text + line.text, chars=line.chars + cap.chars)
-            result[result.index(line)] = merged
+            result[result.index(line)] = _after_cap(line, cap, line is first)
         result.remove(cap)
     return tuple(result)
+
+
+def _after_cap(line: Line, cap: Line, first: bool) -> Line:
+    """`line` moved to the drop cap's margin, with the letter put back if it starts the
+    paragraph. A line in parts gets the same change to its first part."""
+    merged = replace(line, x0=cap.x0)
+    if first:
+        merged = replace(merged, text=cap.text + line.text, chars=line.chars + cap.chars)
+    if line.parts:
+        merged = replace(merged, parts=(_after_cap(line.parts[0], cap, first), *line.parts[1:]))
+    return merged
 
 
 def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:

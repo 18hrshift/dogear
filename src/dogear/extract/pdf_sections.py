@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from itertools import groupby
 
 from dogear.document import Block, Heading, PageMarker, Paragraph, Section, SectionKind
 from dogear.extract.pdf_chapters import PATTERN_LINES, Boundary
@@ -101,8 +102,8 @@ def _page_span(pages: Sequence[Page]) -> str:
 
 
 class _BlockWriter:
-    """Collects a section's blocks, holding back each page's last paragraph in case the
-    next page carries it on."""
+    """Collects a section's blocks, holding back the last paragraph of each page, and of
+    each column, in case the text that follows carries it on."""
 
     def __init__(self, layout: Layout, keep_hyphen: KeepHyphen | None) -> None:
         self.layout = layout
@@ -111,21 +112,20 @@ class _BlockWriter:
         self._open: tuple[Line, ...] = ()
 
     def page(self, label: str, lines: Sequence[Line]) -> None:
-        text = split_paragraphs(lines, self.layout)
-        paragraphs = list(text.paragraphs)
-        if continues(self._open, text, self.layout):
-            # The paragraph started on the previous page. Its marker goes before the whole
-            # merged paragraph, so jumping to this page starts a little early, never late.
-            paragraphs[0] = self._open + paragraphs[0]
-            self._open = ()
-        else:
+        flows = _flows(lines)
+        first = split_paragraphs(flows[0], self.layout) if flows else None
+        if first is None or not continues(self._open, first, self.layout):
             self._flush()
+        # A paragraph carried on from the last page is still open, so this page's marker
+        # goes before the whole of it: jumping to the page starts a little early, never late.
         self._blocks.append(PageMarker(label))
-        self._add(paragraphs)
+        for flow in flows:
+            self._text(flow)
 
     def same_page(self, lines: Sequence[Line]) -> None:
         self._flush()
-        self._add(list(split_paragraphs(lines, self.layout).paragraphs))
+        for flow in _flows(lines):
+            self._text(flow)
 
     def heading(self, lines: Sequence[Line]) -> None:
         self._flush()
@@ -135,9 +135,17 @@ class _BlockWriter:
         self._flush()
         return self._blocks
 
-    def _add(self, paragraphs: list[tuple[Line, ...]]) -> None:
-        for lines in paragraphs[:-1]:
-            self._blocks.append(Paragraph(self._join(lines)))
+    def _text(self, lines: Sequence[Line]) -> None:
+        """Paragraphs from one flow of text, the first carrying on the open one if it can."""
+        text = split_paragraphs(lines, self.layout)
+        paragraphs = list(text.paragraphs)
+        if continues(self._open, text, self.layout):
+            paragraphs[0] = self._open + paragraphs[0]
+            self._open = ()
+        else:
+            self._flush()
+        for group in paragraphs[:-1]:
+            self._blocks.append(Paragraph(self._join(group)))
         self._open = paragraphs[-1] if paragraphs else ()
 
     def _flush(self) -> None:
@@ -147,3 +155,8 @@ class _BlockWriter:
 
     def _join(self, lines: Sequence[Line]) -> str:
         return join_lines((line.text for line in lines), self._keep_hyphen)
+
+
+def _flows(lines: Sequence[Line]) -> list[tuple[Line, ...]]:
+    """`lines` split where one flow of text, such as a column, ends and the next begins."""
+    return [tuple(flow) for _, flow in groupby(lines, key=lambda line: line.flow)]
