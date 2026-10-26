@@ -21,7 +21,7 @@ jobs:
     env:
       # Tests that need these programs fail instead of skipping, so a broken runner
       # can't quietly skip whole areas. Calibre isn't installed here; its test skips.
-      DOGEAR_REQUIRE_TOOLS: ffmpeg,ffprobe,tesseract
+      DOGEAR_REQUIRE_TOOLS: ffmpeg,ffprobe,tesseract,espeak-ng
     steps:
       # Actions are pinned to commit SHAs; the comment says which release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install ffmpeg and Tesseract (Linux)
+      - name: Install ffmpeg, Tesseract, and eSpeak NG (Linux)
         if: runner.os == 'Linux'
         timeout-minutes: 8
         env:
@@ -38,18 +38,20 @@ jobs:
           # Skip the man-db index rebuild, which can stall apt on hosted runners.
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends ffmpeg tesseract-ocr tesseract-ocr-eng
-      - name: Install ffmpeg and Tesseract (macOS)
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg tesseract-ocr tesseract-ocr-eng espeak-ng
+      - name: Install ffmpeg, Tesseract, and eSpeak NG (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 10
-        run: brew install ffmpeg tesseract
-      - name: Install ffmpeg and Tesseract (Windows)
+        run: brew install ffmpeg tesseract espeak-ng
+      - name: Install ffmpeg, Tesseract, and eSpeak NG (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 10
         shell: bash
         run: |
-          choco install -y --no-progress ffmpeg tesseract
+          choco install -y --no-progress ffmpeg tesseract espeak-ng
           echo "C:\\Program Files\\Tesseract-OCR" >> "$GITHUB_PATH"
+          echo "C:\\Program Files\\eSpeak NG" >> "$GITHUB_PATH"
 
       - name: Lint and test
         shell: bash
