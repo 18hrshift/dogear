@@ -56,6 +56,10 @@ class Line:
     size: float  # the most common character size in the line
     chars: int  # non-space characters
     bold: bool = False  # most of its characters are in a bold font
+    # Where small raised digits or note symbols sit in `text`, as (start, end): possible
+    # note references, such as the "1" in "rabbit-hole¹".
+    raised: tuple[tuple[int, int], ...] = ()
+    note_refs: tuple[str, ...] = ()  # ids of the notes it refers to; see `pdf_notes`
     # The line cut at gaps wide enough to be a column gutter, left to right; empty when
     # there are none. Set when reading and used only by `pdf_columns`.
     parts: tuple[Line, ...] = ()
@@ -72,6 +76,11 @@ def merge_lines(pieces: Sequence[Line]) -> Line:
         return pieces[0]
     main = max(pieces, key=lambda piece: piece.chars)
     chars = sum(piece.chars for piece in pieces)
+    raised: list[tuple[int, int]] = []
+    offset = 0
+    for piece in pieces:
+        raised += [(start + offset, end + offset) for start, end in piece.raised]
+        offset += len(piece.text) + 1  # the space joining it to the next piece
     return Line(
         text=" ".join(piece.text for piece in pieces),
         top=min(piece.top for piece in pieces),
@@ -81,6 +90,38 @@ def merge_lines(pieces: Sequence[Line]) -> Line:
         size=main.size,
         chars=chars,
         bold=2 * sum(piece.chars for piece in pieces if piece.bold) > chars,
+        raised=tuple(raised),
+        note_refs=tuple(ref for piece in pieces for ref in piece.note_refs),
+    )
+
+
+def remove_spans(line: Line, spans: Iterable[tuple[int, int]]) -> Line:
+    """`line` with the text in `spans` taken out, such as note markers from its `raised`.
+
+    Where taking a span out would leave two spaces in a row, or a space at either end,
+    one of them goes too. Raised spans left in the line move with the text.
+    """
+    text = line.text
+    gone: set[int] = set()
+    for start, end in spans:
+        gone.update(range(start, end))
+        if (start == 0 or text[start - 1] == " ") and (end == len(text) or text[end] == " "):
+            if end < len(text):
+                gone.add(end)  # the space after
+            elif start > 0:
+                gone.add(start - 1)  # the space before, at the end of the line
+    kept = [i for i in range(len(text)) if i not in gone]
+    moved = {old: new for new, old in enumerate(kept)}
+    raised = tuple(
+        (moved[start], moved[end - 1] + 1)
+        for start, end in line.raised
+        if all(i in moved for i in range(start, end))
+    )
+    return replace(
+        line,
+        text="".join(text[i] for i in kept),
+        chars=line.chars - sum(not text[i].isspace() for i in gone),
+        raised=raised,
     )
 
 
@@ -97,12 +138,22 @@ class Figure:
 
 
 @dataclass(frozen=True)
+class PageNote:
+    """A footnote printed at the foot of a page, as found by `pdf_notes`."""
+
+    note_id: str  # unique in the book
+    label: str  # the marker as printed, such as "1" or "*"
+    lines: tuple[Line, ...]  # its text, without the marker; may run onto the next page
+
+
+@dataclass(frozen=True)
 class Page:
     index: int  # 0-based position in the file
     label: str  # the printed page number, such as "xii" or "42"
     lines: tuple[Line, ...]
     has_images: bool = False  # any image at all, even a tiny one
     figures: tuple[Figure, ...] = ()
+    notes: tuple[PageNote, ...] = ()  # footnotes printed at its foot
 
     @property
     def char_count(self) -> int:
@@ -240,7 +291,13 @@ def _after_cap(line: Line, cap: Line, first: bool) -> Line:
     paragraph. A line in parts gets the same change to its first part."""
     merged = replace(line, x0=cap.x0)
     if first:
-        merged = replace(merged, text=cap.text + line.text, chars=line.chars + cap.chars)
+        shift = len(cap.text)
+        merged = replace(
+            merged,
+            text=cap.text + line.text,
+            chars=line.chars + cap.chars,
+            raised=tuple((start + shift, end + shift) for start, end in line.raised),
+        )
     if line.parts:
         merged = replace(merged, parts=(_after_cap(line.parts[0], cap, first), *line.parts[1:]))
     return merged
@@ -328,6 +385,10 @@ def _starts_paragraph(prev: Line, line: Line, margin: float, right: float, layou
     if line.x0 - prev.x0 >= layout.indent:
         return True
     return prev.x1 <= right - layout.indent and _SENTENCE_END.search(prev.text) is not None
+
+
+def ends_sentence(text: str) -> bool:
+    return _SENTENCE_END.search(text) is not None
 
 
 def continues(previous: Sequence[Line], page: PageText, layout: Layout) -> bool:

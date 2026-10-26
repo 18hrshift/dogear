@@ -37,6 +37,10 @@ column_min_width_ratio = 8.0
 # description: a PDF rarely has one); smaller ones are taken as decoration and skipped.
 # 0.02 is a picture about 1.4 inches (3.5 cm) square on a US Letter or A4 page.
 image_min_page_share = 0.02
+# Footnotes at the foot of a page are read as notes, and their markers in the text are
+# taken out and linked to them. A marker is a digit or a note symbol (* † ‡ § ¶ ‖) set
+# small and raised at least this many times the line's font size above the line's letters.
+note_marker_rise_ratio = 0.15
 # A new paragraph starts where the space between two lines is this many times the usual
 # line spacing.
 paragraph_gap_ratio = 1.3

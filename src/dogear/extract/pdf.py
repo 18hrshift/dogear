@@ -36,6 +36,7 @@ from dogear.extract.pdf_columns import ColumnRules, order_columns
 from dogear.extract.pdf_figures import attach_captions
 from dogear.extract.pdf_furniture import strip_furniture
 from dogear.extract.pdf_hyphens import HyphenEvidence
+from dogear.extract.pdf_notes import find_notes, link_note_refs, note_lines
 from dogear.extract.pdf_page import ReadSettings, read_page
 from dogear.extract.pdf_sections import build_sections
 from dogear.extract.pdf_text import Layout, Line, Page, measure_layout
@@ -70,6 +71,7 @@ class PdfSettings:
     column_min_lines: int
     column_min_width_ratio: float
     image_min_page_share: float
+    note_marker_rise_ratio: float
 
     @classmethod
     def from_config(cls, config: Config) -> PdfSettings:
@@ -92,6 +94,7 @@ class PdfSettings:
             column_min_lines=table["column_min_lines"],
             column_min_width_ratio=table["column_min_width_ratio"],
             image_min_page_share=table["image_min_page_share"],
+            note_marker_rise_ratio=table["note_marker_rise_ratio"],
         )
         _require("page_split_size", settings.page_split_size >= 1, "at least 1")
         _require("heading_size_ratio", settings.heading_size_ratio > 1, "more than 1")
@@ -114,6 +117,7 @@ class PdfSettings:
         _require("column_min_lines", settings.column_min_lines >= 1, "at least 1")
         _require("column_min_width_ratio", settings.column_min_width_ratio > 0, "more than 0")
         _require("image_min_page_share", 0 < settings.image_min_page_share <= 1, "between 0 and 1")
+        _require("note_marker_rise_ratio", settings.note_marker_rise_ratio > 0, "more than 0")
         return settings
 
 
@@ -134,7 +138,9 @@ class _Catalog:
 def extract(path: Path, config: Config) -> Book:
     settings = PdfSettings.from_config(config)
     catalog = _read_catalog(path)
-    read = ReadSettings(settings.column_gap_ratio, settings.image_min_page_share)
+    read = ReadSettings(
+        settings.column_gap_ratio, settings.image_min_page_share, settings.note_marker_rise_ratio
+    )
     pages = _read_pages(path, catalog.labels, read)
     _require_text_layer(path, pages, settings.min_chars_per_page)
     layout = _measure(pages, settings)
@@ -145,11 +151,16 @@ def extract(path: Path, config: Config) -> Book:
         min_pages=settings.running_line_min_pages,
         min_share=settings.running_line_min_share,
         max_lines=settings.running_line_max_lines,
+        keep=lambda page: note_lines(page, layout),
     )
+    # Notes are found before columns are ordered, while the foot of the page is still
+    # the last lines read; markers are linked after, on the lines in reading order.
+    pages = find_notes(pages, layout)
     pages, columned = _order_columns(pages, settings)
     if columned:
         # Line spacing measured across interleaved columns is too tight; measure again.
         layout = _measure(pages, settings)
+    pages = link_note_refs(pages)
     pages = attach_captions(pages, layout)
     source = ChapterSource(pages, catalog.outline, layout, settings.page_split_size)
     found = detect_chapters(settings.chapter_detection, source)
@@ -172,8 +183,9 @@ def extract(path: Path, config: Config) -> Book:
 
 
 def _all_lines(page: Page) -> list[Line]:
-    """The page's lines, with those moved into figure captions."""
-    return [*page.lines, *(line for figure in page.figures for line in figure.caption)]
+    """The page's lines, with those moved into figure captions and footnotes."""
+    captions = [line for figure in page.figures for line in figure.caption]
+    return [*page.lines, *captions, *(line for note in page.notes for line in note.lines)]
 
 
 def _measure(pages: list[Page], settings: PdfSettings) -> Layout:

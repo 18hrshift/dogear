@@ -5,11 +5,17 @@ figures where they sit in reading order, so that subheading styles can be ranked
 the whole book before any section is written.
 
 A figure never splits a paragraph: one that sits inside a paragraph, or between a
-paragraph and its continuation on the next page or column, comes right after it.
+paragraph and its continuation on the next page or column, comes right after it. A page's
+footnotes come after the paragraph its text ends with, in the same way.
+
+Only paragraphs carry note references, as in the EPUB extractor: a marker in a heading or
+a caption is still taken out of its text, and its note is still read, but the link is
+lost (logged at debug level).
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections.abc import Sequence
@@ -18,6 +24,7 @@ from itertools import groupby
 
 from dogear.document import (
     Block,
+    Footnote,
     Heading,
     Image,
     PageMarker,
@@ -34,11 +41,14 @@ from dogear.extract.pdf_text import (
     Layout,
     Line,
     Page,
+    PageNote,
     continues,
     join_lines,
     leading_heading_lines,
     split_paragraphs,
 )
+
+log = logging.getLogger(__name__)
 
 FRONT_MATTER_TITLE = "Front matter"
 
@@ -56,7 +66,7 @@ def build_sections(
     """
     plans = []
     front = pages[: boundaries[0].page]
-    if any(page.lines or page.figures for page in front):
+    if any(page.lines or page.figures or page.notes for page in front):
         plans.append(_plan(FRONT_MATTER_TITLE, "front", front, None, layout))
     ends = [b.page for b in boundaries[1:]] + [len(pages)]
     for boundary, end in zip(boundaries, ends, strict=True):
@@ -84,6 +94,7 @@ class _PagePlan:
     before: list[Part]
     title: tuple[Line, ...]  # empty when the title isn't on this page
     after: list[Part]
+    notes: tuple[PageNote, ...]
 
 
 @dataclass(frozen=True)
@@ -115,6 +126,7 @@ def _plan(
                 _parts(
                     page.lines[start + count :], [f for f in page.figures if f.seq > split], layout
                 ),
+                page.notes,
             )
         )
     return _SectionPlan(title, kind, _page_span(pages), planned)
@@ -140,6 +152,7 @@ def _write(plan: _SectionPlan, writer: _BlockWriter, lang: str | None) -> Sectio
         if page.title:
             writer.heading(page.title, level=1)
             writer.same_page(page.after)
+        writer.notes(page.notes)
     return Section(
         title=plan.title, kind=plan.kind, blocks=writer.finish(), lang=lang, source=plan.source
     )
@@ -208,6 +221,11 @@ class _BlockWriter:
     def heading(self, lines: Sequence[Line], level: int) -> None:
         self._flush()
         self._blocks.append(Heading(level=level, text=self._join(lines)))
+        _drop_refs(lines, "a heading")
+
+    def notes(self, notes: Sequence[PageNote]) -> None:
+        for note in notes:
+            self._place(Footnote(note.note_id, self._join(note.lines), label=note.label))
 
     def finish(self) -> list[Block]:
         self._flush()
@@ -225,11 +243,15 @@ class _BlockWriter:
 
     def _figure(self, figure: Figure) -> None:
         # A PDF image has no description, so alt is None (not "": that means decorative).
-        image = Image(alt=None, caption=self._join(figure.caption))
+        self._place(Image(alt=None, caption=self._join(figure.caption)))
+        _drop_refs(figure.caption, "a caption")
+
+    def _place(self, block: Block) -> None:
+        """Add a figure or a note, after the open paragraph if there is one."""
         if self._open:
-            self._waiting.append(image)
+            self._waiting.append(block)
         else:
-            self._blocks.append(image)
+            self._blocks.append(block)
 
     def _text(self, lines: Sequence[Line]) -> None:
         """Paragraphs from one flow of text, the first carrying on the open one if it can."""
@@ -243,13 +265,22 @@ class _BlockWriter:
 
     def _flush(self) -> None:
         if self._open:
-            self._blocks.append(Paragraph(self._join(self._open)))
+            refs = dict.fromkeys(ref for line in self._open for ref in line.note_refs)
+            self._blocks.append(Paragraph(self._join(self._open), note_refs=tuple(refs)))
             self._open = ()
         self._blocks += self._waiting
         self._waiting = []
 
     def _join(self, lines: Sequence[Line]) -> str:
         return join_lines((line.text for line in lines), self._keep_hyphen)
+
+
+def _drop_refs(lines: Sequence[Line], where: str) -> None:
+    refs = [ref for line in lines for ref in line.note_refs]
+    if refs:
+        log.debug(
+            "Note references %s in %s can't be kept: only paragraphs carry them.", refs, where
+        )
 
 
 def _flows(lines: Sequence[Line]) -> list[tuple[Line, ...]]:

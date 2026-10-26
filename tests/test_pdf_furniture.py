@@ -204,3 +204,19 @@ def test_header_then_one_line_paragraph_keeps_the_paragraph(layout):
 
     for i, kept in enumerate(strip([page(i) for i in range(6)], layout)):
         assert kept[0] == ONE_LINERS[i]
+
+
+def test_kept_lines_are_never_removed(layout):
+    # The same one-line footnote at the foot of every page looks just like a footer.
+    pages = [page_with_furniture(i, None, "1 Ibid.") for i in range(6)]
+    assert all(kept[-1] != "1 Ibid." for kept in strip(pages, layout))
+    cleaned = strip_furniture(
+        pages,
+        layout,
+        is_label=never_label,
+        min_pages=3,
+        min_share=0.4,
+        max_lines=2,
+        keep=lambda page: [page.lines[-1]],
+    )
+    assert all(page.lines[-1].text == "1 Ibid." for page in cleaned)

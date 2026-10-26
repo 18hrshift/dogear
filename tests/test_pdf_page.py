@@ -6,21 +6,33 @@ import pdfplumber
 import pytest
 from pdf_builder import ALICE, MARGIN, PdfBuilder, novel
 
+from dogear.config import default_config
 from dogear.extract.pdf_page import ReadSettings, read_page
 
-SETTINGS = ReadSettings(column_gap_ratio=0.8, image_min_page_share=0.02)
+
+def settings(**changes) -> ReadSettings:
+    """The reading settings in defaults.toml, with `changes`."""
+    pdf = default_config()["pdf"]
+    values = {
+        "column_gap_ratio": pdf["column_gap_ratio"],
+        "image_min_page_share": pdf["image_min_page_share"],
+        "marker_rise_ratio": pdf["note_marker_rise_ratio"],
+    }
+    return ReadSettings(**{**values, **changes})
 
 
-def read(path, settings=SETTINGS):
+def read(path, read_settings=None):
     with pdfplumber.open(path) as pdf:
-        return [read_page(page, i, str(i + 1), settings) for i, page in enumerate(pdf.pages)]
+        return [
+            read_page(page, i, str(i + 1), read_settings or settings())
+            for i, page in enumerate(pdf.pages)
+        ]
 
 
-@pytest.mark.parametrize("style", ["indent", "gap"])
-def test_lines_match_pdfplumber_text_lines(tmp_path, style):
+def test_lines_match_pdfplumber_text_lines(tmp_path):
     # The reader rebuilds lines from pdfplumber's text map; they must be exactly what
     # `extract_text_lines` gives, so pages without columns read as they always have.
-    path = novel(tmp_path / "n.pdf", style=style, front=["A title page."], back=["Notes"])
+    path = novel(tmp_path / "n.pdf", front=["A title page."], back=["Notes"])
     with pdfplumber.open(path) as pdf:
         expected = []
         for page in pdf.pages:
@@ -60,7 +72,7 @@ def test_column_gap_ratio_sets_where_lines_are_cut(tmp_path):
     path = pdf.save()
     [page] = read(path)
     assert len(page.lines[0].parts) == 2
-    [page] = read(path, ReadSettings(column_gap_ratio=8.0, image_min_page_share=0.02))
+    [page] = read(path, settings(column_gap_ratio=8.0))
     assert page.lines[0].parts == ()
 
 

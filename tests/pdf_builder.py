@@ -7,6 +7,7 @@ https://www.gutenberg.org/ebooks/11 (chapter I, "Down the Rabbit-Hole").
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,25 @@ PageText = Callable[[int], str | Sequence[str] | None]
 # Running lines are set in small type, this far apart.
 RUNNING_SIZE = 9
 RUNNING_LEADING = 11
+# Footnotes too.
+NOTE_SIZE = 8
+NOTE_LEADING = 10
+# In text given to the builder, "[^1]" is a note reference: "1" set small and raised.
+MARKER = re.compile(r"\[\^([^\]]+)\]")
+# How a reference is set, as shares of the text size.
+MARKER_SCALE = 0.65
+MARKER_RISE = 0.35
+
+
+def unmarked(text: str) -> str:
+    """Text as a reader should get it back: with its note references taken out."""
+    return MARKER.sub("", text)
+
+
+def marked(text: str, after: str, label: str) -> str:
+    """`text` with a reference to note `label` right after the first `after` in it."""
+    at = text.index(after) + len(after)
+    return f"{text[:at]}[^{label}]{text[at:]}"
 
 
 class PdfBuilder:
@@ -102,10 +122,18 @@ class PdfBuilder:
     ) -> None:
         if self._y < MARGIN:
             self.new_page()
-        self._canvas.setFont(BOLD_FONT if bold else FONT, size)
-        self._canvas.drawString(x, self._y, text)
+        self._draw(text, x, self._y, size, BOLD_FONT if bold else FONT)
         self._y -= LEADING if size == BODY_SIZE else size * 1.3
         self._drawn = True
+
+    def _draw(self, text: str, x: float, y: float, size: float, font: str) -> None:
+        """One line of text, with any "[^1]" note references set small and raised."""
+        for i, piece in enumerate(MARKER.split(text)):
+            reference = i % 2 == 1
+            piece_size = size * MARKER_SCALE if reference else size
+            self._canvas.setFont(font, piece_size)
+            self._canvas.drawString(x, y + (size * MARKER_RISE if reference else 0), piece)
+            x += stringWidth(piece, font, piece_size)
 
     def space(self, points: float) -> None:
         self._y -= points
@@ -189,6 +217,25 @@ class PdfBuilder:
         if caption is not None:
             self.line(caption, x=x, size=caption_size)
 
+    def footnotes(self, notes: Sequence[tuple[str | None, str]], *, raised: bool = False) -> None:
+        """Notes at the foot of the current page, set small under a short rule, as
+        (marker, text) pairs. A None marker carries on the last note of the page before.
+        Markers are set "1 " on the line, or as raised references with `raised`."""
+        lines: list[str] = []
+        for marker, text in notes:
+            for i, line in enumerate(wrap(text, size=NOTE_SIZE)):
+                if marker is not None and i == 0:
+                    line = f"[^{marker}]{line}" if raised else f"{marker} {line}"
+                lines.append(line)
+        y = MARGIN + NOTE_LEADING * (len(lines) - 1)  # the first line's baseline
+        rule = y + NOTE_LEADING
+        assert self._y > rule + LEADING, "the page's text runs into its notes"
+        self._canvas.line(MARGIN, rule, MARGIN + 120, rule)
+        for line in lines:
+            self._draw(line, MARGIN, y, NOTE_SIZE, FONT)
+            y -= NOTE_LEADING
+        self._drawn = True
+
     def bookmark(self, title: str, level: int = 0) -> None:
         """A bookmark to the current page. Each gets its own key, or titles overwrite."""
         key = f"bookmark{self._bookmarks}"
@@ -229,14 +276,19 @@ def _lines_of(text: str | Sequence[str] | None) -> Sequence[str]:
     return (text,) if isinstance(text, str) else text
 
 
-def wrap(text: str, first_widths: Sequence[float] = (), width: float = TEXT_WIDTH) -> list[str]:
+def wrap(
+    text: str,
+    first_widths: Sequence[float] = (),
+    width: float = TEXT_WIDTH,
+    size: float = BODY_SIZE,
+) -> list[str]:
     """Greedy line breaking in the body font. The first lines can be set narrower."""
     lines: list[str] = []
     current = ""
     for word in text.split():
         candidate = f"{current} {word}".strip()
         limit = first_widths[len(lines)] if len(lines) < len(first_widths) else width
-        if current and stringWidth(candidate, FONT, BODY_SIZE) > limit:
+        if current and stringWidth(unmarked(candidate), FONT, size) > limit:
             lines.append(current)
             current = word
         else:

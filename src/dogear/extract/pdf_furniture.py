@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 
 from dogear.extract.pdf_text import ROMAN, Layout, Line, Page
@@ -39,6 +39,7 @@ def strip_furniture(
     min_pages: int,
     min_share: float,
     max_lines: int,
+    keep: Callable[[Page], Collection[Line]] = lambda page: (),
 ) -> list[Page]:
     """Drop page numbers and running headers and footers from the top and bottom of pages.
 
@@ -54,20 +55,24 @@ def strip_furniture(
     heading type are never removed. Lines that `is_label` (such as "Chapter 3") are matched
     on their exact text instead, and their first appearance is kept, because that is where
     the section opens; chapter detection depends on it.
+
+    Lines that `keep` returns for a page are never removed and never counted, whatever
+    they look like: one-line footnotes such as "1 Ibid." repeat like a footer.
     """
     edges = _Edges(layout, is_label, max_lines)
+    kept = [frozenset(keep(page)) for page in pages]
     tops: list[tuple[int, Line]] = []
     bottoms: list[tuple[int, Line]] = []
-    for page in pages:
-        tops += [(page.index, line) for line in edges.candidates(page.lines)]
-        bottoms += [(page.index, line) for line in edges.candidates(page.lines[::-1])]
+    for page, held in zip(pages, kept, strict=True):
+        tops += [(page.index, line) for line in edges.candidates(page.lines, held)]
+        bottoms += [(page.index, line) for line in edges.candidates(page.lines[::-1], held)]
     headers = _running(tops, edges.key, is_label, min_pages, min_share)
     footers = _running(bottoms, edges.key, is_label, min_pages, min_share)
     cleaned = []
-    for page in pages:
-        start = edges.trim(page.lines, headers, page.index)
+    for page, held in zip(pages, kept, strict=True):
+        start = edges.trim(page.lines, held, headers, page.index)
         rest = page.lines[start:]
-        end = len(rest) - edges.trim(rest[::-1], footers, page.index)
+        end = len(rest) - edges.trim(rest[::-1], held, footers, page.index)
         cleaned.append(replace(page, lines=rest[:end]))
     removed = sum(len(page.lines) for page in pages) - sum(len(page.lines) for page in cleaned)
     log.info("Removed %d page-number, header, and footer lines", removed)
@@ -89,7 +94,7 @@ class _Edges:
             return f"label:{line.text.casefold()}"
         return running_key(line.text)
 
-    def candidates(self, edge: Sequence[Line]) -> list[Line]:
+    def candidates(self, edge: Sequence[Line], kept: Collection[Line]) -> list[Line]:
         """The lines that may be a running header or footer here, for counting."""
         start = 0
         while start < len(edge) and self._page_number(edge[start:], self.max_lines):
@@ -98,6 +103,8 @@ class _Edges:
         found = []
         for i in range(min(self.max_lines, len(edge))):
             line = edge[i]
+            if line in kept:
+                continue
             heading = self.layout.is_heading(line)
             # A large "Notes" opening counts as the first "NOTES" header, so it is the one kept.
             if (not heading and self._apart(edge[i:], self.max_lines - i)) or (
@@ -106,10 +113,16 @@ class _Edges:
                 found.append(line)
         return found
 
-    def trim(self, edge: Sequence[Line], running: dict[str, int | None], index: int) -> int:
+    def trim(
+        self,
+        edge: Sequence[Line],
+        kept: Collection[Line],
+        running: dict[str, int | None],
+        index: int,
+    ) -> int:
         """How many lines to drop from this edge of page `index`."""
         start = used = 0
-        while start < len(edge):
+        while start < len(edge) and edge[start] not in kept:
             rest = edge[start:]
             budget = self.max_lines - used
             # A page number doesn't use up the budget, so one can sit beside a full header.
