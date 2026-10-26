@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import subprocess
@@ -5,20 +6,31 @@ from pathlib import Path
 
 import pytest
 from conftest import require_tool
-from epub_builder import Doc, build_epub
+from epub_builder import Doc, Resource, build_epub
+from PIL import Image
 
 from dogear.document import Paragraph
 from dogear.errors import ConfigError, ExtractionError, ToolFailedError, ToolNotFoundError
 from dogear.extract import calibre, extract_book
 
 
+def jpeg() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (60, 90), "navy").save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
 @pytest.fixture
 def epub(tmp_path) -> Path:
-    """What the fake ebook-convert produces."""
+    """What the fake ebook-convert produces: an EPUB 2 with a cover, as Calibre writes."""
     return build_epub(
         tmp_path / "made-by-calibre.epub",
         [Doc("ch1.xhtml", "<h1>One</h1><p>Converted text.</p>")],
         title=None,
+        nav=False,
+        ncx=True,
+        resources=[Resource("cover.jpeg", jpeg(), "image/jpeg", id="cover")],
+        cover_meta="cover",
     )
 
 
@@ -50,6 +62,7 @@ def test_converts_then_reads_the_epub(tmp_path, config, fake_convert, name, fmt)
     assert book.source_path == source
     assert book.source_format == fmt
     assert book.metadata.title == "Story"  # no title in the EPUB: falls back to the original
+    assert book.metadata.cover is not None and book.metadata.cover.media_type == "image/jpeg"
     assert book.sections[0].blocks[1] == Paragraph("Converted text.")
     [(cmd, timeout)] = fake_convert
     assert cmd[:2] == ["/opt/ebook_convert", str(source)]
@@ -129,15 +142,20 @@ def test_uses_the_ebook_convert_named_in_config(tmp_path, config, epub):
 
 def test_real_calibre_round_trip(tmp_path, config):
     program = require_tool("ebook-convert")
+    cover = jpeg()
     source = build_epub(
         tmp_path / "source.epub",
         [Doc("ch1.xhtml", "<h1>Chapter One</h1><p>The quick brown fox.</p>")],
         title="Round Trip",
+        resources=[Resource("cover.jpg", cover, "image/jpeg", properties="cover-image")],
     )
     azw3 = tmp_path / "round-trip.azw3"
     subprocess.run([program, str(source), str(azw3)], check=True, capture_output=True)
     book = calibre.extract(azw3, config)
     assert book.metadata.title == "Round Trip"
     assert book.source_format == "azw3"
+    # The cover survives both conversions (Calibre may re-encode it, so compare the type).
+    assert book.metadata.cover is not None
+    assert book.metadata.cover.media_type == "image/jpeg"
     text = " ".join(b.text for s in book.sections for b in s.blocks if isinstance(b, Paragraph))
     assert "The quick brown fox." in text

@@ -95,7 +95,7 @@ def test_spine_order_with_non_linear_documents_last(tmp_path, config, caplog):
         Doc("popup.xhtml", "<h1>Popup</h1>", linear=False),
         Doc("map.xhtml", "<h1>Map</h1>", linear=False, body_attrs='epub:type="frontmatter"'),
     ]
-    with caplog.at_level(logging.INFO, logger="dogear.extract.epub"):
+    with caplog.at_level(logging.INFO, logger="dogear.extract.epub_sections"):
         book = read(tmp_path, config, docs, spine=["doc3", "doc2", "doc4", "doc1"])
     assert [(s.title, s.kind) for s in book.sections] == [
         ("B", "body"),
@@ -109,7 +109,7 @@ def test_spine_order_with_non_linear_documents_last(tmp_path, config, caplog):
 
 
 def test_nav_document_is_skipped_as_content(tmp_path, config, caplog):
-    with caplog.at_level(logging.INFO, logger="dogear.extract.epub"):
+    with caplog.at_level(logging.INFO, logger="dogear.extract.epub_sections"):
         book = read(tmp_path, config, [Doc("ch1.xhtml", "<p>Text.</p>")], nav_in_spine=True)
     assert [s.source for s in book.sections] == ["OEBPS/ch1.xhtml"]
     assert any("navigation document" in r.message for r in caplog.records)
@@ -172,18 +172,18 @@ def test_book_with_no_text_is_an_error(tmp_path, config):
 
 
 def test_title_from_toc_then_first_heading_then_number(tmp_path, config):
-    docs = [
-        Doc("a.xhtml", "<h1>Heading A</h1><p>A.</p>", toc_title="Contents Title"),
+    docs = [  # files before the first contents entry are sections of their own
         Doc("b.xhtml", "<p>B.</p><h2>Chapter II<br/>The Road</h2>"),
         Doc("c.xhtml", "<p>C.</p>"),
+        Doc("a.xhtml", "<h1>Heading A</h1><p>A.</p>", toc_title="Contents Title"),
     ]
     book = read(tmp_path, config, docs)
     assert [s.title for s in book.sections] == [
-        "Contents Title",
         "Chapter II The Road",
-        "Section 3",
+        "Section 2",
+        "Contents Title",
     ]
-    assert book.sections[1].blocks[1] == Heading(2, "Chapter II\nThe Road")
+    assert book.sections[0].blocks[1] == Heading(2, "Chapter II\nThe Road")
 
 
 def test_epub2_ncx_titles_and_page_list(tmp_path, config):
@@ -755,11 +755,26 @@ def test_standard_ebooks_jekyll_and_hyde(config):
     assert meta.authors == ["Robert Louis Stevenson"]
     assert meta.language == "en-GB"
     assert meta.publisher == "Standard Ebooks"
-    kinds = [s.kind for s in book.sections]
-    assert kinds[0] == "front" and kinds[-1] == "back"
+    # One section per table-of-contents entry, which here is one per file.
+    assert [(s.title, s.kind) for s in book.sections] == [
+        ("Titlepage", "front"),
+        ("Imprint", "front"),
+        ("Story of the Door", "body"),
+        ("Search for Mr. Hyde", "body"),
+        ("Dr. Jekyll Was Quite at Ease", "body"),
+        ("The Carew Murder Case", "body"),
+        ("Incident of the Letter", "body"),
+        ("Remarkable Incident of Dr. Lanyon", "body"),
+        ("Incident at the Window", "body"),
+        ("The Last Night", "body"),
+        ("Dr. Lanyon’s Narrative", "body"),
+        ("Henry Jekyll’s Full Statement of the Case", "body"),
+        ("Colophon", "back"),
+        ("Uncopyright", "back"),
+    ]
     body = [s for s in book.sections if s.kind == "body"]
-    assert len(body) == 10
-    assert body[0].title == "Story of the Door"
     assert all(isinstance(s.blocks[0], Heading) for s in body)
     assert 20_000 < sum(s.word_count() for s in body) < 30_000
     assert " " in all_text(book)  # Standard Ebooks writes "Mr.&nbsp;Utterson"
+    assert meta.cover is not None and meta.cover.media_type == "image/jpeg"
+    assert len(meta.cover.data) == 248_997  # epub/images/cover.jpg, read whole

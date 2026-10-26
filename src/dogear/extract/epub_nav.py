@@ -1,7 +1,11 @@
-"""Read an EPUB's navigation: table-of-contents titles, landmarks, and the print page list.
+"""Read an EPUB's navigation: the table of contents, landmarks, and the print page list.
 
 EPUB 3 books have a navigation document (XHTML with `nav` elements). EPUB 2 books have an
 NCX file instead. Both are read into the same `Navigation`, keyed by archive path.
+
+A table-of-contents entry's depth counts only the entries that link somewhere: an EPUB 3
+heading with no link (`<li><span>Part One</span><ol>...`) groups its children without
+adding a level, because it can't start a section.
 """
 
 from __future__ import annotations
@@ -19,10 +23,18 @@ from dogear.extract.xhtml import EPUB_TYPE, plain_text, resolve_href
 log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class TocEntry:
+    path: str  # archive path of the file it points into
+    fragment: str  # id of the element where it starts, or "" for the start of the file
+    title: str  # may be empty
+    depth: int  # 1 for a top-level entry
+
+
 @dataclass
 class Navigation:
-    # First table-of-contents title that points into each file.
-    titles: dict[str, str] = field(default_factory=dict)
+    # Table-of-contents entries in the order the book lists them.
+    toc: list[TocEntry] = field(default_factory=list)
     # epub:type tokens of the landmark links that point into each file.
     landmarks: dict[str, frozenset[str]] = field(default_factory=dict)
     # Print page labels by file, then by the id of the element where the page begins.
@@ -33,19 +45,15 @@ def read_navigation(archive: EpubArchive, package: Package) -> Navigation:
     """The book's navigation, or an empty one (with a warning) if it can't be read."""
     path = package.nav_path or package.ncx_path
     if path is None:
-        log.info("%s has no table of contents; section titles come from headings.", archive.name)
+        log.info("%s has no table of contents.", archive.name)
         return Navigation()
     if not archive.has(path):
-        log.warning(
-            "The table of contents (%s) is missing from %s; section titles come from headings.",
-            path,
-            archive.name,
-        )
+        log.warning("The table of contents (%s) is missing from %s.", path, archive.name)
         return Navigation()
     try:
         root = archive.parse(path)
     except ExtractionError as e:
-        log.warning("%s Section titles come from headings instead.", e.message)
+        log.warning("%s Dogear will read the book without its table of contents.", e.message)
         return Navigation()
     if package.nav_path:
         return _from_nav_document(root, path)
@@ -57,12 +65,10 @@ def _from_nav_document(root: etree._Element, nav_path: str) -> Navigation:
     toc_read = False
     for nav_el in root.iter("{*}nav"):
         types = set((nav_el.get(EPUB_TYPE) or "").split())
-        links = list(_links(nav_el, nav_path))
         if "toc" in types and not toc_read:
             toc_read = True
-            for path, _, text, _ in links:
-                if text:
-                    nav.titles.setdefault(path, text)
+            nav.toc = list(_toc_entries(nav_el, nav_path))
+        links = list(_links(nav_el, nav_path))
         if "landmarks" in types:
             for path, _, _, tokens in links:
                 nav.landmarks[path] = nav.landmarks.get(path, frozenset()) | tokens
@@ -70,6 +76,21 @@ def _from_nav_document(root: etree._Element, nav_path: str) -> Navigation:
             for path, fragment, text, _ in links:
                 _add_page(nav, path, fragment, text)
     return nav
+
+
+def _toc_entries(nav_el: etree._Element, nav_path: str) -> Iterator[TocEntry]:
+    """Entries of a toc nav element. Depth counts the list items around it that hold a link."""
+    linked: set[etree._Element] = set()
+    for a in nav_el.iter("{*}a"):  # document order: parents before children
+        href = a.get("href")
+        target = resolve_href(nav_path, href) if href else None
+        if target is None:
+            continue
+        items = list(a.iterancestors("{*}li"))
+        if items:
+            linked.add(items[0])
+        depth = max(1, sum(1 for li in items if li in linked))
+        yield TocEntry(target[0], target[1], plain_text(a), depth)
 
 
 def _links(nav_el: etree._Element, nav_path: str) -> Iterator[tuple[str, str, str, frozenset[str]]]:
@@ -85,10 +106,16 @@ def _links(nav_el: etree._Element, nav_path: str) -> Iterator[tuple[str, str, st
 
 def _from_ncx(root: etree._Element, ncx_path: str) -> Navigation:
     nav = Navigation()
-    for point in root.iter("{*}navPoint"):  # document order: parents before children
-        target, label = _ncx_target(point, ncx_path), _ncx_label(point)
-        if target is not None and label:
-            nav.titles.setdefault(target[0], label)
+    nav_map = root.find("{*}navMap")
+    linked: set[etree._Element] = set()  # navPoints whose own target resolves
+    points = nav_map.iter("{*}navPoint") if nav_map is not None else ()
+    for point in points:  # document order: parents before children
+        target = _ncx_target(point, ncx_path)
+        if target is None:
+            continue
+        linked.add(point)
+        depth = sum(1 for anc in point.iterancestors("{*}navPoint") if anc in linked) + 1
+        nav.toc.append(TocEntry(target[0], target[1], _ncx_label(point), depth))
     for page in root.iter("{*}pageTarget"):
         target = _ncx_target(page, ncx_path)
         if target is not None:

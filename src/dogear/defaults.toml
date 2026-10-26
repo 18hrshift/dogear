@@ -25,7 +25,14 @@ paragraph_indent_ratio = 0.7
 
 [epub]
 # Largest size, in megabytes, that one file inside an EPUB may unpack to (zip-bomb guard).
+# Applies to the cover image too.
 max_member_mb = 64
+# Each table-of-contents entry at most this many levels deep starts a new section (one
+# audio track). 2 suits a contents of Parts and Chapters: every chapter gets its own track,
+# and a Part's own pages (its title, an epigraph) get a short one. Use 1 when the second
+# level lists sections within chapters. 0 ignores the table of contents and makes one
+# section per file.
+toc_depth = 2
 
 [ocr]
 dpi = 300

@@ -1,11 +1,11 @@
-"""Open an EPUB archive and read its package: metadata, manifest, and reading order."""
+"""Open an EPUB archive and read its package: metadata, manifest, reading order, and guide."""
 
 from __future__ import annotations
 
 import logging
 import zipfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
 
@@ -121,6 +121,10 @@ class Package:
     spine: list[SpineRef]
     nav_path: str | None  # EPUB 3 navigation document
     ncx_path: str | None  # EPUB 2 table of contents
+    # Manifest id named by an EPUB 2 <meta name="cover" content="...">, if any.
+    cover_id: str | None = None
+    # EPUB 2 guide references as (type, archive path), in the order the book lists them.
+    guide: list[tuple[str, str]] = field(default_factory=list)
 
 
 def find_package_path(archive: EpubArchive) -> str:
@@ -170,6 +174,8 @@ def read_package(archive: EpubArchive, opf_path: str, fallback_title: str) -> Pa
         spine=_spine(spine_el),
         nav_path=next((i.path for i in manifest.values() if "nav" in i.properties), None),
         ncx_path=_ncx_path(spine_el, manifest),
+        cover_id=_cover_id(root),
+        guide=_guide(root, opf_path),
     )
 
 
@@ -202,6 +208,23 @@ def _identifier(root: etree._Element, meta: etree._Element) -> str | None:
     unique_id = root.get("unique-identifier")
     named = next((text for id_, text in found if unique_id and id_ == unique_id), None)
     return named or next((text for _, text in found), None)
+
+
+def _cover_id(root: etree._Element) -> str | None:
+    for el in root.iterfind("{*}metadata/{*}meta"):
+        if (el.get("name") or "").strip().lower() == "cover":
+            return (el.get("content") or "").strip() or None
+    return None
+
+
+def _guide(root: etree._Element, opf_path: str) -> list[tuple[str, str]]:
+    refs = []
+    for el in root.iterfind("{*}guide/{*}reference"):
+        href = el.get("href")
+        target = resolve_href(opf_path, href) if href else None
+        if target is not None:
+            refs.append(((el.get("type") or "").strip().lower(), target[0]))
+    return refs
 
 
 def _manifest(root: etree._Element, opf_path: str) -> dict[str, ManifestItem]:
