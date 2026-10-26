@@ -3,7 +3,7 @@
 Engines differ in how they read "Dr.", "3.14", or "1984", so Dogear spells these out
 itself and every engine gets the same words. Abbreviation tables come from config and
 are English for now; numbers use num2words in the book's language when it supports it.
-Currency, clock times, and units are English only: other languages say
+Currency, clock times, units, and roman numerals are English only: other languages say
 them differently, so their text keeps the digits and symbols for now.
 """
 
@@ -18,6 +18,7 @@ from num2words import num2words
 
 from dogear.config import Config
 from dogear.speech.money import say_money
+from dogear.speech.roman import heading_numerals, keyword_numerals
 from dogear.speech.spoken import ENGLISH, Pair, keep_final_period, say_amount
 from dogear.speech.times import say_times
 from dogear.speech.units import say_units
@@ -59,6 +60,7 @@ class SpeechRules:
     abbreviations: dict[str, str]
     before_name: dict[str, str]
     before_number: dict[str, str]
+    roman_keywords: tuple[str, ...]
     time_suffixes: dict[str, str]
     currency: dict[str, Pair]
     currency_cents: dict[str, Pair]
@@ -72,6 +74,7 @@ class SpeechRules:
             abbreviations=dict(speech["abbreviations"]),
             before_name=dict(speech["abbreviations_before_name"]),
             before_number=dict(speech["abbreviations_before_number"]),
+            roman_keywords=tuple(speech["roman_numeral_keywords"]),
             time_suffixes=dict(speech["time_suffixes"]),
             currency=_pairs(speech["currency"]),
             currency_cents=_pairs(speech["currency_cents"]),
@@ -98,6 +101,18 @@ def normalize_for_speech(text: str, rules: SpeechRules, lang: str | None) -> str
     return _speak(_normalize_punctuation(text), rules, lang)
 
 
+def normalize_heading(text: str, rules: SpeechRules, lang: str | None) -> str:
+    """Like `normalize_for_speech`, for a heading or section title. A roman numeral that
+    numbers the heading is read as a number too: "IV." is "four.", and "CHAPTER I THE
+    BEGINNING" is "CHAPTER one THE BEGINNING". Body text leaves both alone, since there
+    a bare numeral may be a letter and a lone "I" before a word may be the pronoun.
+    """
+    text = _normalize_punctuation(text)
+    if _is_english(lang):
+        text = heading_numerals(text, rules.roman_keywords)
+    return _speak(text, rules, lang)
+
+
 def _speak(text: str, rules: SpeechRules, lang: str | None) -> str:
     if _is_english(lang):
         text = _english_passes(text, rules)
@@ -109,6 +124,9 @@ def _speak(text: str, rules: SpeechRules, lang: str | None) -> str:
 
 
 def _english_passes(text: str, rules: SpeechRules) -> str:
+    # Roman numerals go first: they become digits that the abbreviation and number passes
+    # then read. With "Vol." as a keyword, "Vol. IV" -> "Vol. 4" -> "volume four".
+    text = keyword_numerals(text, rules.roman_keywords)
     text = say_times(text, rules.time_suffixes)
     text = say_money(text, rules.currency, rules.currency_cents, rules.currency_scales)
     return say_units(text, rules.units)

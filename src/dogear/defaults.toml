@@ -38,6 +38,13 @@ max_sentence_chars = 400
 # A period after these never ends a sentence. Titles before names (the table below)
 # and single initials such as "J." are also never sentence ends.
 no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
+# A roman numeral right after one of these words is read as a number: "Chapter IV" is
+# "Chapter four". Each word matches as written here and in capitals ("CHAPTER IV").
+# Headings that are only a numeral ("IV.") are read as numbers too. English only.
+roman_numeral_keywords = [
+    "Chapter", "Part", "Book", "Volume", "Act", "Scene", "Section", "Canto", "Letter",
+    "Appendix", "Stave", "Psalm", "Sonnet", "Article",
+]
 
 # Always expanded.
 [speech.abbreviations]

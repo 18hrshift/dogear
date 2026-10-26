@@ -71,6 +71,8 @@ def test_default_word_tables_are_valid(tmp_path):
         ('[speech.currency_cents]\n"$" = {one = "cent"}\n', "must be two texts"),
         ('[speech.units]\n"" = ["x", "y"]\n', "empty key"),
         ('[speech.abbreviations]\n"" = "x"\n', "empty key"),
+        ("[speech]\nroman_numeral_keywords = 'Chapter'\n", "must be list"),
+        ("[speech]\nroman_numeral_keywords = [1]\n", "Every item in"),
         ("[pdf\n", "not valid TOML"),
     ],
 )

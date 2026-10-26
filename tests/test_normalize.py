@@ -2,7 +2,8 @@ import copy
 
 import pytest
 
-from dogear.speech.normalize import SpeechRules, normalize_for_speech
+from dogear.speech.normalize import SpeechRules, normalize_for_speech, normalize_heading
+from dogear.speech.roman import roman_value
 from dogear.speech.sentences import SentenceRules, split_sentences
 
 
@@ -10,6 +11,12 @@ from dogear.speech.sentences import SentenceRules, split_sentences
 def say(config):
     rules = SpeechRules.from_config(config)
     return lambda text, lang="en": normalize_for_speech(text, rules, lang)
+
+
+@pytest.fixture
+def heading(config):
+    rules = SpeechRules.from_config(config)
+    return lambda text, lang="en": normalize_heading(text, rules, lang)
 
 
 def say_with(config, change):
@@ -141,6 +148,14 @@ def test_config_currency_tables_change_behavior(config):
 def test_config_time_suffixes_change_behavior(config):
     say = say_with(config, lambda speech: speech["time_suffixes"].update(pm="in the afternoon"))
     assert say("at 3:30 pm") == "at three thirty in the afternoon"
+
+
+def test_config_roman_keywords_change_behavior(config):
+    say = say_with(config, lambda speech: speech["roman_numeral_keywords"].append("Vol."))
+    # The numeral becomes digits first, so the "Vol." abbreviation then expands.
+    assert say("Vol. IV") == "volume four"
+    say = say_with(config, lambda speech: speech.update(roman_numeral_keywords=[]))
+    assert say("Chapter IV") == "Chapter IV"
 
 
 def test_empty_tables_turn_passes_off(config):
@@ -336,16 +351,144 @@ def test_units_leave_lookalikes(say, text, expected):
     assert say(text) == expected
 
 
+# Roman numerals.
+@pytest.mark.parametrize(
+    ("token", "value"),
+    [
+        ("I", 1),
+        ("IV", 4),
+        ("IX", 9),
+        ("XIV", 14),
+        ("XL", 40),
+        ("XCIX", 99),
+        ("CCCXCIX", 399),
+        ("ii", 2),
+        ("xiv", 14),
+        ("IIII", None),
+        ("VX", None),
+        ("IC", None),
+        ("L", None),  # lone L and C are labels, not numbers
+        ("C", None),
+        ("MIX", None),  # D and M are never read
+        ("DC", None),
+        ("Iv", None),
+    ],
+)
+def test_roman_value(token, value):
+    assert roman_value(token) == value
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Chapter IV", "Chapter four"),
+        ("CHAPTER XII", "CHAPTER twelve"),
+        ("in Chapter IV we saw", "in Chapter four we saw"),
+        ("Act III, Scene ii", "Act three, Scene two"),
+        ("See Book I.", "See Book one."),
+        ("Part I, Chapter 3", "Part one, Chapter three"),
+        ("Psalm XXIII", "Psalm twenty-three"),
+        ("Letter IV", "Letter four"),
+        ("Appendix II", "Appendix two"),
+        ("Canto XXXIV", "Canto thirty-four"),
+    ],
+)
+def test_roman_numerals_after_keywords(say, text, expected):
+    assert say(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I am here, and I said I would be.",
+        "MIX it, DID it, CIVIL war, LIVID.",
+        "World War II ended.",
+        "Henry VIII and Louis XIV.",
+        "Pope John Paul II",
+        "the part I played",
+        "the Part I played",  # a lone I followed by a word is the pronoun
+        "the Book I'm reading",
+        "the letter X",  # keywords match only as written or in capitals
+        "in chapter IV",
+        "Appendix C",  # a lone C or L is a label
+        "Chapter L",
+        "Chapter DIV",  # D and M are never read
+        "Chapter IIII",  # not a well-formed numeral
+        "Chapter Iv",
+        "Subchapter IV",  # the keyword must be a whole word
+    ],
+)
+def test_roman_numerals_left_alone(say, text):
+    assert say(text) == text
+
+
+def test_lone_i_before_a_word_stays_even_beside_a_converted_numeral(say):
+    # Known limit: the pronoun rule wins, so a lone "I" before a word is left as written.
+    assert say("Book I and Book II") == "Book I and Book two"
+
+
+# Headings.
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("IV", "four"),
+        ("IV.", "four."),
+        ("  XII  ", "twelve"),
+        ("I", "one"),
+        ("I.", "one."),
+        ("X", "ten"),
+        ("iv", "four"),
+        ("IV. The Return", "four. The Return"),
+        ("I. Loomings", "one. Loomings"),
+        ("XIV: Home", "fourteen: Home"),
+        ("Chapter I", "Chapter one"),
+        ("CHAPTER I THE BEGINNING", "CHAPTER one THE BEGINNING"),
+        ("Book I Read", "Book one Read"),  # at a heading's start, the keyword wins
+        ("Chapter IV: The $5 Question", "Chapter four: The five dollars Question"),
+        ("Stave I: Marley's Ghost", "Stave one: Marley's Ghost"),
+    ],
+)
+def test_heading_numerals(heading, text, expected):
+    assert heading(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I Know Why the Caged Bird Sings",
+        "I, Claudius",
+        "I. M. Pei",  # initials, not a number
+        "V. S. Naipaul",
+        "V for Vendetta",
+        "World War II",
+        "The Part I Played",
+        "MIX",
+        "DC",
+        "The Letter",
+    ],
+)
+def test_heading_numerals_left_alone(heading, text):
+    assert heading(text) == text
+
+
+def test_body_text_does_not_read_a_bare_numeral(say):
+    assert say("IV.") == "IV."
+    assert say("I.") == "I."
+
+
 # Languages.
-def test_new_rules_are_english_only(say):
+def test_new_rules_are_english_only(say, heading):
     assert say("$5", lang="fr") == "$cinq"
     assert say("5 km", lang="de") == "fünf km"
     assert say("3:30 pm", lang="fr") == "trois:trente pm"
+    assert say("Chapitre IV", lang="fr") == "Chapitre IV"
+    assert heading("IV", lang="fr") == "IV"
 
 
-def test_english_rules_cover_regional_and_unknown_languages(say):
+def test_english_rules_cover_regional_and_unknown_languages(say, heading):
     assert say("$5", lang="en-GB") == "five dollars"
     assert say("5 km", lang=None) == "five kilometers"
+    assert heading("IV", lang=None) == "four"
 
 
 # The sentence splitter runs first and must leave these whole.
