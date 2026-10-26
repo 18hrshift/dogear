@@ -8,36 +8,82 @@ Dogear is an open talking-book maker: books in, navigable audio out, built first
 and low-vision listeners. Read [`ROADMAP.md`](ROADMAP.md) before starting work. It defines
 each phase and what "done" means.
 
-**Current state (2026-10-24):** planning only. No code yet. Phase 0 is next.
+**Current state:** Phase 0 (foundation). Dogear reads EPUB, PDF, and Kindle books into a
+structured document, cleans text for speech, OCRs scanned PDFs, and assembles MP3/M4B
+files with ffmpeg. It does not make speech yet; that's Phase 1.
+
+## Working here
+
+```bash
+uv sync             # install, including dev tools
+bash test.sh        # ruff check + ruff format check + pytest; must pass before every merge
+uv run dogear --help
+```
+
+Some tests need ffmpeg or Tesseract and skip without them. CI installs both and sets
+`DOGEAR_REQUIRE_TOOLS=ffmpeg,ffprobe,tesseract`, which turns those skips into failures.
+
+## Layout
+
+| Path | Job |
+|---|---|
+| `src/dogear/document.py` | The structured book every stage reads: sections and blocks (headings, paragraphs, lists, tables, images, notes, page markers). Display text only. |
+| `src/dogear/defaults.toml`, `config.py` | Every default setting, and loading and validating a user's TOML on top. |
+| `src/dogear/errors.py` | Errors a user can fix, each with a hint. Anything else is a bug. |
+| `src/dogear/tools.py` | Finding and running ffmpeg, Tesseract, and Calibre with install hints. |
+| `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `xhtml`, `xhtml_blocks`, `safe_xml`), `pdf.py` (+ `pdf_text`, `pdf_chapters`, `pdf_sections`), `calibre.py` for Kindle. |
+| `src/dogear/speech/` | `sentences.py` splits display text into sentences; `normalize.py` rewrites a sentence into what the voice should say. |
+| `src/dogear/audio.py` | Joining audio and building M4B files with chapter markers. |
+| `src/dogear/ocr.py` | Adding a text layer to scanned PDFs. |
+| `src/dogear/cli.py` | The `dogear` command. |
 
 ## Project rules
 
 1. **Accessibility is a requirement.** Every user-facing surface (CLI output, error messages,
-   web UI, docs) must work with a screen reader. In the CLI: no animated spinners when stdout
-   isn't a terminal, plain progress lines, and errors that say what to do next. Web UI
-   targets WCAG 2.2 AA.
-2. **Structure, not text dumps.** Extractors produce the structured document model (headings
-   with levels, footnotes, images with alt text, print-page markers, language). Never
-   flatten to plain text before the speech stage.
-3. **Licenses matter.** Core code is Apache-2.0. Don't add a GPL dependency to the core
-   package; GPL engines (for example Piper) ship as separate optional packages. Never make a
-   non-commercial or custom-licensed voice the default. Record each engine's license in the docs.
-4. **Offline by default.** Anything that sends book text off the machine is opt-in and warns first.
-5. **Config is the single source of truth.** Paths, model IDs, engine settings, and defaults
-   live in config and are read from there. A test should prove changing the config changes
-   behavior.
-6. **Small modules.** One job per module: an extractor per format, an engine per voice
+   web UI, docs) must work with a screen reader. In the CLI: plain sentences and numbered
+   lists, no tables, colors, or animations, progress as occasional plain lines, and errors
+   that say what to do next. Web UI targets WCAG 2.2 AA.
+2. **Structure, not text dumps.** Extractors produce the structured document model. Never
+   flatten to plain text before the speech stage. The model holds display text; spoken forms
+   are made per sentence in `speech/` and never stored.
+3. **Licenses matter.** Core code is Apache-2.0. No GPL or AGPL dependency in the core
+   package (PyMuPDF and EbookLib were rejected for being AGPL); GPL engines such as Piper
+   ship as separate optional packages. LGPL is allowed only when used unmodified, and must
+   be listed below. Never make a non-commercial or custom-licensed voice the default.
+4. **Book files are untrusted input.** Never unpack them to disk, never let them trigger
+   network access or external entities, and bound anything a file can make large.
+5. **Offline by default.** Anything that sends book text off the machine is opt-in and warns first.
+6. **Config is the single source of truth.** Defaults live only in `defaults.toml` and are
+   read from the loaded config. A test should prove changing a setting changes behavior.
+7. **Small modules.** One job per module: an extractor per format, an engine per voice
    backend, a packager per output format.
-7. **Fail loudly.** Raise with a clear message. Never swallow errors or silently skip content.
-8. **Test what you build.** `bash test.sh` must pass before every merge (arrives in Phase 0).
-   Voice engines are tested with mocks; CI never needs a GPU or an API key.
-9. **Docs are claims.** Don't document a command, flag, or format that isn't built. When you
-   finish a roadmap item, tick it in `ROADMAP.md` in the same commit.
-10. **No secrets, no books.** API keys go in `.env` (gitignored). Only public-domain books go
-    in the repo, with their source noted. Never commit generated audio.
+8. **Fail loudly.** Raise with a clear message. Never swallow errors or silently drop content:
+   front and back matter are classified, not removed.
+9. **Test what you build.** Voice engines are tested with mocks; CI never needs a GPU or an
+   API key.
+10. **Docs are claims.** Don't document a command, flag, or format that isn't built. When you
+    finish a roadmap item, tick it in `ROADMAP.md` in the same commit.
+11. **No secrets, no books.** API keys go in `.env` (gitignored). Only public-domain books go
+    in the repo, listed in `tests/fixtures/README.md`. Never commit generated audio.
+
+## Runtime dependency licenses
+
+Checked with `uv tree --no-dev` when added. Recheck when adding or upgrading.
+
+| Package | License | Used for |
+|---|---|---|
+| lxml | BSD-3-Clause | EPUB and XHTML parsing |
+| pdfplumber, pdfminer.six | MIT | PDF text, positions, font sizes |
+| pypdf | BSD-3-Clause | PDF outline, page labels, merging |
+| pypdfium2 | BSD-3-Clause / Apache-2.0 | Rendering PDF pages for OCR |
+| Pillow | MIT-CMU | Page images for OCR |
+| num2words (+ docopt, MIT) | **LGPL-2.1**, used unmodified | Numbers to words |
+| cryptography, charset-normalizer, cffi, pycparser | Apache-2.0 or BSD / MIT | pdfminer.six dependencies |
+
+External programs (not bundled): ffmpeg, Tesseract, and Calibre.
 
 ## Prior art
 
-Dogear grew out of `github.com/18hrshift/audiobook-maker`. Its `AGENTS.md` lists which parts
-work (chapter detection, text cleanup) and which don't (all three of its TTS backends).
-Port the working parts with their tests; rewrite the rest.
+Dogear grew out of `github.com/18hrshift/audiobook-maker`. Phase 0 ported its chapter
+detection, text cleanup, number and abbreviation expansion, OCR, and M4B assembly, and
+fixed bugs found on the way. Its TTS backends were not ported (all three were broken).
