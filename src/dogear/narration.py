@@ -24,7 +24,7 @@ from dogear.document import (
     Section,
     Table,
 )
-from dogear.speech.normalize import SpeechRules, normalize_for_speech
+from dogear.speech.normalize import SpeechRules, normalize_for_speech, normalize_heading
 from dogear.speech.sentences import SentenceRules, split_sentences
 
 log = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ class _Narrator:
     def _heading(self, out: list[Utterance], text: str, lang: str | None) -> None:
         if out[-1].spoken:
             _extend_pause(out, self.pauses["paragraph_ms"])  # a breath before it, too
-        spoken = normalize_for_speech(text, self.speech, lang)
+        spoken = normalize_heading(text, self.speech, lang)
         if not spoken.endswith(_ENDS_CLAUSE):
             spoken += "."  # so the voice closes the heading instead of trailing off
         out.append(Utterance(text, spoken, self.pauses["heading_ms"]))
