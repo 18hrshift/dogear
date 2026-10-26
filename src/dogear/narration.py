@@ -125,7 +125,9 @@ class _Narrator:
                             self._note(out, note, block_lang(note, lang))
             case ListBlock(items=items, ordered=ordered):
                 for n, item in enumerate(items, start=1):
-                    self._sentences(out, f"{n}. {item}" if ordered else item, lang, 0)
+                    # "1: Buy milk." stays one utterance; "1. Buy milk." would split in two.
+                    numbered = f"{n}: {item}" if ordered else item
+                    self._sentences(out, _sentence(numbered), lang, 0)
                     _extend_pause(out, self.pauses["list_item_ms"])
                 _extend_pause(out, self.pauses["paragraph_ms"])
             case Table():

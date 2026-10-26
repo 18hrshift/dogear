@@ -62,7 +62,7 @@ class Progress:
         if self.cached_sentences:
             parts.append(f"{self.cached_sentences:,} already made in an earlier run")
         total = self.new_sentences + self.cached_sentences
-        return f"Spoke {total:,} sentences ({', '.join(parts)}) in {took}."
+        return f"Spoke {_count(total, 'sentence')} ({', '.join(parts)}) in {took}."
 
     def _time_left(self) -> str:
         if self.new_words == 0 or self.render_seconds < 1:
@@ -93,4 +93,4 @@ def describe_duration(seconds: float) -> str:
 
 
 def _count(n: int, noun: str) -> str:
-    return f"{n} {noun}{'' if n == 1 else 's'}"
+    return f"{n:,} {noun}{'' if n == 1 else 's'}"

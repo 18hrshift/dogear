@@ -157,15 +157,15 @@ def test_ordered_list_items_are_numbered(config, pause):
     utterances = narrate(
         config, Heading(1, "H"), ListBlock(("milk", "eggs"), ordered=True), Paragraph("Done.")
     )
-    assert " ".join(spoken(utterances)) == "H. one. milk two. eggs Done."
+    assert " ".join(spoken(utterances)) == "H. one: milk. two: eggs. Done."
     pauses = dict(heard(utterances))
-    assert pauses["one. milk"] == pause["list_item_ms"]
-    assert pauses["two. eggs"] == pause["paragraph_ms"]
+    assert pauses["one: milk."] == pause["list_item_ms"]
+    assert pauses["two: eggs."] == pause["paragraph_ms"]
 
 
-def test_ordered_items_keep_their_numbers_before_capitals(config):
+def test_ordered_items_stay_one_utterance_before_capitals(config):
     utterances = narrate(config, ListBlock(("Buy milk.", "Get eggs."), ordered=True))
-    assert " ".join(spoken(utterances)[1:]) == "one. Buy milk. two. Get eggs."
+    assert spoken(utterances)[1:] == ["one: Buy milk.", "two: Get eggs."]
 
 
 def test_unordered_list_items_are_not_numbered(config, pause):
@@ -465,8 +465,8 @@ def test_pause_settings_change_the_pauses(config, pause):
         ("H.", 333),
         ("One.", 111),
         ("Two.", 555),
-        ("a", 144),
-        ("b", 222),
+        ("a.", 144),
+        ("b.", 222),
         ("End.", 777),
     ]
 

@@ -29,7 +29,10 @@ def unpack_spacy_model(models_dir: Path) -> Path:
             if member.is_dir() or not member.filename.startswith(prefix):
                 continue
             relative = PurePosixPath(member.filename[len(prefix) :])
-            if relative.is_absolute() or ".." in relative.parts:
+            # A drive ("C:") or backslash in a part could escape the folder on Windows.
+            if relative.is_absolute() or any(
+                part == ".." or ":" in part or "\\" in part for part in relative.parts
+            ):
                 raise DownloadError(f"{wheel.name} contains an unsafe path: {member.filename}")
             destination = staging.joinpath(*relative.parts)
             destination.parent.mkdir(parents=True, exist_ok=True)
