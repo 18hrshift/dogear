@@ -85,11 +85,24 @@ def merge_lines(pieces: Sequence[Line]) -> Line:
 
 
 @dataclass(frozen=True)
+class Figure:
+    """An image on a page, big enough to be content rather than decoration."""
+
+    top: float
+    bottom: float
+    x0: float
+    x1: float
+    seq: int = 0  # position in reading order on its page, counted with the lines
+    caption: tuple[Line, ...] = ()  # its printed caption, taken out of the page's lines
+
+
+@dataclass(frozen=True)
 class Page:
     index: int  # 0-based position in the file
     label: str  # the printed page number, such as "xii" or "42"
     lines: tuple[Line, ...]
-    has_images: bool = False
+    has_images: bool = False  # any image at all, even a tiny one
+    figures: tuple[Figure, ...] = ()
 
     @property
     def char_count(self) -> int:

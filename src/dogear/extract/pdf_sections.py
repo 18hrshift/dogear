@@ -1,21 +1,35 @@
 """Build document sections from cleaned PDF pages and the boundaries between them.
 
-Each page is first cut into runs of body text and subheadings (`pdf_headings`), so that
-subheading styles can be ranked across the whole book before any section is written.
+Each page is first cut into runs of body text and subheadings (`pdf_headings`), with its
+figures where they sit in reading order, so that subheading styles can be ranked across
+the whole book before any section is written.
+
+A figure never splits a paragraph: one that sits inside a paragraph, or between a
+paragraph and its continuation on the next page or column, comes right after it.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import groupby
 
-from dogear.document import Block, Heading, PageMarker, Paragraph, Section, SectionKind
+from dogear.document import (
+    Block,
+    Heading,
+    Image,
+    PageMarker,
+    Paragraph,
+    Section,
+    SectionKind,
+)
 from dogear.extract.pdf_chapters import PATTERN_LINES, Boundary
 from dogear.extract.pdf_headings import Run, Style, find_subheadings, heading_levels
 from dogear.extract.pdf_text import (
     HEADING_MAX_LINES,
+    Figure,
     KeepHyphen,
     Layout,
     Line,
@@ -42,7 +56,7 @@ def build_sections(
     """
     plans = []
     front = pages[: boundaries[0].page]
-    if any(page.lines for page in front):
+    if any(page.lines or page.figures for page in front):
         plans.append(_plan(FRONT_MATTER_TITLE, "front", front, None, layout))
     ends = [b.page for b in boundaries[1:]] + [len(pages)]
     for boundary, end in zip(boundaries, ends, strict=True):
@@ -54,9 +68,12 @@ def build_sections(
         for plan in plans
         for page in plan.pages
         for run in (*page.before, *page.after)
-        if run.style is not None
+        if isinstance(run, Run) and run.style is not None
     )
     return [_write(plan, _BlockWriter(layout, levels, keep_hyphen), lang) for plan in plans]
+
+
+Part = Run | Figure
 
 
 @dataclass(frozen=True)
@@ -64,9 +81,9 @@ class _PagePlan:
     """A page of a section, around the section's title if it is printed here."""
 
     label: str
-    before: list[Run]
+    before: list[Part]
     title: tuple[Line, ...]  # empty when the title isn't on this page
-    after: list[Run]
+    after: list[Part]
 
 
 @dataclass(frozen=True)
@@ -88,15 +105,33 @@ def _plan(
     for i, page in enumerate(pages):
         span = find_heading(page.lines, heading_title, layout) if i == 0 and heading_title else None
         start, count = span or (len(page.lines), 0)
+        title_lines = page.lines[start : start + count]
+        split = title_lines[0].seq if title_lines else math.inf
         planned.append(
             _PagePlan(
                 page.label,
-                find_subheadings(page.lines[:start], layout),
-                page.lines[start : start + count],
-                find_subheadings(page.lines[start + count :], layout),
+                _parts(page.lines[:start], [f for f in page.figures if f.seq < split], layout),
+                title_lines,
+                _parts(
+                    page.lines[start + count :], [f for f in page.figures if f.seq > split], layout
+                ),
             )
         )
     return _SectionPlan(title, kind, _page_span(pages), planned)
+
+
+def _parts(lines: Sequence[Line], figures: Sequence[Figure], layout: Layout) -> list[Part]:
+    """Runs of body text and subheadings, with each figure where it sits in reading order."""
+    parts: list[Part] = []
+    waiting = sorted(figures, key=lambda figure: figure.seq)
+    run: list[Line] = []
+    for line in lines:
+        while waiting and waiting[0].seq < line.seq:
+            parts += find_subheadings(run, layout)
+            parts.append(waiting.pop(0))
+            run = []
+        run.append(line)
+    return parts + find_subheadings(run, layout) + waiting
 
 
 def _write(plan: _SectionPlan, writer: _BlockWriter, lang: str | None) -> Section:
@@ -141,7 +176,8 @@ def _page_span(pages: Sequence[Page]) -> str:
 
 class _BlockWriter:
     """Collects a section's blocks, holding back the last paragraph of each page, and of
-    each column, in case the text that follows carries it on."""
+    each column, in case the text that follows carries it on. Figures found while a
+    paragraph is held back wait for it."""
 
     def __init__(
         self, layout: Layout, levels: dict[Style, int], keep_hyphen: KeepHyphen | None
@@ -151,9 +187,11 @@ class _BlockWriter:
         self._keep_hyphen = keep_hyphen
         self._blocks: list[Block] = []
         self._open: tuple[Line, ...] = ()
+        self._waiting: list[Block] = []  # figures to place after the open paragraph
 
-    def page(self, label: str, runs: Sequence[Run]) -> None:
-        body = runs[0].lines if runs and runs[0].style is None else ()
+    def page(self, label: str, parts: Sequence[Part]) -> None:
+        first = next((part for part in parts if isinstance(part, Run)), None)
+        body = first.lines if first is not None and first.style is None else ()
         flows = _flows(body)
         first = split_paragraphs(flows[0], self.layout) if flows else None
         if first is None or not continues(self._open, first, self.layout):
@@ -161,11 +199,11 @@ class _BlockWriter:
         # A paragraph carried on from the last page is still open, so this page's marker
         # goes before the whole of it: jumping to the page starts a little early, never late.
         self._blocks.append(PageMarker(label))
-        self._runs(runs)
+        self._parts(parts)
 
-    def same_page(self, runs: Sequence[Run]) -> None:
+    def same_page(self, parts: Sequence[Part]) -> None:
         self._flush()
-        self._runs(runs)
+        self._parts(parts)
 
     def heading(self, lines: Sequence[Line], level: int) -> None:
         self._flush()
@@ -175,31 +213,40 @@ class _BlockWriter:
         self._flush()
         return self._blocks
 
-    def _runs(self, runs: Sequence[Run]) -> None:
-        for run in runs:
-            if run.style is not None:
-                self.heading(run.lines, self._levels[run.style])
-                continue
-            for flow in _flows(run.lines):
-                self._text(flow)
+    def _parts(self, parts: Sequence[Part]) -> None:
+        for part in parts:
+            if isinstance(part, Figure):
+                self._figure(part)
+            elif part.style is not None:
+                self.heading(part.lines, self._levels[part.style])
+            else:
+                for flow in _flows(part.lines):
+                    self._text(flow)
+
+    def _figure(self, figure: Figure) -> None:
+        # A PDF image has no description, so alt is None (not "": that means decorative).
+        image = Image(alt=None, caption=self._join(figure.caption))
+        if self._open:
+            self._waiting.append(image)
+        else:
+            self._blocks.append(image)
 
     def _text(self, lines: Sequence[Line]) -> None:
         """Paragraphs from one flow of text, the first carrying on the open one if it can."""
         text = split_paragraphs(lines, self.layout)
         paragraphs = list(text.paragraphs)
         if continues(self._open, text, self.layout):
-            paragraphs[0] = self._open + paragraphs[0]
-            self._open = ()
-        else:
+            self._open += paragraphs.pop(0)
+        for group in paragraphs:
             self._flush()
-        for group in paragraphs[:-1]:
-            self._blocks.append(Paragraph(self._join(group)))
-        self._open = paragraphs[-1] if paragraphs else ()
+            self._open = group
 
     def _flush(self) -> None:
         if self._open:
             self._blocks.append(Paragraph(self._join(self._open)))
             self._open = ()
+        self._blocks += self._waiting
+        self._waiting = []
 
     def _join(self, lines: Sequence[Line]) -> str:
         return join_lines((line.text for line in lines), self._keep_hyphen)

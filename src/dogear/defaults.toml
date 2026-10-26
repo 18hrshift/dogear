@@ -33,6 +33,10 @@ column_min_lines = 3
 # ...and each side at least this many times the main font size wide, so the page numbers
 # down the side of a table of contents stay beside their titles.
 column_min_width_ratio = 8.0
+# Images covering at least this share of the page are read as images (with no
+# description: a PDF rarely has one); smaller ones are taken as decoration and skipped.
+# 0.02 is a picture about 1.4 inches (3.5 cm) square on a US Letter or A4 page.
+image_min_page_share = 0.02
 # A new paragraph starts where the space between two lines is this many times the usual
 # line spacing.
 paragraph_gap_ratio = 1.3

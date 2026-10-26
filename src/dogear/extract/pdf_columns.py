@@ -19,7 +19,9 @@ How a page is read:
   with at least `min_lines` lines on each side, each side wide enough, is read as
   columns. Each side is checked again for columns of its own.
 
-A page that has no such block is left exactly as read.
+A page that has no such block is left exactly as read. Figures take part like rows of
+one part each: a figure in a column is read in that column, and one across the gutter
+spans it. They never make a column on their own: only lines count.
 
 Known limits: a table with wide, evenly spaced columns is read one column at a time, as
 text columns are. A line short enough to stay on one side of the gutter joins that
@@ -35,7 +37,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from itertools import groupby
 
-from dogear.extract.pdf_text import Line, Page, common_size, merge_lines
+from dogear.extract.pdf_text import Figure, Line, Page, common_size, merge_lines
 
 log = logging.getLogger(__name__)
 
@@ -53,27 +55,48 @@ class ColumnRules:
 
 
 def order_columns(page: Page, rules: ColumnRules) -> Page:
-    """`page` with its lines in reading order, numbered in `Line.seq`, and each line's
-    column or full-width run of text numbered in `Line.flow`."""
+    """`page` with its lines and figures in reading order, numbered in `seq`, and each
+    line's column or full-width run of text numbered in `Line.flow`."""
     if not page.lines:
-        return page
+        return replace(page, figures=tuple(replace(f, seq=i) for i, f in enumerate(page.figures)))
     unit = common_size(page.lines)
     finder = _Finder(rules.gap_ratio * unit, rules.min_lines, rules.min_width_ratio * unit)
-    items = [
-        _Item(replace(line, parts=()), line.parts or (replace(line, parts=()),))
-        for line in page.lines
-    ]
-    flows = [flow for flow in finder.order(items) if flow]
-    ordered = [replace(line, flow=n) for n, flow in enumerate(flows) for line in flow]
-    return replace(page, lines=tuple(replace(line, seq=i) for i, line in enumerate(ordered)))
+    lines: list[Line] = []
+    figures: list[Figure] = []
+    flows = [flow for flow in finder.order(_items(page)) if flow]
+    for n, flow in enumerate(flows):
+        for thing in flow:
+            seq = len(lines) + len(figures)
+            if isinstance(thing, Figure):
+                figures.append(replace(thing, seq=seq))
+            else:
+                lines.append(replace(thing, flow=n, seq=seq))
+    return replace(page, lines=tuple(lines), figures=tuple(figures))
+
+
+Piece = Line | Figure
 
 
 @dataclass(frozen=True)
 class _Item:
-    """A row of the page, or the part of one that falls on one side of a gutter."""
+    """A row of the page or a figure, or the part of a row on one side of a gutter."""
 
-    whole: Line  # the row as one line, when it isn't cut
-    pieces: tuple[Line, ...]  # its parts, left to right
+    whole: Piece  # the row as one line, when it isn't cut, or the figure
+    pieces: tuple[Piece, ...]  # its parts, left to right
+
+
+def _items(page: Page) -> list[_Item]:
+    """The page's rows as read, with each figure before the first row that starts below
+    its top."""
+    figures = sorted(page.figures, key=lambda figure: figure.top)
+    items = []
+    for line in page.lines:
+        while figures and figures[0].top <= line.top:
+            items.append(_Item(figures[0], (figures[0],)))
+            figures.pop(0)
+        row = replace(line, parts=())
+        items.append(_Item(row, line.parts or (row,)))
+    return items + [_Item(figure, (figure,)) for figure in figures]
 
 
 @dataclass(frozen=True)
@@ -82,7 +105,7 @@ class _Finder:
     min_lines: int
     min_width: float
 
-    def order(self, items: Sequence[_Item]) -> list[list[Line]]:
+    def order(self, items: Sequence[_Item]) -> list[list[Piece]]:
         """The rows' lines in reading order, as flows: each a column or a run of rows
         read where they sit."""
         if sum(len(item.pieces) for item in items) >= 2 * self.min_lines:
@@ -98,7 +121,7 @@ class _Finder:
         pieces = [piece for item in items for piece in item.pieces]
         left = min(piece.x0 for piece in pieces)
         right = max(piece.x1 for piece in pieces)
-        starts = Counter(round(piece.x0) for piece in pieces)
+        starts = Counter(round(piece.x0) for piece in pieces if isinstance(piece, Line))
         return sorted(
             x
             for x, count in starts.items()
@@ -106,11 +129,11 @@ class _Finder:
             and left + self.min_width + self.gap <= x <= right - self.min_width
         )
 
-    def _split(self, items: Sequence[_Item], gutter: float) -> list[list[Line]] | None:
+    def _split(self, items: Sequence[_Item], gutter: float) -> list[list[Piece]] | None:
         """The flows in reading order with columns split at `gutter`, or None when no
         block of rows forms columns there."""
 
-        def side(piece: Line) -> int | None:  # 0: left, 1: right, None: across
+        def side(piece: Piece) -> int | None:  # 0: left, 1: right, None: across
             if piece.x1 <= gutter - self.gap + _ROUNDING:
                 return 0
             if piece.x0 >= gutter - _ROUNDING:
@@ -120,7 +143,7 @@ class _Finder:
         def spans(item: _Item) -> bool:
             return any(side(piece) is None for piece in item.pieces)
 
-        out: list[list[Line]] = []
+        out: list[list[Piece]] = []
         loose: list[_Item] = []  # rows read where they sit, between column blocks
         found = False
         for spanning, run in groupby(items, key=spans):
@@ -140,19 +163,23 @@ class _Finder:
         return out + self.order(loose)
 
     def _columns(self, items: Sequence[_Item]) -> bool:
-        if len(items) < self.min_lines:
+        """Whether one side of a block has enough lines, and is wide enough, to be a column."""
+        text = [[p for p in item.pieces if isinstance(p, Line)] for item in items]
+        pieces = [piece for row in text for piece in row]
+        if sum(bool(row) for row in text) < self.min_lines:
             return False
-        pieces = [piece for item in items for piece in item.pieces]
         return max(p.x1 for p in pieces) - min(p.x0 for p in pieces) >= self.min_width
 
 
-def _side_items(items: Sequence[_Item], on_side: Callable[[Line], bool]) -> list[_Item]:
-    """The part of each row on one side of a gutter, skipping rows with nothing there."""
+def _side_items(items: Sequence[_Item], on_side: Callable[[Piece], bool]) -> list[_Item]:
+    """The part of each item on one side of a gutter, skipping items with nothing there.
+    Only rows of text have more than one part, so a cut item is always a line."""
     out = []
     for item in items:
         pieces = tuple(piece for piece in item.pieces if on_side(piece))
         if pieces == item.pieces:
             out.append(item)
         elif pieces:
-            out.append(_Item(merge_lines(pieces), pieces))
+            lines = [piece for piece in pieces if isinstance(piece, Line)]
+            out.append(_Item(merge_lines(lines), pieces))
     return out

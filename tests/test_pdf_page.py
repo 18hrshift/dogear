@@ -8,7 +8,7 @@ from pdf_builder import ALICE, MARGIN, PdfBuilder, novel
 
 from dogear.extract.pdf_page import ReadSettings, read_page
 
-SETTINGS = ReadSettings(column_gap_ratio=0.8)
+SETTINGS = ReadSettings(column_gap_ratio=0.8, image_min_page_share=0.02)
 
 
 def read(path, settings=SETTINGS):
@@ -60,7 +60,7 @@ def test_column_gap_ratio_sets_where_lines_are_cut(tmp_path):
     path = pdf.save()
     [page] = read(path)
     assert len(page.lines[0].parts) == 2
-    [page] = read(path, ReadSettings(column_gap_ratio=8.0))
+    [page] = read(path, ReadSettings(column_gap_ratio=8.0, image_min_page_share=0.02))
     assert page.lines[0].parts == ()
 
 

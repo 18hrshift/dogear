@@ -155,6 +155,11 @@ def test_unknown_method_fails_before_reading(tmp_path, config):
         ("paragraph_indent_ratio", 0),
         ("hyphen_evidence_min", 0),
         ("hyphen_without_evidence", "sometimes"),
+        ("column_gap_ratio", 0),
+        ("column_min_lines", 0),
+        ("column_min_width_ratio", 0),
+        ("image_min_page_share", 0),
+        ("image_min_page_share", 1.5),
     ],
 )
 def test_out_of_range_settings(tmp_path, config, key, value):

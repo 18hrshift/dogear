@@ -170,6 +170,25 @@ class PdfBuilder:
         self._canvas.drawInlineImage(Image.new("L", (40, 40), 128), MARGIN, 200, 400, 400)
         self._drawn = True
 
+    def figure(
+        self,
+        width: float = 200,
+        height: float = 150,
+        *,
+        x: float = MARGIN,
+        caption: str | None = None,
+        caption_size: float = 9,
+    ) -> None:
+        """A grey picture in the flow of text, at the current line, then its caption."""
+        if self._y - height < MARGIN:
+            self.new_page()
+        top = self._y + BODY_SIZE  # where the current line's letters would reach
+        self._canvas.drawInlineImage(Image.new("L", (8, 8), 96), x, top - height, width, height)
+        self._y = top - height - LEADING
+        self._drawn = True
+        if caption is not None:
+            self.line(caption, x=x, size=caption_size)
+
     def bookmark(self, title: str, level: int = 0) -> None:
         """A bookmark to the current page. Each gets its own key, or titles overwrite."""
         key = f"bookmark{self._bookmarks}"

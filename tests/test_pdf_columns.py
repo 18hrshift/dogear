@@ -9,7 +9,7 @@ from pdf_lines import PITCH, ln
 from dogear.document import Paragraph
 from dogear.extract.pdf import extract
 from dogear.extract.pdf_columns import ColumnRules, order_columns
-from dogear.extract.pdf_text import Line, Page, merge_lines
+from dogear.extract.pdf_text import Figure, Line, Page, merge_lines
 
 LEFT, RIGHT = 72.0, 318.0  # where two columns start
 WIDTH = 222.0  # their width
@@ -199,3 +199,31 @@ def test_column_settings_come_from_config(tmp_path, config, key, value):
     path = page_with_columns(tmp_path / "c.pdf")
     config["pdf"][key] = value  # the 24 pt gutter, 5 to 9 lines, 222 pt columns fall short
     assert all_paragraphs(extract(path, config)) != [ALICE[0], *ALICE[1:5], ALICE[2]]
+
+
+def test_figure_in_a_column_is_read_in_that_column(rules):
+    lines = [
+        *two_columns(72, 4),
+        *(row(72 + i * PITCH, (f"left {i}", LEFT, LEFT + WIDTH)) for i in range(4, 8)),
+    ]
+    figure = Figure(top=72 + 4 * PITCH, bottom=72 + 8 * PITCH, x0=RIGHT, x1=540)
+    ordered = order_columns(Page(0, "1", tuple(lines), figures=(figure,)), rules)
+    assert texts(ordered) == [f"left {i}" for i in range(8)] + [f"right {i}" for i in range(4)]
+    assert [f.seq for f in ordered.figures] == [12]  # after the right column's lines
+
+
+def test_figure_across_the_columns_is_read_where_it_sits(rules):
+    lines = [*two_columns(72, 4), *two_columns(300, 4)]
+    figure = Figure(top=150, bottom=280, x0=LEFT, x1=540)
+    ordered = order_columns(Page(0, "1", tuple(lines), figures=(figure,)), rules)
+    assert [f.seq for f in ordered.figures] == [8]  # between the two blocks of columns
+    assert texts(ordered)[7:9] == ["right 3", "left 0"]
+
+
+def test_figures_alone_never_make_columns(rules):
+    figures = tuple(
+        Figure(top=72 + i * 100, bottom=150 + i * 100, x0=RIGHT, x1=540) for i in range(4)
+    )
+    lines = tuple(row(72 + i * PITCH, (f"line {i}", LEFT, 290)) for i in range(20))
+    ordered = order_columns(Page(0, "1", lines, figures=figures), rules)
+    assert texts(ordered) == [line.text for line in lines]

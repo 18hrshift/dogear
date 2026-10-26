@@ -33,11 +33,12 @@ from dogear.extract.pdf_chapters import (
     mark_back_matter,
 )
 from dogear.extract.pdf_columns import ColumnRules, order_columns
+from dogear.extract.pdf_figures import attach_captions
 from dogear.extract.pdf_furniture import strip_furniture
 from dogear.extract.pdf_hyphens import HyphenEvidence
 from dogear.extract.pdf_page import ReadSettings, read_page
 from dogear.extract.pdf_sections import build_sections
-from dogear.extract.pdf_text import Layout, Page, measure_layout
+from dogear.extract.pdf_text import Layout, Line, Page, measure_layout
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class PdfSettings:
     column_gap_ratio: float
     column_min_lines: int
     column_min_width_ratio: float
+    image_min_page_share: float
 
     @classmethod
     def from_config(cls, config: Config) -> PdfSettings:
@@ -89,6 +91,7 @@ class PdfSettings:
             column_gap_ratio=table["column_gap_ratio"],
             column_min_lines=table["column_min_lines"],
             column_min_width_ratio=table["column_min_width_ratio"],
+            image_min_page_share=table["image_min_page_share"],
         )
         _require("page_split_size", settings.page_split_size >= 1, "at least 1")
         _require("heading_size_ratio", settings.heading_size_ratio > 1, "more than 1")
@@ -110,6 +113,7 @@ class PdfSettings:
         _require("column_gap_ratio", settings.column_gap_ratio > 0, "more than 0")
         _require("column_min_lines", settings.column_min_lines >= 1, "at least 1")
         _require("column_min_width_ratio", settings.column_min_width_ratio > 0, "more than 0")
+        _require("image_min_page_share", 0 < settings.image_min_page_share <= 1, "between 0 and 1")
         return settings
 
 
@@ -130,7 +134,8 @@ class _Catalog:
 def extract(path: Path, config: Config) -> Book:
     settings = PdfSettings.from_config(config)
     catalog = _read_catalog(path)
-    pages = _read_pages(path, catalog.labels, ReadSettings(settings.column_gap_ratio))
+    read = ReadSettings(settings.column_gap_ratio, settings.image_min_page_share)
+    pages = _read_pages(path, catalog.labels, read)
     _require_text_layer(path, pages, settings.min_chars_per_page)
     layout = _measure(pages, settings)
     pages = strip_furniture(
@@ -145,6 +150,7 @@ def extract(path: Path, config: Config) -> Book:
     if columned:
         # Line spacing measured across interleaved columns is too tight; measure again.
         layout = _measure(pages, settings)
+    pages = attach_captions(pages, layout)
     source = ChapterSource(pages, catalog.outline, layout, settings.page_split_size)
     found = detect_chapters(settings.chapter_detection, source)
     if found is None:
@@ -154,7 +160,7 @@ def extract(path: Path, config: Config) -> Book:
         boundaries = found[1]
     boundaries = mark_back_matter(boundaries, pages)
     hyphens = HyphenEvidence.from_texts(
-        (line.text for page in pages for line in page.lines),
+        (line.text for page in pages for line in _all_lines(page)),
         min_count=settings.hyphen_evidence_min,
         keep_by_default=settings.hyphen_without_evidence == "keep",
     )
@@ -163,6 +169,11 @@ def extract(path: Path, config: Config) -> Book:
     )
     log.info("Read %d pages and %d sections from %s", len(pages), len(sections), path.name)
     return Book(metadata=catalog.metadata, sections=sections, source_path=path, source_format="pdf")
+
+
+def _all_lines(page: Page) -> list[Line]:
+    """The page's lines, with those moved into figure captions."""
+    return [*page.lines, *(line for figure in page.figures for line in figure.caption)]
 
 
 def _measure(pages: list[Page], settings: PdfSettings) -> Layout:
