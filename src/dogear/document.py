@@ -158,6 +158,18 @@ class Section:
         return f"{index:02d}_{'_'.join(safe.split()) or 'section'}"
 
 
+@dataclass(frozen=True)
+class Cover:
+    """The book's cover image, as stored in the source file."""
+
+    data: bytes
+    media_type: str  # "image/jpeg" or "image/png"
+
+    def __post_init__(self) -> None:
+        if not self.data:
+            raise ValueError("cover image must not be empty")
+
+
 @dataclass
 class Metadata:
     title: str
@@ -165,6 +177,7 @@ class Metadata:
     language: str | None = None  # BCP 47, such as "en" or "en-GB"
     identifier: str | None = None
     publisher: str | None = None
+    cover: Cover | None = None
 
 
 @dataclass
