@@ -96,3 +96,13 @@ def test_version(capsys):
         cli.main(["--version"])
     assert done.value.code == 0
     assert capsys.readouterr().out.startswith("dogear ")
+
+
+def test_voices_lists_best_rated_first_and_marks_the_default(capsys):
+    assert cli.main(["voices"]) == 0
+    lines = [line for line in capsys.readouterr().out.splitlines() if ". " in line[:4]]
+    assert lines[0] == (
+        "1. af_heart: American English, female, grade A. This is the one Dogear uses now."
+    )
+    assert lines[1].startswith("2. af_bella: American English, female, grade A-.")
+    assert lines[-1].endswith("grade F+.")

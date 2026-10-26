@@ -278,7 +278,7 @@ def _make(args: argparse.Namespace, config: Config) -> int:
 
 def _voices(args: argparse.Namespace, config: Config) -> int:
     default = config["voice"]["voice"]
-    ranked = sorted(kokoro_voices(), key=lambda v: _GRADE_ORDER.index(v.grade[0]))
+    ranked = sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
     print(f"{_count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
     print()
     for number, voice in enumerate(ranked, start=1):
@@ -290,6 +290,11 @@ def _voices(args: argparse.Namespace, config: Config) -> int:
     print()
     print("To use another, add --voice NAME to `dogear make`, or set voice in your config.")
     return 0
+
+
+def _grade_rank(grade: str) -> tuple[int, int]:
+    """Sort key for grades such as "A", "B-", or "C+": best first."""
+    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
 
 
 def _download(args: argparse.Namespace, config: Config) -> int:
