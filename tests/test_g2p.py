@@ -127,6 +127,10 @@ def test_to_misaki_american(ipa, phonemes):
         ("bˈɜːd", "bˈɜːd"),  # long vowels stay
         ("nˈiə", "nˈɪə"),
         ("fˈɑːðə", "fˈɑːðə"),
+        ("skwˈe^ə", "skwˈɛː"),  # square, as misaki's British dictionary has it
+        ("blˈe^ə", "blˈɛː"),  # Blair
+        ("ˈe^əɹən", "ˈɛːɹən"),  # Aaron
+        ("ɹˈed", "ɹˈAd"),  # a lone e is still A
     ],
 )
 def test_to_misaki_british(ipa, phonemes):
