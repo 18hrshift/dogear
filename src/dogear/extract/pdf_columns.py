@@ -2,9 +2,9 @@
 
 pdfplumber reads a page in rows across its whole width, so two columns side by side come
 out interleaved, or as single lines holding a line of each. This module finds the
-columns and reads each one top to bottom, left to right. It runs after running headers
-and footers are removed, so a header that sits over one column is never read as that
-column's first line.
+columns and reads each one top to bottom, left to right. It runs after running headers,
+footers, and footnotes are removed, so a header that sits over one column is never read
+as that column's first line.
 
 How a page is read:
 

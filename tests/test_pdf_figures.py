@@ -32,7 +32,7 @@ def blocks(path, config):
     [
         ("Figure 3. The White Rabbit", 11),
         ("Fig. 3: The White Rabbit", 11),
-        ("Plate IV — The Pool of Tears", 11),
+        ("Plate IV \u2014 The Pool of Tears", 11),
         ("FIGURE 12a. The Pool of Tears", 11),
         ("Figure 3 The White Rabbit", 9),  # no punctuation, but not body type
         ("Illustration 2", 9),

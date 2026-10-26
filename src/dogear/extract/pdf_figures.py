@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 _LABEL = re.compile(
     r"(?:figure|fig\.|plate|illustration|map|chart|diagram)\s+[\divxlc]+[a-z]?"
-    r"(?P<end>[.:]|\s*[–—-](?:\s|$))?",
+    r"(?P<end>[.:]|\s*[\u2013\u2014-](?:\s|$))?",  # a dash: hyphen, en, or em
     re.IGNORECASE,
 )
 

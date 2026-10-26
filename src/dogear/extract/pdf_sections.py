@@ -189,8 +189,8 @@ def _page_span(pages: Sequence[Page]) -> str:
 
 class _BlockWriter:
     """Collects a section's blocks, holding back the last paragraph of each page, and of
-    each column, in case the text that follows carries it on. Figures found while a
-    paragraph is held back wait for it."""
+    each column, in case the text that follows carries it on. Figures and notes found
+    while a paragraph is held back wait for it."""
 
     def __init__(
         self, layout: Layout, levels: dict[Style, int], keep_hyphen: KeepHyphen | None
@@ -200,14 +200,13 @@ class _BlockWriter:
         self._keep_hyphen = keep_hyphen
         self._blocks: list[Block] = []
         self._open: tuple[Line, ...] = ()
-        self._waiting: list[Block] = []  # figures to place after the open paragraph
+        self._waiting: list[Block] = []  # figures and notes to place after the open paragraph
 
     def page(self, label: str, parts: Sequence[Part]) -> None:
-        first = next((part for part in parts if isinstance(part, Run)), None)
-        body = first.lines if first is not None and first.style is None else ()
-        flows = _flows(body)
-        first = split_paragraphs(flows[0], self.layout) if flows else None
-        if first is None or not continues(self._open, first, self.layout):
+        run = next((part for part in parts if isinstance(part, Run)), None)
+        flows = _flows(run.lines) if run is not None and run.style is None else []
+        opening = split_paragraphs(flows[0], self.layout) if flows else None
+        if opening is None or not continues(self._open, opening, self.layout):
             self._flush()
         # A paragraph carried on from the last page is still open, so this page's marker
         # goes before the whole of it: jumping to the page starts a little early, never late.
