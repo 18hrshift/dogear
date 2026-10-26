@@ -54,8 +54,9 @@ def narrate_book(book: Book, config: Config) -> list[SectionNarration]:
     narrator = _Narrator(book, config)
     narrations = []
     for number, section in enumerate(book.sections, start=1):
+        read_earlier = set(narrator.read_notes)
         utterances = narrator.section(section)
-        if narrator.has_content(utterances, section):
+        if narrator.has_content(utterances, section, read_earlier):
             narrations.append(SectionNarration(number, section, utterances))
         else:
             log.info(
@@ -80,11 +81,17 @@ class _Narrator:
         }
         self.read_notes: set[str] = set()
 
-    def has_content(self, utterances: list[Utterance], section: Section) -> bool:
-        """False for a section whose only content was notes already read elsewhere."""
+    def has_content(
+        self, utterances: list[Utterance], section: Section, read_earlier: set[str]
+    ) -> bool:
+        """False for a section whose only content was notes already read in earlier sections.
+
+        `read_earlier` must be taken before narrating the section: narrating it marks its
+        own notes as read, and those were read here, not elsewhere.
+        """
         spoken_blocks = [b for b in section.blocks if not isinstance(b, PageMarker | SceneBreak)]
         all_notes_read = all(
-            isinstance(b, Heading) or (isinstance(b, Footnote) and b.note_id in self.read_notes)
+            isinstance(b, Heading) or (isinstance(b, Footnote) and b.note_id in read_earlier)
             for b in spoken_blocks
         )
         has_notes = any(isinstance(b, Footnote) for b in spoken_blocks)

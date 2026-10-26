@@ -284,6 +284,25 @@ def test_a_section_of_notes_already_read_is_left_out(config, caplog):
     assert "Section 2, Notes, was left out" in caplog.text
 
 
+def test_a_notes_section_with_an_unreferenced_note_is_kept(config):
+    other = Footnote("n2", "Never referred to.")
+    narrations = narrate_book(
+        notes_book(Paragraph("He wrote it.", note_refs=("n1",)), back_notes=(NOTE, other)),
+        config,
+    )
+    assert [n.section.title for n in narrations] == ["One", "Notes"]
+    # The note read after its paragraph isn't read again; the other one is read here.
+    assert spoken(narrations[1].utterances) == ["Notes.", "Note: Never referred to."]
+
+
+@pytest.mark.parametrize("mode", ["where_printed", "end_of_section"])
+def test_a_notes_section_is_kept_when_notes_are_not_read_after_paragraphs(config, narration, mode):
+    narration["footnotes"] = mode
+    narrations = narrate_book(notes_book(Paragraph("He wrote it.", note_refs=("n1",))), config)
+    assert [n.section.title for n in narrations] == ["One", "Notes"]
+    assert "Note: Written in eighteen eighty-six." in spoken(narrations[1].utterances)
+
+
 def test_a_note_printed_in_the_same_section_is_read_once(config):
     utterances = narrate(
         config,
