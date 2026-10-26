@@ -97,3 +97,77 @@ ffmpeg = ""
 ffprobe = ""
 tesseract = ""
 ebook_convert = ""
+espeak_ng = ""
+
+[voice]
+engine = "kokoro"  # the only engine so far
+voice = "af_heart"  # run `dogear voices` to list them
+# Speaking pace: 1.0 is the voice's natural pace. Kokoro at 1.0 read a test chapter at
+# about 190 words a minute; audiobook narrators average nearer 155, so the default is a
+# little slower. Players can change speed too.
+speed = 0.9
+
+[kokoro]
+# Which build of the Kokoro model to use. "full" (325 MB) sounds best. "quantized" (92 MB)
+# rendered about 25% faster on a test laptop CPU, at slightly lower quality.
+model = "full"
+# CPU threads to use while speaking. 0 means all of them.
+threads = 0
+
+[models]
+# Where downloaded voice files are kept. Empty means the usual per-user data folder.
+dir = ""
+download_timeout_seconds = 60
+
+[narration]
+# How notes are read. "after_paragraph": right after the paragraph that refers to them.
+# "end_of_section": together, at the end of the chapter. "where_printed": wherever they
+# sit in the book. "skip": not read.
+footnotes = "after_paragraph"
+# Tables: "read" goes row by row, saying each column's heading before its value.
+# "skip" says that a table was left out.
+tables = "read"
+# Images with a description are read as "Image: ..." and decorative images are never
+# read. This decides images that came with no description: true says "Image.", false
+# says nothing. A caption is always read.
+announce_undescribed_images = false
+# Say "Page 42" where each print page begins, for listeners following a print copy.
+announce_pages = false
+
+# Silence, in milliseconds. Longer pauses mark bigger breaks, so a listener hears the
+# structure.
+[narration.pauses]
+sentence_ms = 300
+paragraph_ms = 700
+heading_ms = 1000  # after a heading
+list_item_ms = 400
+scene_break_ms = 1800
+section_start_ms = 500  # before the first words of each track
+section_end_ms = 2000  # after the last words of each track
+
+# Words Dogear adds when it reads structure aloud.
+[narration.words]
+image = "Image"
+note = "Note"
+notes = "Notes"
+table = "Table"
+row = "Row"
+page = "Page"
+table_skipped = "Table not read."
+
+[render]
+# Where rendered sentences are kept so later runs reuse them. Empty means the usual
+# per-user cache folder. Safe to delete; the next run just takes longer.
+cache_dir = ""
+# Longest gap, in seconds, between progress lines while a long section is being spoken.
+progress_every_seconds = 120
+# Voices pad their sentences with different amounts of quiet. Sound below this level
+# (dB below full scale) at the start and end of a sentence is trimmed, keeping a little
+# so word edges aren't clipped; the pauses above then set the spacing.
+edge_silence_db = -50.0
+edge_silence_keep_ms = 60
+
+[output]
+# What `dogear make` produces: "m4b" (one audiobook file with chapters) and/or "mp3"
+# (a folder of numbered MP3 files with a playlist).
+formats = ["m4b"]
