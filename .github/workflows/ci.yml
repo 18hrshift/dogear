@@ -28,31 +28,47 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ matrix.python }}
-
-      - name: Install ffmpeg, Tesseract, and eSpeak NG (Linux)
-        if: runner.os == 'Linux'
-        timeout-minutes: 8
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # Skip the man-db index rebuild, which can stall apt on hosted runners.
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg tesseract-ocr tesseract-ocr-eng espeak-ng
-      - name: Install ffmpeg, Tesseract, and eSpeak NG (macOS)
-        if: runner.os == 'macOS'
+      - name: Install ffmpeg, Tesseract, and eSpeak NG
         timeout-minutes: 10
-        run: brew install ffmpeg tesseract espeak-ng
-      - name: Install ffmpeg, Tesseract, and eSpeak NG (Windows)
-        if: runner.os == 'Windows'
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          choco install -y --no-progress ffmpeg tesseract espeak-ng
-          echo "C:\\Program Files\\Tesseract-OCR" >> "$GITHUB_PATH"
-          echo "C:\\Program Files\\eSpeak NG" >> "$GITHUB_PATH"
-
+        uses: ./.github/actions/install-tools
       - name: Lint and test
         shell: bash
         run: bash test.sh
+
+  voice:
+    # The real voice, start to finish: download (cached between runs), speak two short
+    # sections of a public-domain book, and package them.
+    name: Real voice, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.13"
+      - name: Install ffmpeg, Tesseract, and eSpeak NG
+        timeout-minutes: 10
+        uses: ./.github/actions/install-tools
+      - name: Restore the voice files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dogear-models
+          key: dogear-models-${{ runner.os }}-${{ hashFiles('src/dogear/voice/catalog.toml') }}
+      - name: Make a short audiobook
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          printf "[models]\ndir = '%s'\n" "${{ runner.temp }}/dogear-models" > voice.toml
+          uv run --frozen dogear make tests/fixtures/*.epub --config voice.toml \
+            --sections 1-2 --format both -o out
+      - name: Check the output
+        shell: bash
+        run: |
+          chapters=$(ffprobe -v error -show_chapters -of csv=p=0 out/*.m4b | wc -l)
+          echo "M4B chapters: $chapters"
+          test "$chapters" -eq 2
+          ls out/*MP3*

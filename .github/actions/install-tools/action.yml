@@ -1,0 +1,28 @@
+name: Install external programs
+description: ffmpeg, Tesseract, and eSpeak NG, the programs Dogear runs, on Linux, macOS, or Windows.
+
+runs:
+  using: composite
+  steps:
+    - name: Install (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # Skip the man-db index rebuild, which can stall apt on hosted runners.
+        sudo rm -f /var/lib/man-db/auto-update
+        sudo apt-get update -o Acquire::Retries=3
+        sudo apt-get install -y --no-install-recommends \
+          ffmpeg tesseract-ocr tesseract-ocr-eng espeak-ng
+    - name: Install (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install ffmpeg tesseract espeak-ng
+    - name: Install (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        choco install -y --no-progress ffmpeg tesseract espeak-ng
+        echo "C:\\Program Files\\Tesseract-OCR" >> "$GITHUB_PATH"
+        echo "C:\\Program Files\\eSpeak NG" >> "$GITHUB_PATH"
