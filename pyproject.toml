@@ -23,6 +23,10 @@ dependencies = [
     "pypdf>=5.0",         # BSD-3-Clause: PDF outline, page labels, merging
     "pypdfium2>=4.30",    # BSD-3-Clause / Apache-2.0: rendering pages for OCR
     "Pillow>=10.0",       # MIT-CMU: images for OCR
+    "onnxruntime>=1.20",
+    "numpy>=1.26",
+    "misaki==0.9.4",
+    "spacy>=3.8,<3.9",
 ]
 
 [project.urls]
