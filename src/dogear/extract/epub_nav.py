@@ -72,12 +72,11 @@ def _from_nav_document(root: etree._Element, nav_path: str) -> Navigation:
     return nav
 
 
-def _links(
-    nav_el: etree._Element, nav_path: str
-) -> Iterator[tuple[str, str, str, frozenset[str]]]:
+def _links(nav_el: etree._Element, nav_path: str) -> Iterator[tuple[str, str, str, frozenset[str]]]:
     """(path, fragment, link text, epub:type tokens) for each link in a nav element."""
     for a in nav_el.iter("{*}a"):
-        target = resolve_href(nav_path, a.get("href") or "") if a.get("href") else None
+        href = a.get("href")
+        target = resolve_href(nav_path, href) if href else None
         if target is None:
             continue
         tokens = frozenset((a.get(EPUB_TYPE) or "").split())

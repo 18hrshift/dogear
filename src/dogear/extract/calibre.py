@@ -13,14 +13,11 @@ from pathlib import Path
 
 from dogear.config import Config
 from dogear.document import Book
-from dogear.errors import ExtractionError, ToolFailedError
+from dogear.errors import ConfigError, ExtractionError, ToolFailedError
 from dogear.extract import epub
 from dogear.tools import find_tool, run_tool
 
 log = logging.getLogger(__name__)
-
-# Long enough for a very large book on a slow machine. Not yet a config setting.
-CONVERT_TIMEOUT_SECONDS = 600.0
 
 
 def extract(path: Path, config: Config) -> Book:
@@ -29,7 +26,7 @@ def extract(path: Path, config: Config) -> Book:
         # Named after the original so a book with no title falls back to the right name.
         converted = Path(tmp) / f"{path.stem}.epub"
         log.info("Converting %s to EPUB with Calibre.", path.name)
-        _convert(program, path, converted)
+        _convert(program, path, converted, _timeout(config))
         if not converted.is_file():
             raise ExtractionError(
                 f"Calibre finished converting {path.name} but didn't produce an EPUB.",
@@ -39,11 +36,18 @@ def extract(path: Path, config: Config) -> Book:
     return replace(book, source_path=path, source_format=path.suffix.lower().lstrip("."))
 
 
-def _convert(program: str, source: Path, target: Path) -> None:
+def _timeout(config: Config) -> int:
+    seconds = config["kindle"]["convert_timeout_seconds"]
+    if seconds <= 0:
+        raise ConfigError(f"kindle.convert_timeout_seconds must be more than 0, got {seconds}.")
+    return seconds
+
+
+def _convert(program: str, source: Path, target: Path, timeout: int) -> None:
     # Without --no-default-epub-cover, Calibre invents a cover image for books that have none.
     cmd = [program, str(source), str(target), "--no-default-epub-cover"]
     try:
-        run_tool(cmd, timeout=CONVERT_TIMEOUT_SECONDS)
+        run_tool(cmd, timeout=timeout)
     except ToolFailedError as e:
         if "DRM" in e.message:
             raise ExtractionError(

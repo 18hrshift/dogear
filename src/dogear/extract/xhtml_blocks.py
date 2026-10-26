@@ -7,9 +7,13 @@ the model. Where they go:
   before that block, so jumping to the page never skips its first words.
 - Images and notes found inside a block come right after it, so they never split a
   sentence.
-- Note references keep their target id in `Paragraph.note_refs`; their printed markers
-  ("1", "*") are removed from the text. Only paragraphs carry references, so a reference
-  in a heading, list item, or table cell loses its id (logged at debug level).
+- Note ids are qualified by file ("OEBPS/notes.xhtml#n1"), so the same id in two chapters
+  can't collide. A note reference keeps its target in `Paragraph.note_refs`; its printed
+  marker ("1", "*") is removed from the text. Only paragraphs carry references, so a
+  reference in a heading, list item, or table cell loses its target (logged at debug level).
+- `<hr>` and non-focusable `role="separator"` elements become SceneBreaks. EPUB's
+  structural semantics and DPUB-ARIA have no scene-break term, so no epub:type is used.
+  A section never starts or ends with a SceneBreak or has two in a row.
 """
 
 from __future__ import annotations
@@ -21,21 +25,29 @@ from dataclasses import dataclass, field, replace
 
 from lxml import etree
 
-from dogear.document import Block, Footnote, Heading, Image, ListBlock, PageMarker, Paragraph, Table
+from dogear.document import (
+    Block,
+    Footnote,
+    Heading,
+    Image,
+    ListBlock,
+    PageMarker,
+    Paragraph,
+    SceneBreak,
+    Table,
+)
 from dogear.extract.xhtml import collapse, lang_of, local_name, plain_text, resolve_href, semantics
 
 log = logging.getLogger(__name__)
 
 # Elements that start a new block. Anything else is treated as running text.
 BLOCK_TAGS = frozenset(
-    {
-        "address", "article", "aside", "blockquote", "body", "caption", "center", "dd",
-        "details", "dialog", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer",
-        "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "legend", "li",
-        "main", "menu", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td",
-        "tfoot", "th", "thead", "tr", "ul",
-    }
-)  # fmt: skip
+    """
+    address article aside blockquote body caption center dd details dialog div dl dt
+    fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr legend li
+    main menu nav ol p pre section summary table tbody td tfoot th thead tr ul
+    """.split()
+)
 HEADING_LEVELS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
 LIST_TAGS = frozenset({"ul", "ol"})
 SKIP_TAGS = frozenset({"script", "style", "nav", "template", "head"})
@@ -50,16 +62,21 @@ def body_blocks(
     doc_path: str,
     section_lang: str | None,
     page_labels: Mapping[str, str],
-    note_markers: dict[tuple[str, str], str],
+    note_markers: dict[str, str],
 ) -> list[Block]:
     """Blocks for `body`, a document at `doc_path` whose section language is `section_lang`.
 
     `page_labels` maps element ids to print page labels from the book's page list.
-    Printed note markers are recorded in `note_markers` as (file, id) -> marker, so notes
-    can be labeled once the whole book has been read.
+    Printed note markers are recorded in `note_markers` as qualified note id -> marker, so
+    notes can be labeled once the whole book has been read.
     """
     walker = _Walker(doc_path, section_lang, page_labels, note_markers)
-    return walker.container(body, section_lang)
+    return _tidy_scene_breaks(walker.container(body, section_lang))
+
+
+def note_key(path: str, element_id: str) -> str:
+    """The book-wide id of the note with `element_id` in the file at `path`."""
+    return f"{path}#{element_id}"
 
 
 @dataclass
@@ -123,7 +140,7 @@ class _Walker:
         doc_path: str,
         section_lang: str | None,
         page_labels: Mapping[str, str],
-        note_markers: dict[tuple[str, str], str],
+        note_markers: dict[str, str],
     ) -> None:
         self.doc_path = doc_path
         self.section_lang = section_lang
@@ -142,7 +159,7 @@ class _Walker:
         for child in el:
             if child is not skip and isinstance(child.tag, str):
                 child_lang = lang_of(child, lang)
-                if local_name(child) in BLOCK_TAGS or _is_aria_heading(child):
+                if local_name(child) in BLOCK_TAGS or _starts_block(child):
                     out += self._paragraph(run, lang)
                     run = _Run()
                     out += self._block(child, child_lang)
@@ -158,6 +175,8 @@ class _Walker:
         if "pagebreak" in sem:
             return self._page_break(el)
         out = self._page_target(el)
+        if tag == "hr" or _is_separator(el):
+            return [*out, SceneBreak()]
         if sem & NOTE_TYPES:
             notes = self._note(el, lang)
             if notes is not None:
@@ -173,7 +192,7 @@ class _Walker:
             out += self._table(el, lang)
         elif tag == "figure":
             out += self._figure(el, lang)
-        elif tag != "hr":
+        else:
             out += self.container(el, lang)
         return out
 
@@ -192,15 +211,16 @@ class _Walker:
 
     def _note(self, el: etree._Element, lang: str | None, label: str = "") -> list[Block] | None:
         """A Footnote, or None when the note has no id and must be read as plain content."""
-        note_id = (el.get("id") or "").strip()
-        if not note_id:
+        element_id = (el.get("id") or "").strip()
+        if not element_id:
             log.warning("A note in %s has no id; reading it as ordinary text.", self.doc_path)
             return None
+        note_id = note_key(self.doc_path, element_id)
         run = self._collect(el, lang)
         self._drop_refs(run, f"note {note_id}")
         text = run.text()
         if not text:
-            log.debug("Note %s in %s has no text; skipped.", note_id, self.doc_path)
+            log.debug("Note %s has no text; skipped.", note_id)
             return run.wrap()
         return run.wrap(Footnote(note_id, text, label=label, lang=self._lang(lang)))
 
@@ -357,7 +377,9 @@ class _Walker:
             self._noteref(el, run)
         elif tag == "img":
             alt = el.get("alt")
-            run.after.append(Image(alt=None if alt is None else collapse(alt), lang=self._lang(lang)))
+            run.after.append(
+                Image(alt=None if alt is None else collapse(alt), lang=self._lang(lang))
+            )
         elif tag == "svg":
             run.after.append(Image(alt=_svg_alt(el), lang=self._lang(lang)))
         elif tag in stop:
@@ -378,11 +400,12 @@ class _Walker:
         if target is None or not target[1]:
             log.debug("A note reference in %s points nowhere (href=%r).", self.doc_path, href)
             return
-        if target[1] not in run.note_refs:
-            run.note_refs.append(target[1])
+        note_id = note_key(*target)
+        if note_id not in run.note_refs:
+            run.note_refs.append(note_id)
         marker = plain_text(el)
         if marker:
-            self.note_markers.setdefault(target, marker)
+            self.note_markers.setdefault(note_id, marker)
 
     # Page markers
 
@@ -434,6 +457,38 @@ def _self_and_ancestors(el: etree._Element) -> Iterator[etree._Element]:
 
 def _is_aria_heading(el: etree._Element) -> bool:
     return "heading" in (el.get("role") or "").split()
+
+
+def _is_separator(el: etree._Element) -> bool:
+    """ARIA's thematic-break role. A focusable separator is a resize handle instead."""
+    return "separator" in (el.get("role") or "").split() and el.get("tabindex") is None
+
+
+def _starts_block(el: etree._Element) -> bool:
+    """True for elements that aren't block tags but still start a block."""
+    return _is_aria_heading(el) or _is_separator(el)
+
+
+def _tidy_scene_breaks(blocks: list[Block]) -> list[Block]:
+    """`blocks` without SceneBreaks at the start or end or right after another one.
+
+    Page markers don't count as content: a break between two of them is still the first.
+    """
+    out: list[Block] = []
+    seen_content = False
+    break_at: int | None = None  # where a kept break goes once more content follows
+    for block in blocks:
+        if isinstance(block, SceneBreak):
+            if seen_content and break_at is None:
+                break_at = len(out)
+            continue
+        if not isinstance(block, PageMarker):
+            if break_at is not None:
+                out.insert(break_at, SceneBreak())
+                break_at = None
+            seen_content = True
+        out.append(block)
+    return out
 
 
 def _heading_level(el: etree._Element) -> int:
