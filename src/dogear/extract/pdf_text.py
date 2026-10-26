@@ -1,21 +1,25 @@
 """Turn the lines on PDF pages into clean paragraph text.
 
 Works on lines that `dogear.extract.pdf` has already read, so nothing here opens a file.
-Cleanup removes print layout only: page numbers, running headers and footers, and line-end
-hyphens. Words are never rewritten; speech normalization happens later.
+Cleanup removes print layout only, such as line-end hyphens; `pdf_furniture` removes page
+numbers and running headers. Words are never rewritten; speech normalization happens later.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from functools import partial
 from itertools import pairwise
 
 log = logging.getLogger(__name__)
+
+# Given the word before a line-end hyphen and the word after it, whether the hyphen is
+# part of the word ("well-known") rather than a break in it ("exam-ple").
+KeepHyphen = Callable[[str, str], bool]
 
 # Two font sizes within this fraction of each other count as the same size.
 _SAME_SIZE = 0.1
@@ -23,16 +27,20 @@ _SAME_SIZE = 0.1
 _SIZE_SLACK = 0.05
 # Line spacing to assume when a book has no two consecutive body lines to measure.
 _DEFAULT_LEADING = 1.2
+# Measuring line spacing, look this many lines ahead for the next line of the same
+# column: enough for three columns whose lines don't line up.
+_COLUMN_LOOKAHEAD = 3
 # A heading set in large type wraps onto at most this many lines.
 HEADING_MAX_LINES = 3
 
 # A valid lowercase roman numeral such as "xiv". Lowercase only: "I", "IV" or "MIX" alone
 # on a line are more often a chapter number or a word than a page number.
 ROMAN = r"(?=[ivxlcdm])m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})"
-_PAGE_NUMBER = re.compile(rf"[\[(\-–—\s]*(?:\d{{1,4}}|{ROMAN})[\])\-–—\s]*")
-_EDGE_ROMAN = re.compile(rf"^{ROMAN}\b|\b{ROMAN}$")
-_DIGITS = re.compile(r"\d+")
 _SPLIT_WORD = re.compile(r"[^\W\d_]-$")  # a letter, then a hyphen, at the end of a line
+# The word before a line-end hyphen, and the word that starts the next line. Words may
+# already hold hyphens: "out-of-the-" + "way".
+_WORD_BEFORE_HYPHEN = re.compile(r"([^\W\d_]+(?:-[^\W\d_]+)*)-$")
+_WORD_AT_START = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")
 _OPEN_DASH = re.compile(r"\S[—–]$")  # a dash touching the last word, as in "and then—"
 _SENTENCE_END = re.compile(r"[.!?…][\"'”’»)\]]*$|[—–-][\"'”’»]+$")
 _SOFT_HYPHEN = "\u00ad"
@@ -50,6 +58,95 @@ class Line:
     x1: float
     size: float  # the most common character size in the line
     chars: int  # non-space characters
+    bold: bool = False  # most of its characters are in a bold font
+    # Where small raised digits or note symbols sit in `text`, as (start, end): possible
+    # note references, such as the "1" in "rabbit-hole¹".
+    raised: tuple[tuple[int, int], ...] = ()
+    note_refs: tuple[str, ...] = ()  # ids of the notes it refers to; see `pdf_notes`
+    # The line cut at gaps wide enough to be a column gutter, left to right; empty when
+    # there are none. Set when reading and used only by `pdf_columns`.
+    parts: tuple[Line, ...] = ()
+    seq: int = 0  # position in reading order on its page, set by `pdf_columns`
+    # Which run of text on its page the line is in: one column, or the full-width text
+    # between blocks of columns. Paragraphs are found within a flow, each with its own
+    # margin, and carry on from one flow to the next as they do from page to page.
+    flow: int = 0
+
+
+def merge_lines(pieces: Sequence[Line]) -> Line:
+    """One line made of pieces of a row, left to right, joined with spaces."""
+    if len(pieces) == 1:
+        return pieces[0]
+    main = max(pieces, key=lambda piece: piece.chars)
+    chars = sum(piece.chars for piece in pieces)
+    raised: list[tuple[int, int]] = []
+    offset = 0
+    for piece in pieces:
+        raised += [(start + offset, end + offset) for start, end in piece.raised]
+        offset += len(piece.text) + 1  # the space joining it to the next piece
+    return Line(
+        text=" ".join(piece.text for piece in pieces),
+        top=min(piece.top for piece in pieces),
+        bottom=max(piece.bottom for piece in pieces),
+        x0=min(piece.x0 for piece in pieces),
+        x1=max(piece.x1 for piece in pieces),
+        size=main.size,
+        chars=chars,
+        bold=2 * sum(piece.chars for piece in pieces if piece.bold) > chars,
+        raised=tuple(raised),
+        note_refs=tuple(ref for piece in pieces for ref in piece.note_refs),
+    )
+
+
+def remove_spans(line: Line, spans: Iterable[tuple[int, int]]) -> Line:
+    """`line` with the text in `spans` taken out, such as note markers from its `raised`.
+
+    Where taking a span out would leave two spaces in a row, or a space at either end,
+    one of them goes too. Raised spans left in the line move with the text.
+    """
+    text = line.text
+    gone: set[int] = set()
+    for start, end in spans:
+        gone.update(range(start, end))
+        if (start == 0 or text[start - 1] == " ") and (end == len(text) or text[end] == " "):
+            if end < len(text):
+                gone.add(end)  # the space after
+            elif start > 0:
+                gone.add(start - 1)  # the space before, at the end of the line
+    kept = [i for i in range(len(text)) if i not in gone]
+    moved = {old: new for new, old in enumerate(kept)}
+    raised = tuple(
+        (moved[start], moved[end - 1] + 1)
+        for start, end in line.raised
+        if all(i in moved for i in range(start, end))
+    )
+    return replace(
+        line,
+        text="".join(text[i] for i in kept),
+        chars=line.chars - sum(not text[i].isspace() for i in gone),
+        raised=raised,
+    )
+
+
+@dataclass(frozen=True)
+class Figure:
+    """An image on a page, big enough to be content rather than decoration."""
+
+    top: float
+    bottom: float
+    x0: float
+    x1: float
+    seq: int = 0  # position in reading order on its page, counted with the lines
+    caption: tuple[Line, ...] = ()  # its printed caption, taken out of the page's lines
+
+
+@dataclass(frozen=True)
+class PageNote:
+    """A footnote printed at the foot of a page, as found by `pdf_notes`."""
+
+    note_id: str  # unique in the book
+    label: str  # the marker as printed, such as "1" or "*"
+    lines: tuple[Line, ...]  # its text, without the marker; may run onto the next page
 
 
 @dataclass(frozen=True)
@@ -57,7 +154,9 @@ class Page:
     index: int  # 0-based position in the file
     label: str  # the printed page number, such as "xii" or "42"
     lines: tuple[Line, ...]
-    has_images: bool = False
+    has_images: bool = False  # any image at all, even a tiny one
+    figures: tuple[Figure, ...] = ()
+    notes: tuple[PageNote, ...] = ()  # footnotes printed at its foot
 
     @property
     def char_count(self) -> int:
@@ -73,9 +172,16 @@ class Layout:
     line_pitch: float  # usual distance between the baselines of two body lines
     gap_ratio: float
     indent: float  # how far in, in points, a line must start to count as indented
+    # Lines at least this size are subheadings inside a section; infinity turns size-based
+    # subheadings off.
+    subheading_size: float = math.inf
+    body_bold: bool = False  # body text is set in bold, so bold lines are not headings
 
     def is_heading(self, line: Line) -> bool:
         return line.size >= self.heading_size - _SIZE_SLACK
+
+    def is_subheading_size(self, line: Line) -> bool:
+        return line.size >= self.subheading_size - _SIZE_SLACK
 
     def is_body(self, line: Line) -> bool:
         return same_size(line.size, self.body_size)
@@ -99,7 +205,12 @@ def same_size(a: float, b: float) -> bool:
 
 
 def measure_layout(
-    pages: Sequence[Page], *, heading_ratio: float, gap_ratio: float, indent_ratio: float
+    pages: Sequence[Page],
+    *,
+    heading_ratio: float,
+    subheading_ratio: float,
+    gap_ratio: float,
+    indent_ratio: float,
 ) -> Layout:
     body = body_size(pages)
     return Layout(
@@ -108,15 +219,26 @@ def measure_layout(
         line_pitch=_line_pitch(pages, body),
         gap_ratio=gap_ratio,
         indent=body * indent_ratio,
+        subheading_size=body * subheading_ratio,
+        body_bold=_mostly_bold(pages, body),
     )
+
+
+def _mostly_bold(pages: Sequence[Page], body: float) -> bool:
+    lines = [line for page in pages for line in page.lines if same_size(line.size, body)]
+    return 2 * sum(line.chars for line in lines if line.bold) > sum(line.chars for line in lines)
 
 
 def body_size(pages: Sequence[Page]) -> float:
     """The font size that most characters are set in."""
+    return common_size(line for page in pages for line in page.lines)
+
+
+def common_size(lines: Iterable[Line]) -> float:
+    """The font size that most characters in `lines` are set in."""
     weights: Counter[float] = Counter()
-    for page in pages:
-        for line in page.lines:
-            weights[line.size] += line.chars
+    for line in lines:
+        weights[line.size] += line.chars
     if not weights:
         raise ValueError("no text to measure")
     return weights.most_common(1)[0][0]
@@ -127,7 +249,7 @@ def _line_pitch(pages: Sequence[Page], body: float) -> float:
     # median, because books of short paragraphs have nearly as many gaps as plain lines.
     pitches: Counter[float] = Counter()
     for page in pages:
-        for a, b in pairwise(page.lines):
+        for a, b in _line_pairs(page.lines):
             if same_size(a.size, body) and same_size(b.size, body) and b.bottom > a.bottom:
                 pitches[round((b.bottom - a.bottom) * 2) / 2] += 1
     if not pitches:
@@ -136,12 +258,25 @@ def _line_pitch(pages: Sequence[Page], body: float) -> float:
     return min(pitches.items(), key=lambda item: (-item[1], item[0]))[0]
 
 
+def _line_pairs(lines: Sequence[Line]) -> Iterable[tuple[Line, Line]]:
+    """Each line with the next one below it in the same column: the first of the next few
+    that overlaps it across the page. In one column that is simply the next line; where
+    columns' lines don't line up, pdfplumber reads them interleaved, and the line just
+    after is the other column's."""
+    for i, line in enumerate(lines):
+        below = lines[i + 1 : i + 1 + _COLUMN_LOOKAHEAD]
+        found = next((b for b in below if b.x0 < line.x1 and line.x0 < b.x1), None)
+        if found is not None:
+            yield line, found
+
+
 def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
     """Put a drop cap, a large first letter set beside the opening lines, back on its word.
 
     pdfplumber reads the letter as a line of its own, after the line it starts. The lines
     beside it are indented to make room; they are moved back to the letter's margin so
-    the paragraph doesn't look like it starts over.
+    the paragraph doesn't look like it starts over. A line beside the letter starts within
+    a letter's width of it: text further right, such as a second column, is left alone.
     """
     result = list(lines)
     for cap in lines:
@@ -151,7 +286,7 @@ def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
             line
             for line in result
             if line is not cap
-            and line.x0 >= cap.x1 - _SIZE_SLACK
+            and cap.x1 - _SIZE_SLACK <= line.x0 <= cap.x1 + (cap.x1 - cap.x0)
             and line.bottom > cap.top
             and line.top < cap.bottom
             and line.size < cap.size
@@ -161,12 +296,26 @@ def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
             continue  # nothing beside it: a heading such as "I", not a drop cap
         first = min(beside, key=lambda line: line.top)
         for line in beside:
-            merged = replace(line, x0=cap.x0)
-            if line is first:
-                merged = replace(merged, text=cap.text + line.text, chars=line.chars + cap.chars)
-            result[result.index(line)] = merged
+            result[result.index(line)] = _after_cap(line, cap, line is first)
         result.remove(cap)
     return tuple(result)
+
+
+def _after_cap(line: Line, cap: Line, first: bool) -> Line:
+    """`line` moved to the drop cap's margin, with the letter put back if it starts the
+    paragraph. A line in parts gets the same change to its first part."""
+    merged = replace(line, x0=cap.x0)
+    if first:
+        shift = len(cap.text)
+        merged = replace(
+            merged,
+            text=cap.text + line.text,
+            chars=line.chars + cap.chars,
+            raised=tuple((start + shift, end + shift) for start, end in line.raised),
+        )
+    if line.parts:
+        merged = replace(merged, parts=(_after_cap(line.parts[0], cap, first), *line.parts[1:]))
+    return merged
 
 
 def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:
@@ -179,136 +328,12 @@ def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:
     return count if sum(c.isalnum() for c in text) >= 2 else 0
 
 
-def is_page_number(text: str) -> bool:
-    return _PAGE_NUMBER.fullmatch(text) is not None
-
-
-def running_key(text: str) -> str:
-    """Text compared across pages to spot running headers: digits and case ignored."""
-    text = _EDGE_ROMAN.sub("#", text.strip())  # before casefolding: only lowercase numerals
-    return " ".join(_DIGITS.sub("#", text.casefold()).split())
-
-
-def strip_furniture(
-    pages: Sequence[Page],
-    layout: Layout,
-    *,
-    is_label: Callable[[str], bool],
-    min_pages: int,
-    min_share: float,
-) -> list[Page]:
-    """Drop page numbers and running headers and footers from the top and bottom of pages.
-
-    A first or last line is a running header or footer when its `running_key` comes back
-    on at least `min_pages` pages, and on at least `min_share` of the pages from its first
-    appearance to its last. The share keeps a line that happens to repeat far apart, such
-    as a scene-break ornament.
-
-    Only lines set apart from the text block by more than a paragraph gap count, so a line
-    of prose that happens to repeat at the foot of several pages stays. Lines in heading
-    type are never removed. Lines that `is_label` (such as "Chapter 3") are matched on
-    their exact text instead, and their first appearance is kept, because that is where
-    the section opens; chapter detection depends on it.
-    """
-
-    def removable(line: Line, neighbour: Line | None) -> bool:
-        if layout.is_heading(line):
-            return False
-        return neighbour is None or abs(neighbour.bottom - line.bottom) > layout.paragraph_gap
-
-    def key(line: Line) -> str:
-        # The prefix keeps a label's exact text apart from normalized keys.
-        return f"label:{line.text.casefold()}" if is_label(line.text) else running_key(line.text)
-
-    def page_number(line: Line, neighbour: Line | None) -> bool:
-        return removable(line, neighbour) and not is_label(line.text) and is_page_number(line.text)
-
-    def drop(
-        line: Line, neighbour: Line | None, running: dict[str, int | None], index: int
-    ) -> bool:
-        if page_number(line, neighbour):
-            return True
-        if not removable(line, neighbour):
-            return False
-        k = key(line)
-        return k in running and running[k] != index
-
-    def counted(line: Line, neighbour: Line | None) -> bool:
-        # A large "Notes" opening counts as the first "NOTES" header, so it is the one kept.
-        return removable(line, neighbour) or (layout.is_heading(line) and is_label(line.text))
-
-    tops: list[tuple[int, Line]] = []
-    bottoms: list[tuple[int, Line]] = []
-    for page in pages:
-        lines = _trim(page.lines, page_number, page_number)
-        if lines and counted(lines[0], _at(lines, 1)):
-            tops.append((page.index, lines[0]))
-        if lines and counted(lines[-1], _at(lines, -2)):
-            bottoms.append((page.index, lines[-1]))
-    headers = _running(tops, key, is_label, min_pages, min_share)
-    footers = _running(bottoms, key, is_label, min_pages, min_share)
-    cleaned = [
-        replace(
-            page,
-            lines=_trim(
-                page.lines,
-                partial(drop, running=headers, index=page.index),
-                partial(drop, running=footers, index=page.index),
-            ),
-        )
-        for page in pages
-    ]
-    removed = sum(len(page.lines) for page in pages) - sum(len(page.lines) for page in cleaned)
-    log.info("Removed %d page-number, header, and footer lines", removed)
-    return cleaned
-
-
-EdgeTest = Callable[[Line, "Line | None"], bool]
-
-
-def _at(lines: Sequence[Line], index: int) -> Line | None:
-    return lines[index] if -len(lines) <= index < len(lines) else None
-
-
-def _trim(lines: Sequence[Line], drop_top: EdgeTest, drop_bottom: EdgeTest) -> tuple[Line, ...]:
-    """Drop lines from each end while the test holds. Each test also gets the line's
-    neighbour on the text side (None when it is the last line left)."""
-    start, end = 0, len(lines)
-    while start < end and drop_top(lines[start], lines[start + 1] if start + 1 < end else None):
-        start += 1
-    while end > start and drop_bottom(lines[end - 1], lines[end - 2] if end - 2 >= start else None):
-        end -= 1
-    return tuple(lines[start:end])
-
-
-def _running(
-    edges: Sequence[tuple[int, Line]],
-    key: Callable[[Line], str],
-    is_label: Callable[[str], bool],
-    min_pages: int,
-    min_share: float,
-) -> dict[str, int | None]:
-    """Running line keys, each mapped to the one page where it is kept (None: nowhere)."""
-    pages_by_key: dict[str, list[int]] = defaultdict(list)
-    labels: set[str] = set()
-    for index, line in edges:
-        k = key(line)
-        pages_by_key[k].append(index)
-        if is_label(line.text):
-            labels.add(k)
-    running: dict[str, int | None] = {}
-    for k, indexes in pages_by_key.items():
-        span = indexes[-1] - indexes[0] + 1
-        if len(indexes) >= min_pages and len(indexes) / span >= min_share:
-            log.debug("Running header or footer on %d pages: %r", len(indexes), k)
-            running[k] = indexes[0] if k in labels else None
-    return running
-
-
-def join_lines(lines: Iterable[str]) -> str:
+def join_lines(lines: Iterable[str], keep_hyphen: KeepHyphen | None = None) -> str:
     """Join a paragraph's lines into one string, undoing line-end hyphenation.
 
-    "beauti-" + "ful" becomes "beautiful". A hyphen before a capital or a digit is kept
+    "beauti-" + "ful" becomes "beautiful". A hyphen before a lowercase letter is dropped
+    unless `keep_hyphen(left, right)` says the two parts make a hyphenated compound, as
+    "well-" + "known" does; see `pdf_hyphens`. A hyphen before a capital or a digit is kept
     without a space ("Anglo-" + "Saxon" is "Anglo-Saxon"). Other lines join with a space.
     """
     text = ""
@@ -321,12 +346,19 @@ def join_lines(lines: Iterable[str]) -> str:
         elif text.endswith(_SOFT_HYPHEN):
             text = text[:-1] + line
         elif _SPLIT_WORD.search(text):
-            text = (text[:-1] if line[0].islower() else text) + line
+            soft = line[0].islower() and not (keep_hyphen and _compound(text, line, keep_hyphen))
+            text = (text[:-1] if soft else text) + line
         elif _OPEN_DASH.search(text):
             text += line
         else:
             text += " " + line
     return text.replace(_SOFT_HYPHEN, "")
+
+
+def _compound(text: str, line: str, keep_hyphen: KeepHyphen) -> bool:
+    left = _WORD_BEFORE_HYPHEN.search(text)
+    right = _WORD_AT_START.match(line)
+    return bool(left and right) and keep_hyphen(left.group(1), right.group(0))
 
 
 def split_paragraphs(lines: Sequence[Line], layout: Layout) -> PageText:
@@ -368,6 +400,10 @@ def _starts_paragraph(prev: Line, line: Line, margin: float, right: float, layou
     if line.x0 - prev.x0 >= layout.indent:
         return True
     return prev.x1 <= right - layout.indent and _SENTENCE_END.search(prev.text) is not None
+
+
+def ends_sentence(text: str) -> bool:
+    return _SENTENCE_END.search(text) is not None
 
 
 def continues(previous: Sequence[Line], page: PageText, layout: Layout) -> bool:
