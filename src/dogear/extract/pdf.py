@@ -34,7 +34,7 @@ from dogear.extract.pdf_chapters import (
     mark_back_matter,
 )
 from dogear.extract.pdf_sections import build_sections
-from dogear.extract.pdf_text import Line, Page, measure_layout, strip_furniture
+from dogear.extract.pdf_text import Line, Page, measure_layout, merge_drop_caps, strip_furniture
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class _Catalog:
     """What pypdf reads from the file, apart from the text."""
 
     metadata: Metadata
-    outline: list[tuple[int, str]]
+    outline: list[list[tuple[int, str]]]
     labels: list[str]
 
 
@@ -174,22 +174,33 @@ def _language(reader: PdfReader) -> str | None:
     return None
 
 
-def _outline(reader: PdfReader) -> list[tuple[int, str]]:
-    """Top-level bookmarks that point at a page. Nested lists hold child bookmarks."""
+def _outline(reader: PdfReader) -> list[list[tuple[int, str]]]:
+    """Bookmarks that point at a page, grouped by depth: [top level, children, ...].
+
+    pypdf lists an entry's children as a nested list right after the entry.
+    """
     try:
         outline = reader.outline
     except PyPdfError as e:
         log.warning("Ignoring the PDF's bookmarks: they are damaged (%s)", e)
         return []
-    entries = []
-    for item in outline:
-        if not isinstance(item, Destination):
-            continue
-        page = reader.get_destination_page_number(item)
-        title = " ".join(str(item.title or "").split())
-        if page is not None and page >= 0 and title:
-            entries.append((page, title))
-    return entries
+    levels: list[list[tuple[int, str]]] = []
+    siblings: list[list[Any]] = [outline]
+    while siblings:
+        entries: list[tuple[int, str]] = []
+        children: list[list[Any]] = []
+        for group in siblings:
+            for item in group:
+                if isinstance(item, list):
+                    children.append(item)
+                elif isinstance(item, Destination):
+                    page = reader.get_destination_page_number(item)
+                    title = " ".join(str(item.title or "").split())
+                    if page is not None and page >= 0 and title:
+                        entries.append((page, title))
+        levels.append(entries)
+        siblings = children
+    return levels
 
 
 def _labels(reader: PdfReader) -> list[str]:
@@ -252,7 +263,12 @@ def _read_page(plumber_page: Any, index: int, label: str) -> Page:
                 chars=len(chars),
             )
         )
-    return Page(index=index, label=label, lines=tuple(lines), has_images=bool(plumber_page.images))
+    return Page(
+        index=index,
+        label=label,
+        lines=merge_drop_caps(lines),
+        has_images=bool(plumber_page.images),
+    )
 
 
 def _require_text_layer(path: Path, pages: list[Page], min_chars: float) -> None:

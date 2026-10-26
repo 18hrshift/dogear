@@ -35,7 +35,8 @@ _DIGITS = re.compile(r"\d+")
 _SPLIT_WORD = re.compile(r"[^\W\d_]-$")  # a letter, then a hyphen, at the end of a line
 _OPEN_DASH = re.compile(r"\S[—–]$")  # a dash touching the last word, as in "and then—"
 _SENTENCE_END = re.compile(r"[.!?…][\"'”’»)\]]*$|[—–-][\"'”’»]+$")
-_SOFT_HYPHEN = "­"
+_SOFT_HYPHEN = "\u00ad"
+_OPENING_QUOTES = "\"'\u201c\u2018\u00ab"
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,11 @@ class Layout:
 
     def is_body(self, line: Line) -> bool:
         return same_size(line.size, self.body_size)
+
+    @property
+    def paragraph_gap(self) -> float:
+        """Baseline-to-baseline distance beyond which two lines are in separate blocks."""
+        return self.line_pitch * self.gap_ratio
 
 
 @dataclass(frozen=True)
@@ -130,6 +136,39 @@ def _line_pitch(pages: Sequence[Page], body: float) -> float:
     return min(pitches.items(), key=lambda item: (-item[1], item[0]))[0]
 
 
+def merge_drop_caps(lines: Sequence[Line]) -> tuple[Line, ...]:
+    """Put a drop cap, a large first letter set beside the opening lines, back on its word.
+
+    pdfplumber reads the letter as a line of its own, after the line it starts. The lines
+    beside it are indented to make room; they are moved back to the letter's margin so
+    the paragraph doesn't look like it starts over.
+    """
+    result = list(lines)
+    for cap in lines:
+        if len(cap.text.lstrip(_OPENING_QUOTES)) != 1 or not cap.text[-1].isalpha():
+            continue
+        beside = [
+            line
+            for line in result
+            if line is not cap
+            and line.x0 >= cap.x1 - _SIZE_SLACK
+            and line.bottom > cap.top
+            and line.top < cap.bottom
+            and line.size < cap.size
+            and not same_size(line.size, cap.size)
+        ]
+        if not beside:
+            continue  # nothing beside it: a heading such as "I", not a drop cap
+        first = min(beside, key=lambda line: line.top)
+        for line in beside:
+            merged = replace(line, x0=cap.x0)
+            if line is first:
+                merged = replace(merged, text=cap.text + line.text, chars=line.chars + cap.chars)
+            result[result.index(line)] = merged
+        result.remove(cap)
+    return tuple(result)
+
+
 def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:
     """How many lines at the start of `lines` are set in heading type."""
     count = 0
@@ -165,32 +204,47 @@ def strip_furniture(
     appearance to its last. The share keeps a line that happens to repeat far apart, such
     as a scene-break ornament.
 
-    Lines in heading type are never removed. Lines that `is_label` (such as "Chapter 3")
-    are matched on their exact text instead, and their first appearance is kept, because
-    that is where the section opens; chapter detection depends on it.
+    Only lines set apart from the text block by more than a paragraph gap count, so a line
+    of prose that happens to repeat at the foot of several pages stays. Lines in heading
+    type are never removed. Lines that `is_label` (such as "Chapter 3") are matched on
+    their exact text instead, and their first appearance is kept, because that is where
+    the section opens; chapter detection depends on it.
     """
 
-    def removable(line: Line) -> bool:
-        return not layout.is_heading(line)
+    def removable(line: Line, neighbour: Line | None) -> bool:
+        if layout.is_heading(line):
+            return False
+        return neighbour is None or abs(neighbour.bottom - line.bottom) > layout.paragraph_gap
 
     def key(line: Line) -> str:
         # The prefix keeps a label's exact text apart from normalized keys.
         return f"label:{line.text.casefold()}" if is_label(line.text) else running_key(line.text)
 
-    def page_number(line: Line) -> bool:
-        return removable(line) and not is_label(line.text) and is_page_number(line.text)
+    def page_number(line: Line, neighbour: Line | None) -> bool:
+        return removable(line, neighbour) and not is_label(line.text) and is_page_number(line.text)
 
-    def drop(line: Line, running: dict[str, int | None], index: int) -> bool:
-        if page_number(line):
+    def drop(
+        line: Line, neighbour: Line | None, running: dict[str, int | None], index: int
+    ) -> bool:
+        if page_number(line, neighbour):
             return True
-        if not removable(line):
+        if not removable(line, neighbour):
             return False
         k = key(line)
         return k in running and running[k] != index
 
-    trimmed = [(page.index, _trim(page.lines, page_number, page_number)) for page in pages]
-    tops = [(i, lines[0]) for i, lines in trimmed if lines and removable(lines[0])]
-    bottoms = [(i, lines[-1]) for i, lines in trimmed if lines and removable(lines[-1])]
+    def counted(line: Line, neighbour: Line | None) -> bool:
+        # A large "Notes" opening counts as the first "NOTES" header, so it is the one kept.
+        return removable(line, neighbour) or (layout.is_heading(line) and is_label(line.text))
+
+    tops: list[tuple[int, Line]] = []
+    bottoms: list[tuple[int, Line]] = []
+    for page in pages:
+        lines = _trim(page.lines, page_number, page_number)
+        if lines and counted(lines[0], _at(lines, 1)):
+            tops.append((page.index, lines[0]))
+        if lines and counted(lines[-1], _at(lines, -2)):
+            bottoms.append((page.index, lines[-1]))
     headers = _running(tops, key, is_label, min_pages, min_share)
     footers = _running(bottoms, key, is_label, min_pages, min_share)
     cleaned = [
@@ -209,13 +263,20 @@ def strip_furniture(
     return cleaned
 
 
-def _trim(
-    lines: Sequence[Line], drop_top: Callable[[Line], bool], drop_bottom: Callable[[Line], bool]
-) -> tuple[Line, ...]:
+EdgeTest = Callable[[Line, "Line | None"], bool]
+
+
+def _at(lines: Sequence[Line], index: int) -> Line | None:
+    return lines[index] if -len(lines) <= index < len(lines) else None
+
+
+def _trim(lines: Sequence[Line], drop_top: EdgeTest, drop_bottom: EdgeTest) -> tuple[Line, ...]:
+    """Drop lines from each end while the test holds. Each test also gets the line's
+    neighbour on the text side (None when it is the last line left)."""
     start, end = 0, len(lines)
-    while start < end and drop_top(lines[start]):
+    while start < end and drop_top(lines[start], lines[start + 1] if start + 1 < end else None):
         start += 1
-    while end > start and drop_bottom(lines[end - 1]):
+    while end > start and drop_bottom(lines[end - 1], lines[end - 2] if end - 2 >= start else None):
         end -= 1
     return tuple(lines[start:end])
 
@@ -296,14 +357,17 @@ def _indented(line: Line, margin: float, layout: Layout) -> bool:
 def _starts_paragraph(prev: Line, line: Line, margin: float, right: float, layout: Layout) -> bool:
     if not same_size(prev.size, line.size):
         return True
-    if line.bottom - prev.bottom > layout.line_pitch * layout.gap_ratio:
+    if line.bottom - prev.bottom > layout.paragraph_gap:
         return True
     if not _indented(line, margin, layout):
         return False
     # An indented line after a line at the margin is a first-line indent. After another
-    # indented line it starts a paragraph only if that line stopped short (one-line
-    # dialogue); otherwise both belong to an indented block such as a quotation.
-    return line.x0 - prev.x0 >= layout.indent or prev.x1 <= right - layout.indent
+    # indented line it starts a paragraph only if that one ended a sentence short of the
+    # margin, as one-line dialogue does; otherwise both belong to an indented block such
+    # as a quotation.
+    if line.x0 - prev.x0 >= layout.indent:
+        return True
+    return prev.x1 <= right - layout.indent and _SENTENCE_END.search(prev.text) is not None
 
 
 def continues(previous: Sequence[Line], page: PageText, layout: Layout) -> bool:

@@ -62,7 +62,8 @@ class ChapterSource:
     """Everything the detection methods look at."""
 
     pages: Sequence[Page]
-    outline: Sequence[tuple[int, str]]  # top-level bookmarks as (page index, title)
+    # Bookmarks by depth, top level first, each as (page index, title).
+    outline: Sequence[Sequence[tuple[int, str]]]
     layout: Layout
     page_split_size: int
 
@@ -86,10 +87,24 @@ def is_section_label(text: str) -> bool:
 
 
 def by_bookmarks(source: ChapterSource) -> list[Boundary]:
-    """Top-level bookmarks that point at a page, in page order, one per page."""
+    """Bookmarks that point at a page, in page order, one per page.
+
+    Uses the shallowest bookmark level with entries on two or more pages. Usually that is
+    the top level. A book whose top level is one entry (the book's title) uses the level
+    below it, its chapters. Two parts holding chapters stay two parts: a deeper level is
+    used only when the one above it has fewer than two.
+    """
+    for level in source.outline:
+        found = _bookmark_level(level, len(source.pages))
+        if len(found) >= 2:
+            return found
+    return []
+
+
+def _bookmark_level(entries: Sequence[tuple[int, str]], page_count: int) -> list[Boundary]:
     found: list[Boundary] = []
-    for page, title in sorted(source.outline, key=lambda entry: entry[0]):
-        if 0 <= page < len(source.pages) and not (found and found[-1].page == page):
+    for page, title in sorted(entries, key=lambda entry: entry[0]):
+        if 0 <= page < page_count and not (found and found[-1].page == page):
             found.append(Boundary(page, title))
     return found
 
