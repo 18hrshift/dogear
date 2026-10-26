@@ -3,6 +3,8 @@
 Engines differ in how they read "Dr.", "3.14", or "1984", so Dogear spells these out
 itself and every engine gets the same words. Abbreviation tables come from config and
 are English for now; numbers use num2words in the book's language when it supports it.
+Currency, clock times, units, and roman numerals are English only: other languages say
+them differently, so their text keeps the digits and symbols for now.
 """
 
 from __future__ import annotations
@@ -15,6 +17,11 @@ from dataclasses import dataclass
 from num2words import num2words
 
 from dogear.config import Config
+from dogear.speech.money import say_money
+from dogear.speech.roman import heading_numerals, keyword_numerals
+from dogear.speech.spoken import ENGLISH, Pair, keep_final_period, say_amount
+from dogear.speech.times import say_times
+from dogear.speech.units import say_units
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +60,12 @@ class SpeechRules:
     abbreviations: dict[str, str]
     before_name: dict[str, str]
     before_number: dict[str, str]
+    roman_keywords: tuple[str, ...]
+    time_suffixes: dict[str, str]
+    currency: dict[str, Pair]
+    currency_cents: dict[str, Pair]
+    currency_scales: dict[str, str]
+    units: dict[str, Pair]
 
     @classmethod
     def from_config(cls, config: Config) -> SpeechRules:
@@ -61,6 +74,12 @@ class SpeechRules:
             abbreviations=dict(speech["abbreviations"]),
             before_name=dict(speech["abbreviations_before_name"]),
             before_number=dict(speech["abbreviations_before_number"]),
+            roman_keywords=tuple(speech["roman_numeral_keywords"]),
+            time_suffixes=dict(speech["time_suffixes"]),
+            currency=_pairs(speech["currency"]),
+            currency_cents=_pairs(speech["currency_cents"]),
+            currency_scales=dict(speech["currency_scales"]),
+            units=_pairs(speech["units"]),
         )
 
     def patterns(self) -> list[tuple[re.Pattern[str], str]]:
@@ -78,18 +97,43 @@ class SpeechRules:
 
 
 def normalize_for_speech(text: str, rules: SpeechRules, lang: str | None) -> str:
+    """One sentence of body text, rewritten as the words a voice should say."""
+    return _speak(_normalize_punctuation(text), rules, lang)
+
+
+def normalize_heading(text: str, rules: SpeechRules, lang: str | None) -> str:
+    """Like `normalize_for_speech`, for a heading or section title. A roman numeral that
+    numbers the heading is read as a number too: "IV." is "four.", and "CHAPTER I THE
+    BEGINNING" is "CHAPTER one THE BEGINNING". Body text leaves both alone, since there
+    a bare numeral may be a letter and a lone "I" before a word may be the pronoun.
+    """
     text = _normalize_punctuation(text)
+    if _is_english(lang):
+        text = heading_numerals(text, rules.roman_keywords)
+    return _speak(text, rules, lang)
+
+
+def _speak(text: str, rules: SpeechRules, lang: str | None) -> str:
+    if _is_english(lang):
+        text = _english_passes(text, rules)
     for pattern, expansion in rules.patterns():
-        text = pattern.sub(lambda m, e=expansion: _expand(m, e), text)
+        text = pattern.sub(lambda m, e=expansion: keep_final_period(m, e), text)
     text = _NUMBER.sub(lambda m: _speak_number(m, _num2words_lang(lang)), text)
     text = _MARKUP.sub("", text)
     return _SPACES.sub(" ", text).strip()
 
 
-def _expand(match: re.Match[str], expansion: str) -> str:
-    # "fruits, etc." ends the sentence: keep its period so the voice still stops.
-    rest = match.string[match.end() :].strip("\"') ]")
-    return f"{expansion}." if match.group(0).endswith(".") and not rest else expansion
+def _english_passes(text: str, rules: SpeechRules) -> str:
+    # Roman numerals go first: they become digits that the abbreviation and number passes
+    # then read. With "Vol." as a keyword, "Vol. IV" -> "Vol. 4" -> "volume four".
+    text = keyword_numerals(text, rules.roman_keywords)
+    text = say_times(text, rules.time_suffixes)
+    text = say_money(text, rules.currency, rules.currency_cents, rules.currency_scales)
+    return say_units(text, rules.units)
+
+
+def _pairs(table: dict[str, list[str]]) -> dict[str, Pair]:
+    return {key: (singular, plural) for key, (singular, plural) in table.items()}
 
 
 def _normalize_punctuation(text: str) -> str:
@@ -103,18 +147,19 @@ def _normalize_punctuation(text: str) -> str:
 
 
 def _num2words_lang(lang: str | None) -> str:
-    return (lang or "en").split("-")[0].lower()
+    return (lang or ENGLISH).split("-")[0].lower()
+
+
+def _is_english(lang: str | None) -> bool:
+    """English, or a book that doesn't say (read as English, like its numbers)."""
+    return _num2words_lang(lang) == ENGLISH
 
 
 def _speak_number(match: re.Match[str], lang: str) -> str:
     original = match.group(0)
     try:
-        if grouped := match.group("grouped"):
-            return num2words(int(grouped.replace(",", "")), lang=lang)
-        if decimal := match.group("decimal"):
-            whole, fraction = decimal.split(".")
-            digits = " ".join(num2words(int(d), lang=lang) for d in fraction)
-            return f"{num2words(int(whole), lang=lang)} point {digits}"
+        if amount := match.group("grouped") or match.group("decimal"):
+            return say_amount(amount, lang)
         if ordinal := match.group("ordinal"):
             return num2words(int(ordinal), lang=lang, to="ordinal")
         return _speak_integer(match.group("int"), lang)
