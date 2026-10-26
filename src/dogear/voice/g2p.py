@@ -82,11 +82,15 @@ class EspeakFallback:
 
 def to_misaki(ipa: str, british: bool) -> str:
     """Rewrite espeak-ng IPA (with ^ ties) into misaki's phoneme set."""
+    if british:
+        # Before the table, whose "e" -> "A" would otherwise turn "e^ə" into "Aə". misaki
+        # 0.9.4 has that order, so its rule never matched; its British lexicon says "ɛː".
+        ipa = ipa.replace("e^ə", "ɛː")
     for old, new in _ESPEAK_TO_MISAKI:
         ipa = ipa.replace(old, new)
     ipa = _SYLLABIC.sub(r"ᵊ\1", ipa).replace("̩", "")
     if british:
-        ipa = ipa.replace("e^ə", "ɛː").replace("iə", "ɪə").replace("ə^ʊ", "Q")
+        ipa = ipa.replace("iə", "ɪə").replace("ə^ʊ", "Q")
     else:
         ipa = ipa.replace("o^ʊ", "O").replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ")
         ipa = ipa.replace("ɪə", "iə").replace("ː", "")
