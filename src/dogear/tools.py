@@ -14,7 +14,7 @@ from dogear.errors import ToolFailedError, ToolNotFoundError
 TOOLS = {
     "ffmpeg": (
         "ffmpeg",
-        "Install ffmpeg (Windows: winget install ffmpeg; macOS: brew install ffmpeg; "
+        "Install ffmpeg (Windows: winget install Gyan.FFmpeg; macOS: brew install ffmpeg; "
         "Debian/Ubuntu: sudo apt install ffmpeg).",
     ),
     "ffprobe": ("ffprobe", "ffprobe comes with ffmpeg. Install ffmpeg."),

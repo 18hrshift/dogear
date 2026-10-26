@@ -8,9 +8,10 @@ Dogear is an open talking-book maker: books in, navigable audio out, built first
 and low-vision listeners. Read [`ROADMAP.md`](ROADMAP.md) before starting work. It defines
 each phase and what "done" means.
 
-**Current state:** Phase 0 (foundation). Dogear reads EPUB, PDF, and Kindle books into a
-structured document, cleans text for speech, OCRs scanned PDFs, and assembles MP3/M4B
-files with ffmpeg. It does not make speech yet; that's Phase 1.
+**Current state:** Phase 1 (first listen). `dogear make` reads an EPUB, PDF, or Kindle book
+into a structured document, narrates it with spoken structure, speaks it with the Kokoro
+voice on the CPU, and packages an M4B and/or an MP3 folder. DAISY and EPUB 3 read-along
+output are Phase 2.
 
 ## Working here
 
@@ -20,8 +21,10 @@ bash test.sh        # ruff check + ruff format check + pytest; must pass before 
 uv run dogear --help
 ```
 
-Some tests need ffmpeg or Tesseract and skip without them. CI installs both and sets
-`DOGEAR_REQUIRE_TOOLS=ffmpeg,ffprobe,tesseract`, which turns those skips into failures.
+Some tests need ffmpeg, Tesseract, or eSpeak NG and skip without them. CI installs all three
+and sets `DOGEAR_REQUIRE_TOOLS=ffmpeg,ffprobe,tesseract,espeak-ng`, which turns those skips
+into failures. Unit tests never load the real voice; a separate CI job (`voice`) downloads
+it (cached between runs) and makes a short audiobook on each platform.
 
 ## Layout
 
@@ -31,9 +34,14 @@ Some tests need ffmpeg or Tesseract and skip without them. CI installs both and 
 | `src/dogear/defaults.toml`, `config.py` | Every default setting, and loading and validating a user's TOML on top. |
 | `src/dogear/errors.py` | Errors a user can fix, each with a hint. Anything else is a bug. |
 | `src/dogear/tools.py` | Finding and running ffmpeg, Tesseract, and Calibre with install hints. |
-| `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `xhtml`, `xhtml_blocks`, `safe_xml`), `pdf.py` (+ `pdf_text`, `pdf_chapters`, `pdf_sections`), `calibre.py` for Kindle. |
-| `src/dogear/speech/` | `sentences.py` splits display text into sentences; `normalize.py` rewrites a sentence into what the voice should say. |
-| `src/dogear/audio.py` | Joining audio and building M4B files with chapter markers. |
+| `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `epub_sections` for sections from the table of contents, `epub_kind`, `epub_cover`, `xhtml`, `xhtml_blocks`, `xhtml_split`, `safe_xml`), `pdf.py` (+ `pdf_text`, `pdf_chapters`, `pdf_sections`), `calibre.py` for Kindle. |
+| `src/dogear/speech/` | `sentences.py` splits display text into sentences; `normalize.py` rewrites a sentence into what the voice should say, with `money`, `times`, `units`, and `roman` handling one kind of text each. |
+| `src/dogear/narration.py` | Spoken structure: a section becomes utterances with pauses (headings, image descriptions, notes, tables, scene breaks), per `[narration]`. |
+| `src/dogear/voice/` | Voice engines. `engine.py` is the interface (`plan` is cheap and gives the cache key; `render` makes audio). `kokoro.py` runs Kokoro with onnxruntime; `g2p.py` turns English into phonemes (misaki, plus the espeak-ng program for unknown words); `downloads.py` and `catalog.toml` fetch model files pinned by SHA-256. |
+| `src/dogear/render/` | Speaking a narrated book into one WAV per section, through the sentence cache (`cache.py`), with plain-text progress (`progress.py`). |
+| `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). |
+| `src/dogear/make.py` | `dogear make` from start to finish: extract, narrate, speak, package. |
+| `src/dogear/paths.py` | Per-user folders for downloaded models and the speech cache. |
 | `src/dogear/ocr.py` | Adding a text layer to scanned PDFs. |
 | `src/dogear/cli.py` | The `dogear` command. |
 
@@ -79,8 +87,17 @@ Checked with `uv tree --no-dev` when added. Recheck when adding or upgrading.
 | Pillow | MIT-CMU | Page images for OCR |
 | num2words (+ docopt, MIT) | **LGPL-2.1**, used unmodified | Numbers to words |
 | cryptography, charset-normalizer, cffi, pycparser | Apache-2.0 or BSD / MIT | pdfminer.six dependencies |
+| onnxruntime (+ flatbuffers, protobuf, packaging) | MIT (Apache-2.0, BSD-3-Clause) | Running the Kokoro model |
+| numpy | BSD-3-Clause | Audio samples |
+| misaki (+ addict, regex) | Apache-2.0 (MIT, Apache-2.0) | English phonemes for Kokoro. Installed without its `en` extra, which pulls in GPL phonemizer and espeak-ng libraries. |
+| spaCy and its dependencies (thinc, pydantic, typer, requests, and others) | MIT, BSD, Apache-2.0, ISC, PSF; **tqdm and certifi are MPL-2.0**, used unmodified | Part-of-speech tags, so heteronyms are pronounced right |
 
-External programs (not bundled): ffmpeg, Tesseract, and Calibre.
+Downloaded on first use, not bundled: the Kokoro-82M model and voices (Apache-2.0) and spaCy's
+`en_core_web_sm` model (MIT), each pinned by SHA-256 in `src/dogear/voice/catalog.toml`.
+
+External programs (not bundled, run as separate processes, never linked): ffmpeg, Tesseract,
+Calibre, and eSpeak NG (GPL-3.0, used only for words misaki's dictionaries don't have, the
+same fallback Kokoro's own pipeline uses).
 
 ## Prior art
 

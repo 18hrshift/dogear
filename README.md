@@ -3,26 +3,100 @@
 **An open talking-book maker.** Turn the books you own into audiobooks that blind and
 low-vision listeners can actually navigate: by chapter, by heading, by print page.
 
-> **Status: early.** Dogear can read books and prepare their text, but it **does not make
-> audio yet**; voices arrive in Phase 1. The rest of this README describes what Dogear is
-> being built to do. [`ROADMAP.md`](ROADMAP.md) has the plan.
+> **Status: early.** Dogear makes M4B audiobooks and MP3 folders with a natural-sounding
+> voice that runs on an ordinary computer, offline. Talking-book formats with heading and
+> page navigation (DAISY, EPUB 3 read-along) come next. [`ROADMAP.md`](ROADMAP.md) has
+> the plan.
 
-## What works today
+## Install
 
-Dogear reads EPUB and PDF files (and Kindle MOBI/AZW3, if [Calibre](https://calibre-ebook.com)
-is installed) into chapters, headings, notes, image descriptions, and print page numbers.
+Dogear runs on Windows, macOS, and Linux with Python 3.11 or newer. It needs two free
+programs first:
+
+| | ffmpeg (audio) | eSpeak NG (pronouncing unusual names) |
+|---|---|---|
+| Windows | `winget install Gyan.FFmpeg` | `winget install eSpeak-NG.eSpeak-NG` |
+| macOS | `brew install ffmpeg` | `brew install espeak-ng` |
+| Debian, Ubuntu | `sudo apt install ffmpeg` | `sudo apt install espeak-ng` |
+
+Then install Dogear itself with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-git clone https://github.com/18hrshift/dogear && cd dogear
-uv sync                                    # needs uv: https://docs.astral.sh/uv/
-
-uv run dogear outline mybook.epub          # title, authors, and every section
-uv run dogear text mybook.epub --section 3 # the text Dogear found in section 3
-uv run dogear text mybook.epub --spoken    # each sentence the way the voice will say it
-uv run dogear ocr scanned.pdf              # add a text layer to a scanned PDF (needs Tesseract)
+uv tool install git+https://github.com/18hrshift/dogear
 ```
 
-Output is plain text written to read well with a screen reader.
+(`pipx install git+https://github.com/18hrshift/dogear` works too.) Dogear isn't on PyPI
+yet. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
+install Tesseract OCR.
+
+## Make an audiobook
+
+```bash
+dogear make mybook.epub
+```
+
+That's it. Dogear saves `<book title>.m4b` next to the book, with a chapter marker for every
+chapter, the cover, and the title and author filled in. The first time, it downloads the
+voice (about 340 MB, once).
+
+It takes a while. On a 6-core desktop processor from 2017 (Intel i7-8700K), Dogear spoke
+about three times faster than real time, so an hour of audio took about 20 minutes. It
+prints a plain progress line now and then, with an estimate of the time left. **Stopping
+is safe**: press Ctrl+C, run the same command later, and it carries on where it stopped.
+Every spoken sentence is kept, so fixing one word in a book re-speaks only the sentences
+that contain it.
+
+Useful options:
+
+```bash
+dogear make mybook.epub --format mp3      # a folder of numbered MP3s plus a playlist
+dogear make mybook.epub --format both     # the M4B and the MP3 folder
+dogear make mybook.epub --sections 3      # just section 3, to try the voice first
+dogear make mybook.epub --voice bf_emma   # another voice; see `dogear voices`
+dogear make mybook.epub --speed 1.0       # faster (the default is 0.9)
+dogear make mybook.epub -o ~/Audiobooks   # save somewhere else
+```
+
+### Check a book before making it
+
+```bash
+dogear outline mybook.epub                # title, authors, and every section
+dogear text mybook.epub --section 3       # the text Dogear found in section 3
+dogear text mybook.epub --spoken          # every line exactly as the voice will say it
+dogear ocr scanned.pdf                    # add a text layer to a scanned PDF (needs Tesseract)
+dogear download                           # fetch the voice now, before going offline
+```
+
+Everything Dogear prints is plain text, written to read well with a screen reader.
+
+### What it reads, and how
+
+- **EPUB, PDF, and Kindle** (MOBI and AZW3, through Calibre). EPUB chapters come from the
+  book's table of contents.
+- **Headings** are read with a pause after them. Longer pauses mark bigger breaks: a
+  sentence, a paragraph, a scene break, a chapter.
+- **Image descriptions** are read as "Image: ...". Decorative images are skipped.
+- **Footnotes** are read right after the paragraph that refers to them.
+- **Tables** are read row by row, with each column's heading.
+- **Numbers, dates, money, times, and units** are spoken the way a person would say them:
+  "$5.99" is "five dollars and ninety-nine cents", "Chapter IV" is "Chapter four".
+- **Print page numbers** are kept for navigation and not read aloud, unless you ask.
+
+Every one of these is a setting. Put the ones you want to change in a TOML file and pass
+it with `--config`:
+
+```toml
+[voice]
+voice = "bf_emma"
+speed = 1.0
+
+[narration]
+footnotes = "end_of_section"   # or "after_paragraph", "where_printed", "skip"
+announce_pages = true          # say "Page 42" where each print page begins
+```
+
+The full list, with what each one does, is in
+[`src/dogear/defaults.toml`](src/dogear/defaults.toml).
 
 ## Why another audiobook tool?
 
@@ -34,19 +108,27 @@ can't see the screen. Dogear is:
   like Thorium Reader or a Victor Reader Stream.
 - **Structure-aware.** Headings, image descriptions, footnotes, and tables are read on purpose,
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
-- **Offline and CPU-first.** A normal laptop is enough. No GPU, no account, and your books
-  never leave your machine unless you choose a cloud voice.
-- **Accessible to run.** The command line and the future web UI are designed to work with
-  screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca).
+- **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
+  never leave your machine.
+- **Accessible to run.** The command line, and the web interface planned for later, are
+  designed to work with screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca).
 
-## Planned outputs
+## Outputs
 
-| Format | Good for |
-|---|---|
-| M4B with chapters | Phone audiobook apps |
-| MP3 folder + playlist | Anything that plays audio, including older players |
-| EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) |
-| DAISY | Talking-book players and apps, with heading and page navigation |
+| Format | Good for | Status |
+|---|---|---|
+| M4B with chapters | Phone audiobook apps | Works |
+| MP3 folder + playlist | Anything that plays audio, including older players | Works |
+| EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) | Phase 2 |
+| DAISY | Talking-book players and apps, with heading and page navigation | Phase 2 |
+
+## The voice
+
+Dogear speaks with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0),
+an open model small enough to run on a CPU. It has 28 English voices, American and British;
+`dogear voices` lists them with Kokoro's own quality grades. The default, `af_heart`, is the
+best rated. Pronunciation comes from the dictionaries Kokoro was trained with
+([misaki](https://github.com/hexgrad/misaki)), with eSpeak NG for words they don't have.
 
 ## Get involved
 
