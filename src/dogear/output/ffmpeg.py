@@ -5,8 +5,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from dogear.config import Config
-from dogear.errors import ToolFailedError
-from dogear.tools import find_tool, run_tool
+from dogear.errors import ToolFailedError, ToolNotFoundError
+from dogear.tools import TOOLS, find_tool, run_tool
+
+
+def check_ffmpeg(config: Config) -> None:
+    """Fail now, not after hours of speaking, if ffmpeg can't package a book.
+
+    The peak limiter's `latency` option (see `loudness.py`) arrived in ffmpeg 5.1.
+    """
+    ffmpeg = find_tool("ffmpeg", config)
+    find_tool("ffprobe", config)
+    options = run_tool([ffmpeg, "-hide_banner", "-h", "filter=alimiter"]).stdout
+    if "latency" not in options:
+        raise ToolNotFoundError(
+            "This ffmpeg is too old for Dogear, which needs version 5.1 or newer.",
+            hint=TOOLS["ffmpeg"][1],
+        )
 
 
 def probe_duration(path: Path, config: Config) -> float:

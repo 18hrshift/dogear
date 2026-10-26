@@ -16,6 +16,7 @@ from dogear.errors import DogearError, VoiceError
 from dogear.extract import extract_book
 from dogear.narration import SectionNarration, narrate_book
 from dogear.output import build_m4b, build_mp3_folder, normalize_chapters
+from dogear.output.ffmpeg import check_ffmpeg
 from dogear.output.filenames import safe_filename
 from dogear.paths import cache_dir
 from dogear.render import render_book
@@ -40,6 +41,7 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
     if request.language:
         book.metadata.language = request.language
     check_language(book)
+    check_ffmpeg(config)
     narrations = _chosen(narrate_book(book, config), request.sections, len(book.sections))
     progress = Progress(
         total_words=sum(n.words() for n in narrations),
@@ -90,14 +92,20 @@ def parse_sections(spec: str) -> set[int]:
     """'3' or '1-3,7' as a set of section numbers."""
     numbers: set[int] = set()
     for part in spec.split(","):
-        first, _, last = part.strip().partition("-")
+        first, dash, last = part.strip().partition("-")
         try:
-            start, end = int(first), int(last or first)
+            start = int(first)
+            end = int(last) if dash else start
         except ValueError:
             raise DogearError(
                 f"'{spec}' isn't a list of section numbers.",
                 hint="Use numbers from `dogear outline`, such as 3 or 1-3,7.",
             ) from None
+        if end < start:
+            raise DogearError(
+                f"'{part.strip()}' counts backwards.",
+                hint=f"Write the lower number first: {end}-{start}.",
+            )
         numbers.update(range(start, end + 1))
     return numbers
 

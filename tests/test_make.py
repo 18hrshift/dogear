@@ -1,0 +1,199 @@
+"""`dogear make` from start to finish, with a fake voice and a small built book."""
+
+import hashlib
+from pathlib import Path
+
+import numpy as np
+import pytest
+from conftest import require_tool
+
+from dogear import cli, make
+from dogear.document import Book, Heading, Metadata, Paragraph, Section
+from dogear.errors import DogearError, ToolNotFoundError, VoiceError
+from dogear.make import MakeRequest, check_language, make_audiobook, parse_sections
+from dogear.voice.engine import SpeechPlan
+
+RATE = 24000
+
+
+class HumEngine:
+    """A voice that hums each sentence for a tenth of a second per word."""
+
+    sample_rate = RATE
+
+    def __init__(self) -> None:
+        self.rendered: list[str] = []
+
+    def plan(self, text: str) -> SpeechPlan:
+        return SpeechPlan(key=hashlib.sha256(text.encode()).hexdigest(), payload=text)
+
+    def render(self, plan: SpeechPlan) -> np.ndarray:
+        self.rendered.append(plan.payload)
+        seconds = 0.1 * len(plan.payload.split())
+        t = np.arange(int(RATE * seconds)) / RATE
+        return (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+
+
+def small_book(language: str | None = "en") -> Book:
+    return Book(
+        metadata=Metadata(title="A Short Book: Part 1", authors=["Ann Author"], language=language),
+        sections=[
+            Section("One", blocks=[Heading(1, "One"), Paragraph("The first chapter. It ends.")]),
+            Section("Two", blocks=[Heading(1, "Two"), Paragraph("The second chapter.")]),
+            Section("Three", blocks=[Heading(1, "Three"), Paragraph("The last one.")]),
+        ],
+        source_path=Path("short.epub"),
+        source_format="epub",
+    )
+
+
+@pytest.fixture
+def setup(monkeypatch, config, tmp_path):
+    """make.py with the small book and the fake voice; returns what the run used."""
+    config["render"]["cache_dir"] = str(tmp_path / "cache")
+    used = {"book": small_book(), "engine": HumEngine(), "lines": []}
+    monkeypatch.setattr(make, "extract_book", lambda path, cfg: used["book"])
+    monkeypatch.setattr(make, "make_engine", lambda cfg, report: used["engine"])
+    return used
+
+
+def run(config, tmp_path, used, **request):
+    request = MakeRequest(book=tmp_path / "short.epub", output_dir=tmp_path / "out", **request)
+    return make_audiobook(request, config, used["lines"].append)
+
+
+def chapter_titles(m4b: Path) -> list[str]:
+    import subprocess
+
+    result = subprocess.run(
+        [require_tool("ffprobe"), "-v", "error", "-show_entries", "chapter_tags=title"]
+        + ["-of", "csv=p=0", str(m4b)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.split()
+
+
+def test_makes_an_m4b_named_after_the_title(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    saved = run(config, tmp_path, setup)
+    assert saved == [tmp_path / "out" / "A Short Book Part 1.m4b"]
+    assert chapter_titles(saved[0]) == ["One", "Two", "Three"]
+    assert any(line.startswith("Making an audiobook of A Short Book") for line in setup["lines"])
+    assert "Section 3 of 3 done: Three." in setup["lines"]
+
+
+def test_both_formats_and_chosen_sections(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    config["output"]["formats"] = ["m4b", "mp3"]
+    m4b, folder = run(config, tmp_path, setup, sections={1, 3})
+    assert chapter_titles(m4b) == ["One", "Three"]
+    assert folder.name == "A Short Book Part 1 MP3"
+    assert sorted(p.name for p in folder.glob("*.mp3")) == ["01 - One.mp3", "02 - Three.mp3"]
+    assert not any("second" in text for text in setup["engine"].rendered)
+
+
+def test_second_run_speaks_nothing_new(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    run(config, tmp_path, setup)
+    first = len(setup["engine"].rendered)
+    setup["engine"].rendered.clear()
+    run(config, tmp_path, setup)
+    assert first > 0
+    assert setup["engine"].rendered == []
+
+
+def test_old_ffmpeg_stops_before_any_speaking(setup, config, tmp_path, monkeypatch):
+    def too_old(cfg):
+        raise ToolNotFoundError("This ffmpeg is too old for Dogear.")
+
+    monkeypatch.setattr(make, "check_ffmpeg", too_old)
+    with pytest.raises(ToolNotFoundError):
+        run(config, tmp_path, setup)
+    assert setup["engine"].rendered == []
+
+
+def test_book_in_another_language_explains_the_override(setup, config, tmp_path):
+    setup["book"] = small_book(language="fr")
+    with pytest.raises(VoiceError) as err:
+        run(config, tmp_path, setup)
+    assert "'fr'" in err.value.message
+    assert "--language en" in err.value.hint
+
+
+def test_language_override_lets_it_through(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    setup["book"] = small_book(language="fr")
+    assert run(config, tmp_path, setup, language="en")
+
+
+@pytest.mark.parametrize("language", [None, "en", "en-GB", "EN-us"])
+def test_english_or_unlabeled_books_are_accepted(language):
+    check_language(small_book(language))
+
+
+def test_unknown_format_in_config_is_an_error(setup, config, tmp_path):
+    config["output"]["formats"] = ["m4b", "wav"]
+    with pytest.raises(DogearError, match="each entry must be one of: m4b, mp3"):
+        run(config, tmp_path, setup)
+
+
+def test_section_outside_the_book_is_an_error(setup, config, tmp_path):
+    with pytest.raises(DogearError, match="There is no section 9; this book has 3."):
+        run(config, tmp_path, setup, sections={2, 9})
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"), [("3", {3}), ("1-3,7", {1, 2, 3, 7}), (" 2 , 4-5 ", {2, 4, 5})]
+)
+def test_parse_sections(spec, expected):
+    assert parse_sections(spec) == expected
+
+
+@pytest.mark.parametrize("spec", ["", "two", "1-", "3,x"])
+def test_parse_sections_rejects_nonsense(spec):
+    with pytest.raises(DogearError, match="isn't a list of section numbers"):
+        parse_sections(spec)
+
+
+def test_parse_sections_rejects_a_backwards_range():
+    with pytest.raises(DogearError, match="'5-2' counts backwards") as err:
+        parse_sections("1,5-2")
+    assert err.value.hint == "Write the lower number first: 2-5."
+
+
+def test_cli_make_passes_options_through(monkeypatch, capsys, tmp_path):
+    seen = {}
+
+    def fake_make(request, config, report):
+        seen.update(request=request, config=config)
+        return [tmp_path / "Book.m4b"]
+
+    monkeypatch.setattr(cli, "make_audiobook", fake_make)
+    book = tmp_path / "book.epub"
+    args = ["make", str(book), "--format", "both", "--voice", "bf_emma", "--speed", "1.1"]
+    assert cli.main([*args, "--sections", "2-3", "--language", "en"]) == 0
+    assert capsys.readouterr().out == f"Saved: {tmp_path / 'Book.m4b'}\n"
+    assert seen["request"] == MakeRequest(
+        book=book, output_dir=tmp_path, sections={2, 3}, language="en"
+    )
+    assert seen["config"]["output"]["formats"] == ["m4b", "mp3"]
+    assert seen["config"]["voice"]["voice"] == "bf_emma"
+    assert seen["config"]["voice"]["speed"] == 1.1
+
+
+def test_cli_make_rejects_a_speed_the_voice_cant_do(capsys, tmp_path):
+    assert cli.main(["make", str(tmp_path / "b.epub"), "--speed", "5"]) == 1
+    err = capsys.readouterr().err
+    assert "A speed of 5.0 is outside what the voice can do." in err
+    assert "What to do: Use a value from 0.5 to 2.0" in err
+
+
+def test_cli_make_says_how_to_continue_after_ctrl_c(monkeypatch, capsys, tmp_path):
+    def interrupted(request, config, report):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "make_audiobook", interrupted)
+    assert cli.main(["make", str(tmp_path / "b.epub")]) == 130
+    assert "Run the same command again to continue." in capsys.readouterr().err
