@@ -1,18 +1,17 @@
 """Turn the lines on PDF pages into clean paragraph text.
 
 Works on lines that `dogear.extract.pdf` has already read, so nothing here opens a file.
-Cleanup removes print layout only: page numbers, running headers and footers, and line-end
-hyphens. Words are never rewritten; speech normalization happens later.
+Cleanup removes print layout only, such as line-end hyphens; `pdf_furniture` removes page
+numbers and running headers. Words are never rewritten; speech normalization happens later.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections import Counter
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
-from functools import partial
 from itertools import pairwise
 
 log = logging.getLogger(__name__)
@@ -29,9 +28,6 @@ HEADING_MAX_LINES = 3
 # A valid lowercase roman numeral such as "xiv". Lowercase only: "I", "IV" or "MIX" alone
 # on a line are more often a chapter number or a word than a page number.
 ROMAN = r"(?=[ivxlcdm])m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})"
-_PAGE_NUMBER = re.compile(rf"[\[(\-–—\s]*(?:\d{{1,4}}|{ROMAN})[\])\-–—\s]*")
-_EDGE_ROMAN = re.compile(rf"^{ROMAN}\b|\b{ROMAN}$")
-_DIGITS = re.compile(r"\d+")
 _SPLIT_WORD = re.compile(r"[^\W\d_]-$")  # a letter, then a hyphen, at the end of a line
 _OPEN_DASH = re.compile(r"\S[—–]$")  # a dash touching the last word, as in "and then—"
 _SENTENCE_END = re.compile(r"[.!?…][\"'”’»)\]]*$|[—–-][\"'”’»]+$")
@@ -177,132 +173,6 @@ def leading_heading_lines(lines: Sequence[Line], layout: Layout) -> int:
     text = "".join(line.text for line in lines[:count])
     # One large letter is a drop cap or an ornament, not a heading.
     return count if sum(c.isalnum() for c in text) >= 2 else 0
-
-
-def is_page_number(text: str) -> bool:
-    return _PAGE_NUMBER.fullmatch(text) is not None
-
-
-def running_key(text: str) -> str:
-    """Text compared across pages to spot running headers: digits and case ignored."""
-    text = _EDGE_ROMAN.sub("#", text.strip())  # before casefolding: only lowercase numerals
-    return " ".join(_DIGITS.sub("#", text.casefold()).split())
-
-
-def strip_furniture(
-    pages: Sequence[Page],
-    layout: Layout,
-    *,
-    is_label: Callable[[str], bool],
-    min_pages: int,
-    min_share: float,
-) -> list[Page]:
-    """Drop page numbers and running headers and footers from the top and bottom of pages.
-
-    A first or last line is a running header or footer when its `running_key` comes back
-    on at least `min_pages` pages, and on at least `min_share` of the pages from its first
-    appearance to its last. The share keeps a line that happens to repeat far apart, such
-    as a scene-break ornament.
-
-    Only lines set apart from the text block by more than a paragraph gap count, so a line
-    of prose that happens to repeat at the foot of several pages stays. Lines in heading
-    type are never removed. Lines that `is_label` (such as "Chapter 3") are matched on
-    their exact text instead, and their first appearance is kept, because that is where
-    the section opens; chapter detection depends on it.
-    """
-
-    def removable(line: Line, neighbour: Line | None) -> bool:
-        if layout.is_heading(line):
-            return False
-        return neighbour is None or abs(neighbour.bottom - line.bottom) > layout.paragraph_gap
-
-    def key(line: Line) -> str:
-        # The prefix keeps a label's exact text apart from normalized keys.
-        return f"label:{line.text.casefold()}" if is_label(line.text) else running_key(line.text)
-
-    def page_number(line: Line, neighbour: Line | None) -> bool:
-        return removable(line, neighbour) and not is_label(line.text) and is_page_number(line.text)
-
-    def drop(
-        line: Line, neighbour: Line | None, running: dict[str, int | None], index: int
-    ) -> bool:
-        if page_number(line, neighbour):
-            return True
-        if not removable(line, neighbour):
-            return False
-        k = key(line)
-        return k in running and running[k] != index
-
-    def counted(line: Line, neighbour: Line | None) -> bool:
-        # A large "Notes" opening counts as the first "NOTES" header, so it is the one kept.
-        return removable(line, neighbour) or (layout.is_heading(line) and is_label(line.text))
-
-    tops: list[tuple[int, Line]] = []
-    bottoms: list[tuple[int, Line]] = []
-    for page in pages:
-        lines = _trim(page.lines, page_number, page_number)
-        if lines and counted(lines[0], _at(lines, 1)):
-            tops.append((page.index, lines[0]))
-        if lines and counted(lines[-1], _at(lines, -2)):
-            bottoms.append((page.index, lines[-1]))
-    headers = _running(tops, key, is_label, min_pages, min_share)
-    footers = _running(bottoms, key, is_label, min_pages, min_share)
-    cleaned = [
-        replace(
-            page,
-            lines=_trim(
-                page.lines,
-                partial(drop, running=headers, index=page.index),
-                partial(drop, running=footers, index=page.index),
-            ),
-        )
-        for page in pages
-    ]
-    removed = sum(len(page.lines) for page in pages) - sum(len(page.lines) for page in cleaned)
-    log.info("Removed %d page-number, header, and footer lines", removed)
-    return cleaned
-
-
-EdgeTest = Callable[[Line, "Line | None"], bool]
-
-
-def _at(lines: Sequence[Line], index: int) -> Line | None:
-    return lines[index] if -len(lines) <= index < len(lines) else None
-
-
-def _trim(lines: Sequence[Line], drop_top: EdgeTest, drop_bottom: EdgeTest) -> tuple[Line, ...]:
-    """Drop lines from each end while the test holds. Each test also gets the line's
-    neighbour on the text side (None when it is the last line left)."""
-    start, end = 0, len(lines)
-    while start < end and drop_top(lines[start], lines[start + 1] if start + 1 < end else None):
-        start += 1
-    while end > start and drop_bottom(lines[end - 1], lines[end - 2] if end - 2 >= start else None):
-        end -= 1
-    return tuple(lines[start:end])
-
-
-def _running(
-    edges: Sequence[tuple[int, Line]],
-    key: Callable[[Line], str],
-    is_label: Callable[[str], bool],
-    min_pages: int,
-    min_share: float,
-) -> dict[str, int | None]:
-    """Running line keys, each mapped to the one page where it is kept (None: nowhere)."""
-    pages_by_key: dict[str, list[int]] = defaultdict(list)
-    labels: set[str] = set()
-    for index, line in edges:
-        k = key(line)
-        pages_by_key[k].append(index)
-        if is_label(line.text):
-            labels.add(k)
-    running: dict[str, int | None] = {}
-    for k, indexes in pages_by_key.items():
-        span = indexes[-1] - indexes[0] + 1
-        if len(indexes) >= min_pages and len(indexes) / span >= min_share:
-            log.debug("Running header or footer on %d pages: %r", len(indexes), k)
-            running[k] = indexes[0] if k in labels else None
-    return running
 
 
 def join_lines(lines: Iterable[str]) -> str:

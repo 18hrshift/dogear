@@ -33,8 +33,9 @@ from dogear.extract.pdf_chapters import (
     is_section_label,
     mark_back_matter,
 )
+from dogear.extract.pdf_furniture import strip_furniture
 from dogear.extract.pdf_sections import build_sections
-from dogear.extract.pdf_text import Line, Page, measure_layout, merge_drop_caps, strip_furniture
+from dogear.extract.pdf_text import Line, Page, measure_layout, merge_drop_caps
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class PdfSettings:
     min_chars_per_page: float
     running_line_min_pages: int
     running_line_min_share: float
+    running_line_max_lines: int
     paragraph_gap_ratio: float
     paragraph_indent_ratio: float
 
@@ -70,6 +72,7 @@ class PdfSettings:
             min_chars_per_page=table["min_chars_per_page"],
             running_line_min_pages=table["running_line_min_pages"],
             running_line_min_share=table["running_line_min_share"],
+            running_line_max_lines=table["running_line_max_lines"],
             paragraph_gap_ratio=table["paragraph_gap_ratio"],
             paragraph_indent_ratio=table["paragraph_indent_ratio"],
         )
@@ -80,6 +83,7 @@ class PdfSettings:
         _require(
             "running_line_min_share", 0 < settings.running_line_min_share <= 1, "between 0 and 1"
         )
+        _require("running_line_max_lines", settings.running_line_max_lines >= 1, "at least 1")
         _require("paragraph_gap_ratio", settings.paragraph_gap_ratio > 1, "more than 1")
         _require("paragraph_indent_ratio", settings.paragraph_indent_ratio > 0, "more than 0")
         return settings
@@ -116,6 +120,7 @@ def extract(path: Path, config: Config) -> Book:
         is_label=is_section_label,
         min_pages=settings.running_line_min_pages,
         min_share=settings.running_line_min_share,
+        max_lines=settings.running_line_max_lines,
     )
     source = ChapterSource(pages, catalog.outline, layout, settings.page_split_size)
     found = detect_chapters(settings.chapter_detection, source)

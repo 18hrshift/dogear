@@ -16,6 +16,9 @@ min_chars_per_page = 25
 running_line_min_pages = 3
 # ...and at least this share of the pages between its first and last appearance.
 running_line_min_share = 0.4
+# A running header or footer can be up to this many lines deep, such as the book's title
+# with the chapter's title under it. Each line must repeat on its own to be removed.
+running_line_max_lines = 2
 # A new paragraph starts where the space between two lines is this many times the usual
 # line spacing.
 paragraph_gap_ratio = 1.3

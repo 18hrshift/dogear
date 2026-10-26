@@ -1,169 +1,26 @@
 """Page-text cleanup and paragraph rules, tested on hand-placed lines (no PDF needed)."""
 
 import pytest
+from pdf_lines import BODY, PITCH, body_lines, layout_for, ln
 
 from dogear.extract.pdf_text import (
-    Layout,
     Line,
     Page,
     body_size,
     continues,
-    is_page_number,
     join_lines,
     leading_heading_lines,
     measure_layout,
     merge_drop_caps,
-    running_key,
     split_paragraphs,
-    strip_furniture,
 )
 
-BODY = 11.0
-PITCH = 14.0
 SOFT_HYPHEN = chr(0xAD)
-
-
-def ln(text: str, top: float, *, x0: float = 72.0, size: float = BODY, x1: float = 0) -> Line:
-    """A line whose box is as tall as its font size, like pdfplumber reports."""
-    return Line(
-        text=text,
-        top=top,
-        bottom=top + size,
-        x0=x0,
-        x1=x1 or x0 + 5.0 * len(text),
-        size=size,
-        chars=len(text.replace(" ", "")),
-    )
-
-
-def body_lines(start: float, count: int, prefix: str = "body") -> list[Line]:
-    return [ln(f"{prefix} line {i} of the page", start + i * PITCH, x1=540) for i in range(count)]
 
 
 @pytest.fixture
 def layout(config):
-    pdf = config["pdf"]
-    return Layout(
-        body_size=BODY,
-        heading_size=BODY * pdf["heading_size_ratio"],
-        line_pitch=PITCH,
-        gap_ratio=pdf["paragraph_gap_ratio"],
-        indent=BODY * pdf["paragraph_indent_ratio"],
-    )
-
-
-def never_label(text: str) -> bool:
-    return False
-
-
-def strip(pages, layout, *, is_label=never_label, min_pages=3, min_share=0.4):
-    cleaned = strip_furniture(
-        pages, layout, is_label=is_label, min_pages=min_pages, min_share=min_share
-    )
-    return [[line.text for line in page.lines] for page in cleaned]
-
-
-# Page numbers and running lines
-
-
-@pytest.mark.parametrize("text", ["42", "7", "xii", "iv", "- 7 -", "[iv]", "(12)"])
-def test_page_numbers(text):
-    assert is_page_number(text)
-
-
-@pytest.mark.parametrize("text", ["1865 was a hard year", "I", "XII", "mild", "Chapter 3", "12345"])
-def test_not_page_numbers(text):
-    assert not is_page_number(text)
-
-
-def test_running_key_ignores_digits_case_and_edge_numerals():
-    assert running_key("Page 12 of 300") == running_key("PAGE 13 OF 300") == "page # of #"
-    assert running_key("xii   Preface") == running_key("xiii Preface") == "# preface"
-
-
-def page_with_furniture(index: int, header: str | None, footer: str | None) -> Page:
-    lines = []
-    if header:
-        lines.append(ln(header, 40, size=9))
-    lines += body_lines(72, 5, prefix=f"page {index}")
-    if footer:
-        lines.append(ln(footer, 750, size=9))
-    return Page(index=index, label=str(index + 1), lines=tuple(lines))
-
-
-def test_page_numbers_dropped_at_top_and_bottom_only(layout):
-    page = Page(0, "1", (ln("7", 40), *body_lines(72, 2), ln("42", 100), ln("xii", 750)))
-    [kept] = strip([page], layout)
-    assert kept == ["body line 0 of the page", "body line 1 of the page", "42"]
-
-
-def test_running_headers_and_footers_removed(layout):
-    pages = [page_with_furniture(i, "THE BOOK TITLE", f"Page {i + 1} of 6") for i in range(6)]
-    for kept in strip(pages, layout):
-        assert len(kept) == 5
-        assert all(text.startswith("page ") for text in kept)
-
-
-def test_running_header_needs_min_pages(layout):
-    pages = [page_with_furniture(i, "THE BOOK TITLE" if i < 2 else None, None) for i in range(6)]
-    assert strip(pages, layout)[0][0] == "THE BOOK TITLE"
-    assert strip(pages, layout, min_pages=2)[0][0] != "THE BOOK TITLE"
-
-
-def test_running_header_needs_min_share(layout):
-    # The same ornament opens pages 0, 10 and 20: 3 of 21 pages, so it is not a header.
-    pages = [page_with_furniture(i, "* * *" if i % 10 == 0 else None, None) for i in range(21)]
-    assert strip(pages, layout)[10][0] == "* * *"
-    assert strip(pages, layout, min_share=0.1)[10][0] != "* * *"
-
-
-def test_alternating_headers_removed(layout):
-    pages = [
-        page_with_furniture(i, "THE BOOK TITLE" if i % 2 else "A Chapter Title", None)
-        for i in range(8)
-    ]
-    assert all(kept[0].startswith("page ") for kept in strip(pages, layout))
-
-
-def test_repeated_prose_at_page_foot_is_kept(layout):
-    # Same last line on every page, but it sits in the text block, not apart from it.
-    pages = [
-        Page(i, str(i + 1), (*body_lines(72, 3), ln("and the same last line", 72 + 3 * PITCH)))
-        for i in range(5)
-    ]
-    assert all(kept[-1] == "and the same last line" for kept in strip(pages, layout))
-
-
-def test_heading_type_never_removed(layout):
-    pages = [
-        Page(i, str(i + 1), (ln("Chapter Title", 40, size=22), *body_lines(90, 3)))
-        for i in range(5)
-    ]
-    assert all(kept[0] == "Chapter Title" for kept in strip(pages, layout))
-
-
-def test_label_running_header_keeps_its_first_appearance(layout):
-    def is_label(text: str) -> bool:
-        return text.startswith("Chapter")
-
-    pages = [page_with_furniture(i, "Chapter 3" if i >= 2 else None, None) for i in range(7)]
-    kept = strip(pages, layout, is_label=is_label)
-    assert kept[2][0] == "Chapter 3"  # where chapter 3 opens
-    assert all(page[0].startswith("page ") for page in kept[3:])
-
-
-def test_numbered_labels_are_not_one_running_header(layout):
-    # "Chapter 1", "Chapter 2", ... on every other page look alike once digits are
-    # ignored, but labels are compared exactly, so every chapter keeps its opening.
-    def is_label(text: str) -> bool:
-        return text.startswith("Chapter")
-
-    pages = [
-        page_with_furniture(i, f"Chapter {i // 2 + 1}" if i % 2 == 0 else None, None)
-        for i in range(8)
-    ]
-    kept = strip(pages, layout, is_label=is_label)
-    assert [kept[i][0] for i in range(0, 8, 2)] == [f"Chapter {n}" for n in range(1, 5)]
+    return layout_for(config)
 
 
 # Joining lines

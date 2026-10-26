@@ -149,6 +149,7 @@ def test_unknown_method_fails_before_reading(tmp_path, config):
         ("heading_size_ratio", 1.0),
         ("running_line_min_pages", 1),
         ("running_line_min_share", 0),
+        ("running_line_max_lines", 0),
         ("paragraph_gap_ratio", 0.9),
         ("paragraph_indent_ratio", 0),
     ],
@@ -204,6 +205,26 @@ def test_running_line_min_share_comes_from_config(tmp_path, config):
     path = novel(tmp_path / "h.pdf")  # on 3 of the 5 pages from its first to its last
     config["pdf"]["running_line_min_share"] = 0.9
     assert RUNNING_HEADER in all_paragraphs(extract(path, config))
+
+
+def test_two_line_running_header_removed(tmp_path, config):
+    # The book's title over the chapter's title, on chapters of about four pages so the
+    # chapter's title repeats often enough to count as running.
+    path = novel(tmp_path / "two.pdf", headings=THREE[:2], paragraphs=72, chapter_header=True)
+    book = extract(path, config)
+    assert titles(book) == THREE[:2]
+    for n, section in enumerate(book.sections):
+        assert len(section.page_labels()) >= 4
+        assert paragraphs(section) == alice(72, start=n)
+
+
+def test_running_line_max_lines_comes_from_config(tmp_path, config):
+    path = novel(tmp_path / "two.pdf", headings=THREE[:2], paragraphs=72, chapter_header=True)
+    config["pdf"]["running_line_max_lines"] = 1
+    found = all_paragraphs(extract(path, config))
+    # One line deep: neither header line is apart from the text on its own, so both stay.
+    assert RUNNING_HEADER in found
+    assert THREE[0] in found
 
 
 def test_hyphenation_rejoined(tmp_path, config):

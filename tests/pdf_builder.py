@@ -52,14 +52,19 @@ CHAPTER_TITLES = (
 )
 RUNNING_HEADER = "ALICE’S ADVENTURES IN WONDERLAND"
 
-PageText = Callable[[int], str | None]
+# Header or footer text for a 0-based page index: one line, several lines, or None.
+PageText = Callable[[int], str | Sequence[str] | None]
+# Running lines are set in small type, this far apart.
+RUNNING_SIZE = 9
+RUNNING_LEADING = 11
 
 
 class PdfBuilder:
     """Lays out lines and paragraphs page by page, like a very small typesetter.
 
     `style` is "indent" (first lines indented) or "gap" (a blank line between paragraphs).
-    `header` and `footer` get the 0-based page index and return the text to print, if any.
+    `header` and `footer` get the 0-based page index and return the text to print, if any:
+    a line, or several lines, top to bottom.
     """
 
     def __init__(
@@ -143,11 +148,16 @@ class PdfBuilder:
         self._canvas.addPageLabel(self.page, style=style, start=start)
 
     def new_page(self) -> None:
-        for text_of, y in ((self._header, PAGE_HEIGHT - 45), (self._footer, 40)):
-            text = text_of(self.page) if text_of else None
-            if text:
-                self._canvas.setFont(FONT, 9)
-                self._canvas.drawCentredString(PAGE_WIDTH / 2, y, text)
+        # Headers stack up from the last line and footers down from the first, so the
+        # gap between them and the text stays the same however many lines they have.
+        self._canvas.setFont(FONT, RUNNING_SIZE)
+        header = _lines_of(self._header(self.page) if self._header else None)
+        for i, text in enumerate(reversed(header)):
+            y = PAGE_HEIGHT - 45 + i * RUNNING_LEADING
+            self._canvas.drawCentredString(PAGE_WIDTH / 2, y, text)
+        footer = _lines_of(self._footer(self.page) if self._footer else None)
+        for i, text in enumerate(footer):
+            self._canvas.drawCentredString(PAGE_WIDTH / 2, 40 - i * RUNNING_LEADING, text)
         self._canvas.showPage()
         self.page += 1
         self._y = TOP
@@ -158,6 +168,12 @@ class PdfBuilder:
             self.new_page()
         self._canvas.save()
         return self.path
+
+
+def _lines_of(text: str | Sequence[str] | None) -> Sequence[str]:
+    if not text:
+        return ()
+    return (text,) if isinstance(text, str) else text
 
 
 def wrap(text: str, first_widths: Sequence[float] = (), width: float = TEXT_WIDTH) -> list[str]:
@@ -192,18 +208,23 @@ def novel(
     front: Sequence[str] = (),
     back: Sequence[str] = (),
     running_header: bool = True,
+    chapter_header: bool = False,
     page_numbers: bool = True,
     **options: Any,
 ) -> Path:
     """A small book: front pages, one chapter per heading, then back-matter pages.
 
     Each chapter starts on a new page and runs about two pages. Pages other than section
-    openings get a running header; every page gets a page number at the bottom.
+    openings get a running header, with the chapter's heading on a second line if
+    `chapter_header`; every page gets a page number at the bottom.
     """
     openings: set[int] = set()
+    chapter: list[str] = []  # the heading of the chapter being set
 
-    def header(page: int) -> str | None:
-        return RUNNING_HEADER if running_header and page not in openings else None
+    def header(page: int) -> Sequence[str] | None:
+        if not running_header or page in openings:
+            return None
+        return [RUNNING_HEADER, *chapter[-1:]] if chapter_header else [RUNNING_HEADER]
 
     def footer(page: int) -> str | None:
         return str(page + 1) if page_numbers else None
@@ -219,6 +240,7 @@ def novel(
             pdf.bookmark(bookmarks[n])
         if heading is not None:
             pdf.heading(heading, size=heading_size)
+            chapter.append(heading)
         for text in alice(paragraphs, start=n):
             pdf.paragraph(text)
         pdf.new_page()
