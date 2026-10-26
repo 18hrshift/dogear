@@ -1,6 +1,6 @@
 # Contributing to Dogear
 
-Thanks for helping. Dogear is early (Phase 0 of [`ROADMAP.md`](ROADMAP.md)), so feedback on
+Thanks for helping. Dogear is early (Phase 1 of [`ROADMAP.md`](ROADMAP.md)), so feedback on
 the roadmap is as useful as code.
 
 ## If you are blind or have low vision
@@ -16,7 +16,9 @@ Open an issue (there's an "Accessibility barrier" form) or start a discussion ab
 ## If you write code
 
 You need [uv](https://docs.astral.sh/uv/) and Python 3.11 or newer. Some tests also use
-ffmpeg and Tesseract; they skip if those aren't installed.
+ffmpeg, Tesseract, and eSpeak NG; they skip if those aren't installed. Unit tests never
+load the real voice. To hear your change, run `uv run dogear make` on a public-domain book
+(the first run downloads the voice, about 340 MB).
 
 ```bash
 git clone https://github.com/18hrshift/dogear
