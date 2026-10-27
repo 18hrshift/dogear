@@ -1,0 +1,42 @@
+name: Install external programs
+description: ffmpeg, Tesseract, and eSpeak NG, the programs Dogear runs, on Linux, macOS, or Windows.
+
+runs:
+  using: composite
+  steps:
+    - name: Install (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # Skip the man-db index rebuild, which can stall apt on hosted runners.
+        sudo rm -f /var/lib/man-db/auto-update
+        sudo apt-get update -o Acquire::Retries=3
+        sudo apt-get install -y --no-install-recommends \
+          ffmpeg tesseract-ocr tesseract-ocr-eng espeak-ng
+    - name: Install (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install ffmpeg tesseract espeak-ng
+    - name: Install (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        choco install -y --no-progress ffmpeg tesseract
+        echo "C:\\Program Files\\Tesseract-OCR" >> "$GITHUB_PATH"
+    # eSpeak NG comes from its own release rather than Chocolatey, whose feed failed for
+    # it in one of two parallel jobs. The installer is pinned by SHA-256.
+    - name: Install eSpeak NG (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $msi = Join-Path $env:RUNNER_TEMP "espeak-ng.msi"
+        $url = "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi"
+        Invoke-WebRequest -Uri $url -OutFile $msi -MaximumRetryCount 3
+        $expected = "7F673C709EA5DD579D3B5EBB98688CC575328A6AB7438D2BC405B88CEDAEAFB9"
+        if ((Get-FileHash $msi -Algorithm SHA256).Hash -ne $expected) { throw "espeak-ng.msi checksum mismatch" }
+        Start-Process msiexec.exe -ArgumentList "/i", "`"$msi`"", "/qn", "/norestart" -Wait -NoNewWindow
+        $dir = "C:\Program Files\eSpeak NG"
+        if (-not (Test-Path "$dir\espeak-ng.exe")) { throw "eSpeak NG did not install to $dir" }
+        Add-Content -Path $env:GITHUB_PATH -Value $dir

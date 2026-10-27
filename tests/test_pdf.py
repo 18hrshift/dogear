@@ -11,11 +11,12 @@ from pdf_builder import (
     RUNNING_HEADER,
     PdfBuilder,
     alice,
+    marked,
     novel,
     wrap,
 )
 
-from dogear.document import Heading, PageMarker, Paragraph
+from dogear.document import Footnote, Heading, PageMarker, Paragraph
 from dogear.errors import ConfigError, ExtractionError, ScannedPdfError
 from dogear.extract import extract_book
 from dogear.extract.pdf import extract
@@ -147,10 +148,19 @@ def test_unknown_method_fails_before_reading(tmp_path, config):
     [
         ("page_split_size", 0),
         ("heading_size_ratio", 1.0),
+        ("subheading_size_ratio", 1.0),
         ("running_line_min_pages", 1),
         ("running_line_min_share", 0),
+        ("running_line_max_lines", 0),
         ("paragraph_gap_ratio", 0.9),
         ("paragraph_indent_ratio", 0),
+        ("hyphen_evidence_min", 0),
+        ("hyphen_without_evidence", "sometimes"),
+        ("column_gap_ratio", 0),
+        ("column_min_lines", 0),
+        ("column_min_width_ratio", 0),
+        ("image_min_page_share", 0),
+        ("image_min_page_share", 1.5),
     ],
 )
 def test_out_of_range_settings(tmp_path, config, key, value):
@@ -206,6 +216,26 @@ def test_running_line_min_share_comes_from_config(tmp_path, config):
     assert RUNNING_HEADER in all_paragraphs(extract(path, config))
 
 
+def test_two_line_running_header_removed(tmp_path, config):
+    # The book's title over the chapter's title, on chapters of about four pages so the
+    # chapter's title repeats often enough to count as running.
+    path = novel(tmp_path / "two.pdf", headings=THREE[:2], paragraphs=72, chapter_header=True)
+    book = extract(path, config)
+    assert titles(book) == THREE[:2]
+    for n, section in enumerate(book.sections):
+        assert len(section.page_labels()) >= 4
+        assert paragraphs(section) == alice(72, start=n)
+
+
+def test_running_line_max_lines_comes_from_config(tmp_path, config):
+    path = novel(tmp_path / "two.pdf", headings=THREE[:2], paragraphs=72, chapter_header=True)
+    config["pdf"]["running_line_max_lines"] = 1
+    found = all_paragraphs(extract(path, config))
+    # One line deep: neither header line is apart from the text on its own, so both stay.
+    assert RUNNING_HEADER in found
+    assert THREE[0] in found
+
+
 def test_hyphenation_rejoined(tmp_path, config):
     pdf = PdfBuilder(tmp_path / "hyphen.pdf")
     pdf.line("The rabbit-hole went straight on like a tun-", x=MARGIN + INDENT)
@@ -216,6 +246,50 @@ def test_hyphenation_rejoined(tmp_path, config):
         "The rabbit-hole went straight on like a tunnel for some way, and then dipped "
         "suddenly down."
     )
+
+
+# ALICE[1] and ALICE[2], set with chosen line breaks. "daisy-" + "chain" is a compound the
+# book prints whole elsewhere; nothing else in the book says how to spell "remark-able".
+DAISY_CHAIN = (
+    "So she was considering in her own mind (as well as she could, for the hot day",
+    "made her feel very sleepy and stupid), whether the pleasure of making a daisy-",
+    "chain would be worth the trouble of getting up and picking the daisies, when",
+    "suddenly a White Rabbit with pink eyes ran close by her.",
+)
+REMARKABLE = (
+    "There was nothing so very remark-",
+    "able in that; nor did Alice think it so very much out of the way to hear the Rabbit",
+    "say to itself, “Oh dear! Oh dear! I shall be late!”",
+)
+
+
+def hyphen_book(path):
+    """ALICE[1] and ALICE[3] set normally, as evidence, then the broken paragraphs."""
+    pdf = PdfBuilder(path)
+    pdf.paragraph(ALICE[1])
+    pdf.paragraph(ALICE[3])
+    for lines in (DAISY_CHAIN, REMARKABLE):
+        pdf.line(lines[0], x=MARGIN + INDENT)
+        for line in lines[1:]:
+            pdf.line(line)
+    return pdf.save()
+
+
+def test_line_end_hyphens_decided_by_the_book(tmp_path, config):
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2:] == [ALICE[1], ALICE[2]]  # "daisy-chain" kept, "remarkable" joined
+
+
+def test_hyphen_without_evidence_comes_from_config(tmp_path, config):
+    config["pdf"]["hyphen_without_evidence"] = "keep"
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2:] == [ALICE[1], ALICE[2].replace("remarkable", "remark-able")]
+
+
+def test_hyphen_evidence_min_comes_from_config(tmp_path, config):
+    config["pdf"]["hyphen_evidence_min"] = 2  # "daisy-chain" is printed only once
+    found = all_paragraphs(extract(hyphen_book(tmp_path / "h.pdf"), config))
+    assert found[2] == ALICE[1].replace("daisy-chain", "daisychain")
 
 
 # Paragraphs
@@ -354,6 +428,46 @@ def test_back_matter_running_header_is_one_section(tmp_path, config, opening_siz
     assert paragraphs(notes) == alice(50)
 
 
+def subheaded_chapter(path):
+    """One chapter with subheadings: 14 pt ones, one of them opening a page, and a bold
+    one in body size."""
+    pdf = PdfBuilder(path)
+    pdf.heading(CHAPTER_TITLES[0])
+    pdf.paragraph(ALICE[0])
+    pdf.heading(CHAPTER_TITLES[1], size=14)
+    pdf.paragraph(ALICE[1])
+    pdf.heading(CHAPTER_TITLES[2], size=11, bold=True)
+    pdf.paragraph(ALICE[2])
+    pdf.new_page()
+    pdf.heading(CHAPTER_TITLES[3], size=14)
+    pdf.paragraph(ALICE[3])
+    return pdf.save()
+
+
+def test_subheadings_inside_a_chapter(tmp_path, config):
+    [section] = extract(subheaded_chapter(tmp_path / "sub.pdf"), config).sections
+    assert [b for b in section.blocks if not isinstance(b, PageMarker)] == [
+        Heading(1, CHAPTER_TITLES[0]),
+        Paragraph(ALICE[0]),
+        Heading(2, CHAPTER_TITLES[1]),
+        Paragraph(ALICE[1]),
+        Heading(3, CHAPTER_TITLES[2]),
+        Paragraph(ALICE[2]),
+        Heading(2, CHAPTER_TITLES[3]),
+        Paragraph(ALICE[3]),
+    ]
+
+
+def test_subheading_size_ratio_comes_from_config(tmp_path, config):
+    config["pdf"]["subheading_size_ratio"] = 1.3  # more than the 14 pt subheadings
+    [section] = extract(subheaded_chapter(tmp_path / "sub.pdf"), config).sections
+    assert [b for b in section.blocks if isinstance(b, Heading)] == [
+        Heading(1, CHAPTER_TITLES[0]),
+        Heading(2, CHAPTER_TITLES[2]),  # the bold one is still a subheading
+    ]
+    assert CHAPTER_TITLES[1] in paragraphs(section)
+
+
 def test_drop_cap_is_not_a_heading(tmp_path, config):
     pdf = PdfBuilder(tmp_path / "dropcap.pdf")
     for n, title in enumerate(THREE[:2]):
@@ -483,3 +597,31 @@ def test_extract_book_reads_pdf(tmp_path, config):
     book = extract_book(novel(tmp_path / "dispatch.pdf"), config)
     assert book.source_format == "pdf"
     assert titles(book) == THREE
+
+
+def test_columns_notes_running_lines_and_subheadings_together(tmp_path, config):
+    # Two-line running headers, page numbers, a subheading over two columns (lined up on
+    # odd pages, offset on even ones), a note reference inside a column, and a note
+    # across the foot of the page.
+    def header(page: int) -> list[str] | None:
+        return [RUNNING_HEADER, CHAPTER_TITLES[0]] if page else None
+
+    pdf = PdfBuilder(tmp_path / "mixed.pdf", header=header, footer=lambda page: str(page + 1))
+    for n in range(4):
+        pdf.heading(f"{CHAPTER_TITLES[0]}, part {n + 1}", size=14)
+        columns = [[marked(ALICE[1], "daisy-chain", "1"), ALICE[2]], [ALICE[3], ALICE[4]]]
+        pdf.columns(columns, drop=7 * (n % 2))
+        pdf.footnotes([("1", ALICE[2])])
+        pdf.new_page()
+    [section] = extract(pdf.save(), config).sections
+    expected = []
+    for n in range(4):
+        note = f"page{n + 1}-note1"
+        expected += [
+            PageMarker(str(n + 1)),
+            Heading(2, f"{CHAPTER_TITLES[0]}, part {n + 1}"),
+            Paragraph(ALICE[1], note_refs=(note,)),
+            *(Paragraph(text) for text in ALICE[2:5]),
+            Footnote(note, ALICE[2], label="1"),
+        ]
+    assert section.blocks == expected

@@ -33,3 +33,15 @@ class ToolNotFoundError(DogearError):
 
 class ToolFailedError(DogearError):
     """An external program ran but reported an error."""
+
+
+class DownloadError(DogearError):
+    """A voice model file couldn't be downloaded, or didn't match its checksum."""
+
+
+class VoiceError(DogearError):
+    """The voice engine can't be set up as configured, or can't speak this book."""
+
+
+class OutputFolderError(DogearError):
+    """The output folder holds files Dogear must not overwrite, such as another book's audio."""

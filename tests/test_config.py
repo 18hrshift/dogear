@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import pytest
 
+import dogear
 from dogear.config import default_config, load_config
 from dogear.errors import ConfigError
 
@@ -31,6 +34,24 @@ def test_word_tables_merge_instead_of_replacing(tmp_path):
     assert table["etc."] == "etcetera"
 
 
+def test_pair_tables_merge_instead_of_replacing(tmp_path):
+    config = load_config(
+        write(
+            tmp_path, '[speech.units]\n"km" = ["klick", "klicks"]\n"nmi" = ["league", "leagues"]\n'
+        )
+    )
+    units = config["speech"]["units"]
+    assert units["km"] == ["klick", "klicks"]
+    assert units["nmi"] == ["league", "leagues"]
+    assert units["mph"] == ["mile per hour", "miles per hour"]
+
+
+def test_default_word_tables_are_valid(tmp_path):
+    # Feeding the defaults back in as a user file runs every table through validation.
+    defaults = (Path(dogear.__file__).parent / "defaults.toml").read_text(encoding="utf-8")
+    assert load_config(write(tmp_path, defaults)) == default_config()
+
+
 @pytest.mark.parametrize(
     ("toml", "message"),
     [
@@ -42,6 +63,16 @@ def test_word_tables_merge_instead_of_replacing(tmp_path):
         ("[pdf]\nchapter_detection = [1, 2]\n", "Every item in 'pdf.chapter_detection'"),
         ("pdf = 3\n", "must be a table"),
         ('[speech.abbreviations]\n"x." = 1\n', "must be text"),
+        ('[speech.time_suffixes]\n"pm" = ["p", "m"]\n', "must be text"),
+        ('[speech.units]\n"km" = "kilometer"\n', "must be two texts"),
+        ('[speech.units]\n"km" = ["kilometer"]\n', "must be two texts"),
+        ('[speech.units]\n"km" = ["a", "b", "c"]\n', "must be two texts"),
+        ('[speech.currency]\n"$" = ["dollar", 2]\n', "must be two texts"),
+        ('[speech.currency_cents]\n"$" = {one = "cent"}\n', "must be two texts"),
+        ('[speech.units]\n"" = ["x", "y"]\n', "empty key"),
+        ('[speech.abbreviations]\n"" = "x"\n', "empty key"),
+        ("[speech]\nroman_numeral_keywords = 'Chapter'\n", "must be list"),
+        ("[speech]\nroman_numeral_keywords = [1]\n", "Every item in"),
         ("[pdf\n", "not valid TOML"),
     ],
 )

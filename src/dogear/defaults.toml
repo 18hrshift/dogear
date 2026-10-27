@@ -9,6 +9,10 @@ chapter_detection = ["bookmarks", "chapter_dividers", "font_size", "pattern", "p
 page_split_size = 20
 # A line counts as a heading when its font is this many times larger than body text.
 heading_size_ratio = 1.4
+# Inside a chapter, up to three lines at least this many times larger than body text,
+# or bold where body text isn't, are a subheading. Subheading styles are ranked across
+# the book, largest first, as heading levels 2 to 6.
+subheading_size_ratio = 1.15
 # If pages average fewer text characters than this, the PDF is treated as scanned.
 min_chars_per_page = 25
 # A page's top or bottom line is a running header or footer (and removed) when the same
@@ -16,16 +20,52 @@ min_chars_per_page = 25
 running_line_min_pages = 3
 # ...and at least this share of the pages between its first and last appearance.
 running_line_min_share = 0.4
+# A running header or footer can be up to this many lines deep, such as the book's title
+# with the chapter's title under it. Each line must repeat on its own to be removed.
+running_line_max_lines = 2
+# Pages set in columns are read one column at a time, top to bottom, left to right.
+# Lines that cross the space between columns, such as a title above them, are read
+# where they sit. A column gutter is a gap at least this many times the size of the
+# page's main font...
+column_gap_ratio = 0.8
+# ...with at least this many lines on each side of it...
+column_min_lines = 3
+# ...and each side at least this many times the main font size wide, so the page numbers
+# down the side of a table of contents stay beside their titles.
+column_min_width_ratio = 8.0
+# Images covering at least this share of the page are read as images (with no
+# description: a PDF rarely has one); smaller ones are taken as decoration and skipped.
+# 0.02 is a picture about 1.4 inches (3.5 cm) square on a US Letter or A4 page.
+image_min_page_share = 0.02
+# Footnotes at the foot of a page are read as notes, and their markers in the text are
+# taken out and linked to them. A marker is a digit or a note symbol (* † ‡ § ¶ ‖) set
+# small and raised at least this many times the line's font size above the line's letters.
+note_marker_rise_ratio = 0.15
 # A new paragraph starts where the space between two lines is this many times the usual
 # line spacing.
 paragraph_gap_ratio = 1.3
 # A new paragraph starts where a line is indented at least this many times the body font
 # size from the page's left margin.
 paragraph_indent_ratio = 0.7
+# A hyphen at a line end before a lowercase letter is either a break inside a word
+# ("exam-" + "ple") or part of a compound ("well-" + "known"). The book decides: whichever
+# spelling, "example" or "well-known", appears more often elsewhere in it wins, if it
+# appears at least this many times...
+hyphen_evidence_min = 1
+# ...and with no evidence either way: "join" (most line-end hyphens are the typesetter's)
+# or "keep".
+hyphen_without_evidence = "join"
 
 [epub]
 # Largest size, in megabytes, that one file inside an EPUB may unpack to (zip-bomb guard).
+# Applies to the cover image too.
 max_member_mb = 64
+# Each table-of-contents entry at most this many levels deep starts a new section (one
+# audio track). 2 suits a contents of Parts and Chapters: every chapter gets its own track,
+# and a Part's own pages (its title, an epigraph) get a short one. Use 1 when the second
+# level lists sections within chapters. 0 ignores the table of contents and makes one
+# section per file.
+toc_depth = 2
 
 [ocr]
 dpi = 300
@@ -38,6 +78,13 @@ max_sentence_chars = 400
 # A period after these never ends a sentence. Titles before names (the table below)
 # and single initials such as "J." are also never sentence ends.
 no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
+# A roman numeral right after one of these words is read as a number: "Chapter IV" is
+# "Chapter four". Each word matches as written here and in capitals ("CHAPTER IV").
+# Headings that are only a numeral ("IV.") are read as numbers too. English only.
+roman_numeral_keywords = [
+    "Chapter", "Part", "Book", "Volume", "Act", "Scene", "Section", "Canto", "Letter",
+    "Appendix", "Stave", "Psalm", "Sonnet", "Article",
+]
 
 # Always expanded.
 [speech.abbreviations]
@@ -82,9 +129,105 @@ no_sentence_break_after = ["e.g.", "i.e.", "vs.", "viz.", "cf."]
 "fig." = "figure"
 "Fig." = "figure"
 
+# The rest of [speech] is English only, and leaves other languages' text as written.
+
+# What follows a clock time ("3:30 pm", "10 a.m."), matched in any case, and how to say it.
+[speech.time_suffixes]
+"am" = "a.m."
+"a.m." = "a.m."
+"pm" = "p.m."
+"p.m." = "p.m."
+
+# Currency symbols written before an amount, as [singular, plural]: "$1" is "one dollar",
+# "$5" is "five dollars".
+[speech.currency]
+"$" = ["dollar", "dollars"]
+"£" = ["pound", "pounds"]
+"€" = ["euro", "euros"]
+"¥" = ["yen", "yen"]
+"₹" = ["rupee", "rupees"]
+
+# The hundredth part of a currency above, for amounts with two decimal places: "$5.99" is
+# "five dollars and ninety-nine cents". A currency missing here reads "¥5.99" as "five
+# point nine nine yen".
+[speech.currency_cents]
+"$" = ["cent", "cents"]
+"£" = ["penny", "pence"]
+"€" = ["cent", "cents"]
+"₹" = ["paisa", "paise"]
+
+# Words for large amounts after a currency, matched in any case: "$1.5 million" is "one
+# point five million dollars", "£5m" is "five million pounds".
+[speech.currency_scales]
+"thousand" = "thousand"
+"million" = "million"
+"billion" = "billion"
+"trillion" = "trillion"
+"k" = "thousand"
+"m" = "million"
+"bn" = "billion"
+"b" = "billion"
+"tn" = "trillion"
+
+# Units written after a number, as [singular, plural]: "1 km" is "one kilometer", "1.5 km"
+# is "one point five kilometers". Units that misfire in prose are left out on purpose:
+# "in" ("5 in the morning"), "m" (meters or minutes), "s", "l", "t", and "pt".
+[speech.units]
+"%" = ["percent", "percent"]
+"°" = ["degree", "degrees"]
+"°C" = ["degree Celsius", "degrees Celsius"]
+"°F" = ["degree Fahrenheit", "degrees Fahrenheit"]
+"¢" = ["cent", "cents"]
+"mm" = ["millimeter", "millimeters"]
+"cm" = ["centimeter", "centimeters"]
+"km" = ["kilometer", "kilometers"]
+"m²" = ["square meter", "square meters"]
+"km²" = ["square kilometer", "square kilometers"]
+"ft" = ["foot", "feet"]
+"ft." = ["foot", "feet"]
+"yd" = ["yard", "yards"]
+"yd." = ["yard", "yards"]
+"mi" = ["mile", "miles"]
+"mg" = ["milligram", "milligrams"]
+"g" = ["gram", "grams"]
+"kg" = ["kilogram", "kilograms"]
+"oz" = ["ounce", "ounces"]
+"oz." = ["ounce", "ounces"]
+"lb" = ["pound", "pounds"]
+"lb." = ["pound", "pounds"]
+"lbs" = ["pound", "pounds"]
+"lbs." = ["pound", "pounds"]
+"ml" = ["milliliter", "milliliters"]
+"mL" = ["milliliter", "milliliters"]
+"fl oz" = ["fluid ounce", "fluid ounces"]
+"tsp" = ["teaspoon", "teaspoons"]
+"tbsp" = ["tablespoon", "tablespoons"]
+"qt" = ["quart", "quarts"]
+"gal" = ["gallon", "gallons"]
+"mph" = ["mile per hour", "miles per hour"]
+"km/h" = ["kilometer per hour", "kilometers per hour"]
+"kph" = ["kilometer per hour", "kilometers per hour"]
+
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
+# Each chapter is turned up or down by one fixed amount (linear gain, so nothing pumps)
+# to land at this integrated loudness. -20 LUFS sits inside the -18 to -23 dB RMS range
+# ACX (Audible) asks of audiobooks. Kokoro's peaks are high for its loudness: its
+# chapters measured about -22 LUFS with peaks near 0 dB, so reaching -18 under the -3 dB
+# ceiling took about 7 dB of limiting per chapter, where -20 takes about 5.
+loudness_target_lufs = -20.0
+# No peak may go above this, measured as true peak (including peaks between samples).
+# -3 dBTP matches ACX's peak limit and leaves headroom for the small overshoot that MP3
+# and AAC encoding add.
+true_peak_ceiling_dbtp = -3.0
+# When reaching the target would push peaks over the ceiling, a limiter shaves them off,
+# by at most this many dB. Brief peaks (plosives, clicks) lose a few dB without audible
+# change; past this, the chapter is left quieter than the target instead, with a warning.
+max_limiting_db = 7.0
+# A chapter measuring quieter than this (or too short to measure) is treated as silence
+# and left as it is, so near-silence is never boosted into audible noise.
+silence_threshold_lufs = -50.0
 
 [kindle]
 # Converting a Kindle book with Calibre stops after this many seconds.
@@ -97,3 +240,77 @@ ffmpeg = ""
 ffprobe = ""
 tesseract = ""
 ebook_convert = ""
+espeak_ng = ""
+
+[voice]
+engine = "kokoro"  # the only engine so far
+voice = "af_heart"  # run `dogear voices` to list them
+# Speaking pace: 1.0 is the voice's natural pace. Kokoro at 1.0 read a test chapter at
+# about 190 words a minute; audiobook narrators average nearer 155, so the default is a
+# little slower. Players can change speed too.
+speed = 0.9
+
+[kokoro]
+# Which build of the Kokoro model to use. "full" (325 MB) sounds best. "quantized" (92 MB)
+# rendered about 25% faster on a test laptop CPU, at slightly lower quality.
+model = "full"
+# CPU threads to use while speaking. 0 means all of them.
+threads = 0
+
+[models]
+# Where downloaded voice files are kept. Empty means the usual per-user data folder.
+dir = ""
+download_timeout_seconds = 60
+
+[narration]
+# How notes are read. "after_paragraph": right after the paragraph that refers to them.
+# "end_of_section": together, at the end of the chapter. "where_printed": wherever they
+# sit in the book. "skip": not read.
+footnotes = "after_paragraph"
+# Tables: "read" goes row by row, saying each column's heading before its value.
+# "skip" says that a table was left out.
+tables = "read"
+# Images with a description are read as "Image: ..." and decorative images are never
+# read. This decides images that came with no description: true says "Image.", false
+# says nothing. A caption is always read.
+announce_undescribed_images = false
+# Say "Page 42" where each print page begins, for listeners following a print copy.
+announce_pages = false
+
+# Silence, in milliseconds. Longer pauses mark bigger breaks, so a listener hears the
+# structure.
+[narration.pauses]
+sentence_ms = 300
+paragraph_ms = 700
+heading_ms = 1000  # after a heading
+list_item_ms = 400
+scene_break_ms = 1800
+section_start_ms = 500  # before the first words of each track
+section_end_ms = 2000  # after the last words of each track
+
+# Words Dogear adds when it reads structure aloud.
+[narration.words]
+image = "Image"
+note = "Note"
+notes = "Notes"
+table = "Table"
+row = "Row"
+page = "Page"
+table_skipped = "Table not read."
+
+[render]
+# Where rendered sentences are kept so later runs reuse them. Empty means the usual
+# per-user cache folder. Safe to delete; the next run just takes longer.
+cache_dir = ""
+# Longest gap, in seconds, between progress lines while a long section is being spoken.
+progress_every_seconds = 120
+# Voices pad their sentences with different amounts of quiet. Sound below this level
+# (dB below full scale) at the start and end of a sentence is trimmed, keeping a little
+# so word edges aren't clipped; the pauses above then set the spacing.
+edge_silence_db = -50.0
+edge_silence_keep_ms = 60
+
+[output]
+# What `dogear make` produces: "m4b" (one audiobook file with chapters) and/or "mp3"
+# (a folder of numbered MP3 files with a playlist).
+formats = ["m4b"]

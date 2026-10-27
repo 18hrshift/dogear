@@ -28,11 +28,14 @@ from dogear.document import (
 )
 from dogear.errors import DogearError
 from dogear.extract import extract_book
+from dogear.make import FORMATS, MakeRequest, make_audiobook, parse_sections
+from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
-from dogear.speech.normalize import SpeechRules, normalize_for_speech
-from dogear.speech.sentences import SentenceRules, split_sentences
+from dogear.voice import find_voice, prepare_kokoro
+from dogear.voice.catalog import kokoro_voices
 
 KIND_NAMES = {"front": "front matter", "body": "main text", "back": "back matter"}
+_GRADE_ORDER = "ABCDF"
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
 
@@ -54,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except KeyboardInterrupt:
         print("Stopped.", file=sys.stderr)
+        if args.run is _make:
+            print(
+                "Sentences spoken so far are saved. Run the same command again to continue.",
+                file=sys.stderr,
+            )
         return 130
 
 
@@ -93,6 +101,53 @@ def _parser() -> argparse.ArgumentParser:
         help="show each sentence the way the voice will say it",
     )
     text.set_defaults(run=_text)
+
+    make = commands.add_parser(
+        "make",
+        parents=[common],
+        help="make an audiobook",
+        description=(
+            "Read a book aloud and save it as an M4B audiobook, a folder of MP3 files, or "
+            "both. The first run downloads the voice (about 340 MB). Stopping part way is "
+            "safe: run the same command again and it continues where it left off."
+        ),
+    )
+    make.add_argument("book", type=Path, help=BOOK_HELP)
+    make.add_argument(
+        "-o", "--output-dir", type=Path, help="folder to save in (default: the book's folder)"
+    )
+    make.add_argument(
+        "--format",
+        choices=[*FORMATS, "both"],
+        help="m4b: one audiobook file; mp3: a folder of MP3 files; both (default: from config)",
+    )
+    make.add_argument("--voice", help="voice name, from `dogear voices`")
+    make.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
+    make.add_argument(
+        "--sections", metavar="LIST", help="only these sections from outline, such as 3 or 1-3,7"
+    )
+    make.add_argument("--language", help="the book's language, if its own label is wrong")
+    make.set_defaults(run=_make)
+
+    voices = commands.add_parser(
+        "voices",
+        parents=[common],
+        help="list the voices",
+        description="List the voices Dogear can use, best rated first.",
+    )
+    voices.set_defaults(run=_voices)
+
+    download = commands.add_parser(
+        "download",
+        parents=[common],
+        help="download the voice now",
+        description=(
+            "Download the configured voice ahead of time, for example before going offline. "
+            "`dogear make` does this by itself when needed."
+        ),
+    )
+    download.add_argument("--voice", help="voice name, from `dogear voices`")
+    download.set_defaults(run=_download)
 
     ocr = commands.add_parser(
         "ocr",
@@ -142,15 +197,34 @@ def _describe(section: Section) -> str:
 def _text(args: argparse.Namespace, config: Config) -> int:
     book = extract_book(args.book, config)
     sections = _chosen_sections(book, args.section)
-    say = _speaker(config, book) if args.spoken else None
+    if args.spoken:
+        _print_spoken(book, config, {number for number, _ in sections})
+        return 0
     for number, section in sections:
         print(f"Section {number}: {section.title}")
         print()
         for block in section.blocks:
-            for line in _block_lines(block, say):
+            for line in _block_lines(block):
                 print(line)
         print()
     return 0
+
+
+def _print_spoken(book: Book, config: Config, wanted: set[int]) -> None:
+    """Each section the way the voice will read it, one utterance per line."""
+    narrated = {n.number: n for n in narrate_book(book, config)}
+    paragraph_ms = config["narration"]["pauses"]["paragraph_ms"]
+    for number in sorted(wanted):
+        print(f"Section {number}: {book.sections[number - 1].title}")
+        print()
+        if number not in narrated:
+            print("Not read aloud: its notes are read where the text refers to them.")
+        for utterance in narrated[number].utterances if number in narrated else []:
+            if utterance.spoken:
+                print(utterance.spoken)
+                if utterance.pause_ms >= paragraph_ms:
+                    print()
+        print()
 
 
 def _chosen_sections(book: Book, wanted: int | None) -> list[tuple[int, Section]]:
@@ -165,40 +239,85 @@ def _chosen_sections(book: Book, wanted: int | None) -> list[tuple[int, Section]
     return [numbered[wanted - 1]]
 
 
-def _speaker(config: Config, book: Book):
-    speech, sentences = SpeechRules.from_config(config), SentenceRules.from_config(config)
-
-    def say(text: str, lang: str | None) -> list[str]:
-        language = lang or book.metadata.language
-        return [normalize_for_speech(s, speech, language) for s in split_sentences(text, sentences)]
-
-    return say
-
-
-def _block_lines(block, say) -> list[str]:
-    def show(text: str, lang: str | None = None, prefix: str = "") -> list[str]:
-        if say is None:
-            return [prefix + text]
-        return [prefix + s for s in say(text, lang)]
-
+def _block_lines(block) -> list[str]:
     match block:
         case PageMarker(label=label):
             return [f"[Print page {label}]"]
         case SceneBreak():
             return ["[Scene break]", ""]
         case Heading() | Paragraph():
-            return show(block.text, block.lang) + [""]
+            return [block.text, ""]
         case ListBlock(items=items):
-            return [line for item in items for line in show(item, block.lang, "- ")] + [""]
+            return [f"- {item}" for item in items] + [""]
         case Footnote(label=label, text=text):
             # The note id is a file path plus an anchor: noise when read aloud.
-            return show(text, block.lang, f"Note {label}: " if label else "Note: ") + [""]
+            return [(f"Note {label}: " if label else "Note: ") + text, ""]
         case Image(alt=alt, caption=caption):
             described = alt if alt else ("no description" if alt is None else "decorative")
             return [f"Image: {described}." + (f" Caption: {caption}" if caption else ""), ""]
         case Table():
             return [f"Table: {block_text(block)}", ""]
     raise TypeError(f"not a block: {block!r}")
+
+
+def _make(args: argparse.Namespace, config: Config) -> int:
+    _apply_voice_options(args, config)
+    if args.format:
+        config["output"]["formats"] = list(FORMATS) if args.format == "both" else [args.format]
+    request = MakeRequest(
+        book=args.book,
+        output_dir=args.output_dir or args.book.resolve().parent,
+        sections=parse_sections(args.sections) if args.sections else None,
+        language=args.language,
+    )
+    saved = make_audiobook(request, config, _report)
+    for path in saved:
+        print(f"Saved: {path}")
+    return 0
+
+
+def _voices(args: argparse.Namespace, config: Config) -> int:
+    default = config["voice"]["voice"]
+    ranked = sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
+    print(f"{_count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
+    print()
+    for number, voice in enumerate(ranked, start=1):
+        note = " This is the one Dogear uses now." if voice.name == default else ""
+        print(
+            f"{number}. {voice.name}: {voice.accent} English, {voice.gender}, "
+            f"grade {voice.grade}.{note}"
+        )
+    print()
+    print("To use another, add --voice NAME to `dogear make`, or set voice in your config.")
+    return 0
+
+
+def _grade_rank(grade: str) -> tuple[int, int]:
+    """Sort key for grades such as "A", "B-", or "C+": best first."""
+    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
+
+
+def _download(args: argparse.Namespace, config: Config) -> int:
+    _apply_voice_options(args, config)
+    setup = prepare_kokoro(config, _report)
+    print(f"The voice {setup.voice.name} is ready to use offline.")
+    return 0
+
+
+def _apply_voice_options(args: argparse.Namespace, config: Config) -> None:
+    if getattr(args, "voice", None):
+        config["voice"]["voice"] = find_voice(args.voice).name
+    if getattr(args, "speed", None) is not None:
+        if not 0.5 <= args.speed <= 2.0:
+            raise DogearError(
+                f"A speed of {args.speed} is outside what the voice can do.",
+                hint="Use a value from 0.5 to 2.0, such as 0.9 or 1.1.",
+            )
+        config["voice"]["speed"] = args.speed
+
+
+def _report(line: str) -> None:
+    print(line, file=sys.stderr, flush=True)
 
 
 def _ocr(args: argparse.Namespace, config: Config) -> int:

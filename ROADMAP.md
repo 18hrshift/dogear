@@ -23,6 +23,8 @@ and documented.
 | Default voice engine | Kokoro-82M | Apache-2.0, runs on a laptop CPU, the most-downloaded open TTS model on Hugging Face. |
 | Hardware baseline | CPU only | A GPU makes it faster, never required. |
 | Network | Offline by default | Cloud voices are opt-in and warn that the book text leaves the machine. |
+| Pronunciation | misaki dictionaries, then the eSpeak NG program | misaki (Apache-2.0) is what Kokoro was trained with. Its packaged English setup loads espeak-ng as a GPL library, so Dogear runs the espeak-ng program instead, only for words misaki doesn't know. |
+| Pace and level | Speed 0.9, -20 LUFS | Kokoro at 1.0 read about 190 words a minute; narrators average about 155. Its peaks are high for its loudness, so -20 LUFS (inside ACX's range) needs about 5 dB of limiting where -18 needed 7. |
 
 **Open question:** who is the first real listener, and what device do they use? That decides
 which output Phase 1 polishes first.
@@ -48,25 +50,32 @@ which output Phase 1 polishes first.
 Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with no GPU.
 
 - [x] EPUB and PDF ingest into the document model (done in Phase 0).
-- [ ] PDF reading gaps found in Phase 0: multi-column pages, footnotes at the foot of a page
+- [x] PDF reading gaps found in Phase 0: multi-column pages, footnotes at the foot of a page
       (read as paragraphs today), mid-chapter subheadings, images, two-line running headers,
       and compounds hyphenated at a line end ("well-" + "known" becomes "wellknown").
-- [ ] EPUB sections built from the table of contents, not one per file, so books that split a
+      Known limits: footnotes need a raised marker to be found, vector drawings aren't
+      found as images, and a wide table on a two-column page is read column by column.
+- [x] EPUB sections built from the table of contents, not one per file, so books that split a
       chapter across files (common in Calibre and Project Gutenberg EPUBs) navigate cleanly.
-- [ ] More speech normalization: currency ("$5"), times, units, and roman numerals in titles.
-- [ ] Kokoro engine (ONNX, CPU) behind a voice-engine interface.
-- [ ] Sentence-level rendering with a cache keyed on text, voice, engine, and settings. A crash
+      Also reads the cover image from EPUB (and Kindle books, through Calibre).
+- [x] More speech normalization: currency ("$5"), times, units, and roman numerals in titles.
+- [x] Kokoro engine (ONNX, CPU) behind a voice-engine interface.
+- [x] Sentence-level rendering with a cache keyed on text, voice, engine, and settings. A crash
       resumes where it stopped. Fixing one word re-renders only the sentences that contain it.
-- [ ] Spoken structure: headings announced, pauses scaled by structure (longer before a new
+- [x] Spoken structure: headings announced, pauses scaled by structure (longer before a new
       chapter), image alt text read as "Image: ...". Footnote and table handling set in config.
-- [ ] Loudness normalized across the whole book.
-- [ ] Outputs: M4B with chapter markers, cover, and metadata; MP3 folder with an M3U playlist.
-- [ ] Screen-reader-friendly CLI: no animated spinners when output isn't a terminal, periodic
-      plain-text progress lines ("Chapter 3 of 12 done, about 40 minutes left"), errors that
-      say what to do next.
-- [ ] Install with one command (`uv tool install` / `pipx install`). Publish to PyPI only once
-      this phase works.
-- [ ] README sample audio from a public-domain book.
+- [x] Loudness normalized across the whole book.
+- [x] Outputs: M4B with chapter markers, cover, and metadata; MP3 folder with an M3U playlist.
+- [x] Screen-reader-friendly CLI: no animations at all, occasional plain-text progress lines
+      ("Section 3 of 12 done: The Storm. About 40 minutes left."), errors that say what to
+      do next.
+- [x] Install with one command: `uv tool install git+https://github.com/18hrshift/dogear`
+      (or `pipx install`).
+- [ ] Publish to PyPI. The name `dogear` was taken there on 2026-10-25 by an unrelated
+      tool, so the package needs another name (the command can stay `dogear`). The project
+      owner picks it.
+- [ ] README sample audio from a public-domain book. Needs a decision on where it lives:
+      generated audio stays out of git.
 
 ## Phase 2: Talking book
 
