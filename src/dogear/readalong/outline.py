@@ -13,7 +13,8 @@ import re
 from dogear.readalong.model import PageKind
 
 _ARABIC = re.compile(r"[0-9]+")
-_ROMAN = re.compile(r"[ivxlcdm]+", re.IGNORECASE)
+# A well-formed roman numeral ("xiv", not "iiii" or "ic"), as DAISY's schema checks them.
+_ROMAN = re.compile(r"(?=.)M*(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})", re.IGNORECASE)
 
 
 def heading_levels(levels: list[int]) -> list[int]:
@@ -27,7 +28,10 @@ def heading_levels(levels: list[int]) -> list[int]:
 
 
 def page_kind(label: str) -> PageKind:
-    """DAISY's kinds of page number: front (roman numerals), normal (arabic), or special."""
+    """DAISY's kinds of page number: front (roman numerals), normal (arabic), or special.
+
+    Anything else, including a malformed roman numeral, is special.
+    """
     if _ARABIC.fullmatch(label):
         return "normal"
     if _ROMAN.fullmatch(label):

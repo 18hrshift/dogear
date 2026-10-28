@@ -276,7 +276,18 @@ def test_heading_levels_pull_up_jumps_the_book_also_uses_shallower():
 
 @pytest.mark.parametrize(
     "label, kind",
-    [("42", "normal"), ("xii", "front"), ("XIV", "front"), ("A-3", "special"), ("4a", "special")],
+    [
+        ("42", "normal"),
+        ("xii", "front"),
+        ("XIV", "front"),
+        ("mcmxc", "front"),
+        ("A-3", "special"),
+        ("4a", "special"),
+        # Only roman letters, but not numerals: DAISY's schema rejects them as page-front.
+        ("iiii", "special"),
+        ("ic", "special"),
+        ("dim", "special"),
+    ],
 )
 def test_page_kinds(label, kind):
     assert page_kind(label) == kind

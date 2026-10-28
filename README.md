@@ -3,9 +3,9 @@
 **An open talking-book maker.** Turn the books you own into audiobooks that blind and
 low-vision listeners can actually navigate: by chapter, by heading, by print page.
 
-> **Status: early.** Dogear makes M4B audiobooks, MP3 folders, and EPUB 3 talking books
-> (the text and the narration in step) with a natural-sounding voice that runs on an
-> ordinary computer, offline. DAISY comes next. [`ROADMAP.md`](ROADMAP.md) has the plan.
+> **Status: early.** Dogear makes M4B audiobooks, MP3 folders, and talking books (EPUB 3
+> and DAISY 2.02, with the text and the narration in step) with a natural-sounding voice
+> that runs on an ordinary computer, offline. [`ROADMAP.md`](ROADMAP.md) has the plan.
 
 ## Install
 
@@ -49,6 +49,7 @@ Useful options:
 
 ```bash
 dogear make mybook.epub --format mp3      # a folder of numbered MP3s plus a playlist
+dogear make mybook.epub --format daisy    # a DAISY talking book (see below)
 dogear make mybook.epub --format m4b,mp3  # the M4B and the MP3 folder
 dogear make mybook.epub --sections 3      # just section 3, to try the voice first
 dogear make mybook.epub --voice bf_emma   # another voice; see `dogear voices`
@@ -67,8 +68,8 @@ This saves `<book title> talking book.epub`, an EPUB 3 book with the text and th
 narration in step (Media Overlays). A reading app that plays them shows the text and
 highlights each sentence as it is read, in black on yellow and underlined. In it:
 
-- **A title page**, read by the title track (unless `announce_title = false`), then one
-  part per section of the book.
+- **A title page**: the book's own, or else the title track (unless
+  `announce_title = false`). Then one part per section of the book.
 - **A table of contents with every heading**, nested by level. Reading apps move through
   a talking book by its table of contents, so every heading is there.
 - **Print page numbers**, when the source book has them: shown where each page begins
@@ -84,6 +85,31 @@ highlights each sentence as it is read, in black on yellow and underlined. In it
 macOS, and Linux; 3.5.1 is current) plays EPUB talking books. Add the book to its library
 and open it to hear it with the text highlighted. Thorium's table of contents takes you
 to any heading, and its Go to page command to a print page.
+
+### DAISY talking books
+
+`dogear make mybook.epub --format daisy` saves a folder named `<book title> DAISY` that
+holds a DAISY 2.02 talking book, with the full text and the full audio:
+
+- `ncc.html`, the book's map: every heading, at its level, and every print page.
+- For each section, an MP3 file, its text as an `.html` file, and a `.smil` file that
+  ties each sentence of the text to the stretch of audio that reads it.
+
+A listener can move by heading level and by print page, and an app that shows the text
+highlights each sentence as it's read. Page numbers read aloud (`announce_pages = true`)
+are marked so that players that let you turn page numbers off can skip them.
+
+To listen:
+
+- **Thorium Reader**, a free reading app for Windows, macOS, and Linux: open `ncc.html`
+  from the folder.
+- **Dolphin EasyReader**: zip the folder and import the zip.
+- **A DAISY player**, such as a Victor Reader Stream or a Plextalk Pocket: copy the whole
+  folder to the player's memory card, where its manual says talking books go.
+
+These all list DAISY 2.02 among the formats they read. Dogear's DAISY books pass the
+DAISY Pipeline 2 validator, but they haven't been tried on these players yet. If you try
+one, please tell us how it went.
 
 ### Check a book before making it
 
@@ -208,9 +234,8 @@ The full list, with what each one does, is in
 There are good ebook-to-audiobook converters already. None of them are built for people who
 can't see the screen. Dogear is:
 
-- **Made for listening without sight.** It will produce DAISY talking books and EPUB 3 with
-  synchronized audio, not just MP3s. Listeners can jump by heading or print page on players
-  like Thorium Reader or a Victor Reader Stream.
+- **Made for listening without sight.** It makes DAISY talking books, not just MP3s, and
+  EPUB 3 with synchronized audio is next. Listeners can jump by heading or by print page.
 - **Structure-aware.** Headings, image descriptions, footnotes, and tables are read on purpose,
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
 - **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
@@ -225,7 +250,7 @@ can't see the screen. Dogear is:
 | M4B with chapters | Phone audiobook apps | Works |
 | MP3 folder + playlist | Anything that plays audio, including older players | Works |
 | EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) | Works |
-| DAISY | Talking-book players and apps, with heading and page navigation | Phase 2 |
+| DAISY 2.02 | Talking-book players and apps, with heading and page navigation | Works |
 
 ## The voice
 
