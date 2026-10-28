@@ -32,7 +32,7 @@ def say_with(config, change):
     ("text", "expected"),
     [
         ("Dr. Smith", "Doctor Smith"),
-        ("fruits, vegetables, etc.", "etcetera"),
+        ("fruits, vegetables, etc.", "et cetera"),
         ("cats vs. dogs", "versus"),
         ("There were 42 apples.", "forty-two"),
         ("He finished 1st in the race.", "first"),
@@ -44,7 +44,7 @@ def test_ported_expansions(say, text, expected):
 
 def test_ported_full_pipeline(say):
     result = say("Dr. Johnson published 3 papers in 1999, etc.")
-    assert result == "Doctor Johnson published three papers in nineteen ninety-nine, etcetera."
+    assert result == "Doctor Johnson published three papers in nineteen ninety-nine, et cetera."
 
 
 # Bugs in the old preprocessor, fixed here.
@@ -116,8 +116,8 @@ def test_markup_characters_removed(say):
 
 
 def test_abbreviation_period_kept_only_at_sentence_end(say):
-    assert say("apples, etc. and pears") == "apples, etcetera and pears"
-    assert say("apples, etc.") == "apples, etcetera."
+    assert say("apples, etc. and pears") == "apples, et cetera and pears"
+    assert say("apples, etc.") == "apples, et cetera."
 
 
 # Config is the source of truth.

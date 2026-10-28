@@ -16,7 +16,7 @@ from pathlib import Path
 
 from dogear.config import Config
 from dogear.extract import extract_book
-from dogear.make import _chosen, check_language
+from dogear.make import check_language, chosen_narrations
 from dogear.narration import narrate_book
 from dogear.pronunciations import dictionary_from_config
 from dogear.render.progress import Report
@@ -45,7 +45,7 @@ def find_unknown_words(request: WordsRequest, config: Config, report: Report) ->
     if request.language:
         book.metadata.language = request.language
     check_language(book)
-    narrations = _chosen(narrate_book(book, config), request.sections, len(book.sections))
+    narrations = chosen_narrations(narrate_book(book, config), request.sections, len(book.sections))
     british = find_voice(config["voice"]["voice"]).british
     dictionary = dictionary_from_config(config)
     spacy_model = prepare_spacy(config, report)

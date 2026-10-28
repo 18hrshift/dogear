@@ -49,7 +49,7 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
     check_language(book)
     check_ffmpeg(config)
     outputs = _output_paths(book, request, formats)
-    narrations = _chosen(narrate_book(book, config), request.sections, len(book.sections))
+    narrations = chosen_narrations(narrate_book(book, config), request.sections, len(book.sections))
     chosen = len(narrations)
     if config["narration"]["announce_title"]:
         narrations.insert(0, narrate_title(book, config))
@@ -158,7 +158,7 @@ def parse_sections(spec: str) -> set[int]:
     return numbers
 
 
-def _chosen(
+def chosen_narrations(
     narrations: list[SectionNarration], wanted: set[int] | None, total: int
 ) -> list[SectionNarration]:
     if wanted is None:

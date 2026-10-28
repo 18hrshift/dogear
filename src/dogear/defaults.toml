@@ -88,7 +88,7 @@ roman_numeral_keywords = [
 
 # Always expanded.
 [speech.abbreviations]
-"etc." = "etcetera"
+"etc." = "et cetera"  # two words: the voice's dictionary has no "etcetera"
 "vs." = "versus"
 "e.g." = "for example"
 "i.e." = "that is"

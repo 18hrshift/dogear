@@ -31,7 +31,7 @@ def test_word_tables_merge_instead_of_replacing(tmp_path):
     table = config["speech"]["abbreviations"]
     assert table["approx."] == "about"
     assert table["w/"] == "with"
-    assert table["etc."] == "etcetera"
+    assert table["etc."] == "et cetera"
 
 
 def test_pair_tables_merge_instead_of_replacing(tmp_path):
