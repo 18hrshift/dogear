@@ -105,7 +105,7 @@ def to_misaki(ipa: str, british: bool) -> str:
     return ipa.replace("^", "")
 
 
-_PINNED_RATING = 5  # misaki's rating for phonemes its own markup pins; its dictionaries give 4
+_PINNED_RATING = 5  # misaki's rating for phonemes its markup pins; its dictionaries give 3 or 4
 
 
 class _MisakiG2P(en.G2P):
