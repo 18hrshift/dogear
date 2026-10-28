@@ -2,7 +2,8 @@
 
 Each sentence is planned by the voice engine, taken from the speech cache if it was made
 before, and rendered otherwise. Sentences and the pauses between them are written
-straight to the section's WAV file, so memory use doesn't grow with the book.
+straight to the section's WAV file, so memory use doesn't grow with the book. Where each
+utterance starts is recorded as it is written, so talking books can sync text to it.
 """
 
 from __future__ import annotations
@@ -43,8 +44,10 @@ def render_book(
     for index, narration in enumerate(narrations, start=1):
         path = work_dir / f"{index:03d}.wav"
         title = narration.section.title
+        marks = []
         with WavWriter(path, engine.sample_rate) as out:
             for utterance in narration.utterances:
+                marks.append(out.frames)
                 if utterance.spoken:
                     samples = _speak(utterance.spoken, engine, cache, progress)
                     trimmed = trim_edges(
@@ -56,7 +59,8 @@ def render_book(
                     out.audio(trimmed)
                     progress.check_in(index, title)
                 out.silence(utterance.pause_ms)
-        chapters.append(ChapterAudio(title=title, path=path))
+            marks.append(out.frames)
+        chapters.append(ChapterAudio(title, path, tuple(marks), engine.sample_rate))
         progress.section_done(index, title)
     return chapters
 

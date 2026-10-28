@@ -8,7 +8,6 @@ import pytest
 
 from dogear.document import Section
 from dogear.narration import SectionNarration, Utterance
-from dogear.output import ChapterAudio
 from dogear.render import render_book
 from dogear.render.cache import SpeechCache
 from dogear.render.progress import Progress
@@ -111,9 +110,9 @@ def test_one_wav_per_narration(config, work_dir):
         narration(3, "The Calm", said("Sun.", 300)),
     ]
     chapters, _ = render(narrations, config, work_dir)
-    assert chapters == [
-        ChapterAudio(title="The Storm", path=work_dir / "001.wav"),
-        ChapterAudio(title="The Calm", path=work_dir / "002.wav"),
+    assert [(c.title, c.path, c.sample_rate) for c in chapters] == [
+        ("The Storm", work_dir / "001.wav", RATE),
+        ("The Calm", work_dir / "002.wav", RATE),
     ]
     for chapter in chapters:
         with wave.open(str(chapter.path), "rb") as w:
@@ -140,6 +139,17 @@ def test_sentences_are_trimmed_then_followed_by_their_pause(config, work_dir):
     assert not audio[:start].any()
     assert np.all(np.abs(audio[start : start + 3 * TONE_PER_CHAR]) == to_pcm16(np.array([0.5]))[0])
     assert not audio[-(frames(700) + kept(config)) :].any()
+
+
+def test_marks_say_where_each_utterance_starts(config, work_dir):
+    [chapter], _ = render(
+        [narration(1, "T", pause(500), said("Hi.", 300), said("Bye.", 700))], config, work_dir
+    )
+    hi = len("Hi.") * TONE_PER_CHAR + 2 * kept(config)
+    bye = len("Bye.") * TONE_PER_CHAR + 2 * kept(config)
+    starts = [0, frames(500), frames(500) + hi + frames(300)]
+    assert chapter.marks == (*starts, starts[-1] + bye + frames(700))
+    assert chapter.marks[-1] == len(samples(chapter.path))
 
 
 def test_edge_silence_settings_change_the_trimming(config, work_dir):

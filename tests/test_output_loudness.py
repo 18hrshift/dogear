@@ -2,19 +2,22 @@ import copy
 import dataclasses
 import logging
 import math
+import wave
 
 import pytest
-from audio_builder import silence, tone
+from audio_builder import silence, spiky, tone
 from conftest import require_tool
 
 from dogear.config import default_config
 from dogear.errors import ConfigError, ToolFailedError
+from dogear.output.chapter import ChapterAudio
 from dogear.output.loudness import (
     GainPlan,
     Loudness,
     LoudnessSettings,
     filter_chain,
     measure_loudness,
+    normalize_chapters,
     normalize_filter,
     parse_ebur128_summary,
     plan_gain,
@@ -164,3 +167,28 @@ def test_silent_chapter_is_logged_and_left_alone(tmp_path, config, caplog):
         )
     assert chain == "volume=0.00dB"
     assert "Chapter 2 of 5 is silent" in caplog.text
+
+
+def frame_count(path) -> int:
+    with wave.open(str(path), "rb") as w:
+        return w.getnframes()
+
+
+def test_normalizing_keeps_length_so_marks_stay_true(tmp_path, config):
+    # Spiky audio goes through the limiter, which must not shift or stretch the audio.
+    loud = spiky(tmp_path / "a.wav", 2.0)
+    marks = (0, 12000, frame_count(loud))
+    [chapter] = normalize_chapters([ChapterAudio("One", loud, marks, 24000)], tmp_path, config)
+    assert (chapter.marks, chapter.sample_rate) == (marks, 24000)
+    assert frame_count(chapter.path) == frame_count(loud)
+
+
+def test_marks_follow_a_chapter_resampled_to_the_first_ones_rate(tmp_path, config):
+    first = tone(tmp_path / "a.wav", 1.0, rate=24000)
+    second = tone(tmp_path / "b.wav", 1.0, rate=48000)
+    chapters = [
+        ChapterAudio("One", first, (0, 24000), 24000),
+        ChapterAudio("Two", second, (0, 9600, 48000), 48000),
+    ]
+    _, two = normalize_chapters(chapters, tmp_path, config)
+    assert (two.marks, two.sample_rate) == ((0, 4800, 24000), 24000)

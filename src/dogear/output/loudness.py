@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from dogear.config import Config
@@ -133,7 +133,7 @@ def normalize_chapters(
     """Each chapter at the target loudness, as a WAV in `work`, all at one sample rate.
 
     Packagers do this themselves; a caller building several formats can do it once and
-    pass the result with `normalized=True`.
+    pass the result with `normalized=True`. Each chapter's marks carry over.
     """
     settings = LoudnessSettings.from_config(config)
     ffmpeg = find_tool("ffmpeg", config)
@@ -150,8 +150,16 @@ def normalize_chapters(
             + ["-map", "0:a:0", "-af", audio_filter, "-ar", str(sample_rate)]
             + ["-c:a", "pcm_s16le", str(wav)]
         )
-        normalized.append(ChapterAudio(title=chapter.title, path=wav))
+        marks = _resampled(chapter, sample_rate)
+        normalized.append(replace(chapter, path=wav, marks=marks, sample_rate=sample_rate))
     return normalized
+
+
+def _resampled(chapter: ChapterAudio, sample_rate: int) -> tuple[int, ...]:
+    """A chapter's marks at a new sample rate. Gain and the limiter keep timing as it is."""
+    if not chapter.sample_rate or chapter.sample_rate == sample_rate:
+        return chapter.marks
+    return tuple(round(mark * sample_rate / chapter.sample_rate) for mark in chapter.marks)
 
 
 def measure_loudness(path: Path, config: Config) -> Loudness:
