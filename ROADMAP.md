@@ -96,8 +96,9 @@ Goal: output a listener can navigate without sight.
       and the DAISY NCC, at levels settled across the book so none is skipped, and print
       pages in the EPUB page list and the NCC.
 - [x] User-editable pronunciation dictionary (names, places, jargon).
-- [ ] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY validators
-      for DAISY.
+- [x] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY Pipeline
+      2's validator for DAISY (the Talking books job, on the fixture with the real voice and
+      on sample books that use every kind of block).
 - [ ] Tested by at least one blind or low-vision listener on Thorium Reader and one hardware
       or app player.
 
