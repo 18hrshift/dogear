@@ -75,7 +75,8 @@ jobs:
         run: |
           chapters=$(ffprobe -v error -show_chapters -of csv=p=0 out/*.m4b | wc -l)
           echo "M4B chapters: $chapters"
-          test "$chapters" -eq 3  # the title track, then the two sections
+          # Section 1 is the book's own title page, so there is no separate title track.
+          test "$chapters" -eq 2
           ls out/*MP3*
 
   talking-books:

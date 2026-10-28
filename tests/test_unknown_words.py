@@ -61,7 +61,7 @@ def test_lone_punctuation_is_not_a_word():
 def test_a_sounds_like_spelling_with_its_own_unknown_word_is_listed(fakes, config, tmp_path):
     # The spelling is what the voice reads, so a made-up word in it gets guessed too.
     path = tmp_path / "words.toml"
-    path.write_text('[words]\nQuimby = "quim bee"\n')
+    path.write_text('[words]\nQuimby = "quim bee"\n', encoding="utf-8")
     config["pronunciation"]["files"] = [str(path)]
     found = find_unknown_words(WordsRequest(tmp_path / "notes.epub", sections={2}), config, print)
     assert UnknownWord("Quim", 1) in found
@@ -132,7 +132,10 @@ def test_only_the_chosen_sections(fakes, config, tmp_path):
 
 def test_words_in_pronunciation_files_are_not_listed(fakes, config, tmp_path):
     path = tmp_path / "words.toml"
-    path.write_text('[words]\nUtterson = "utter son"\nZorblax = { phonemes = "zˈɔɹblæks" }\n')
+    path.write_text(
+        '[words]\nUtterson = "utter son"\nZorblax = { phonemes = "zˈɔɹblæks" }\n',
+        encoding="utf-8",
+    )
     config["pronunciation"]["files"] = [str(path)]
     found = find_unknown_words(WordsRequest(tmp_path / "notes.epub"), config, print)
     assert found == [UnknownWord("Quimby", 1)]
@@ -176,7 +179,7 @@ def test_cli_words_reads_as_a_numbered_list(fakes, capsys):
 
 def test_cli_words_with_sections_and_a_pronunciation_file(fakes, capsys, tmp_path):
     path = tmp_path / "words.toml"
-    path.write_text('[words]\nUtterson = "utter son"\nQuimby = "quick bee"\n')
+    path.write_text('[words]\nUtterson = "utter son"\nQuimby = "quick bee"\n', encoding="utf-8")
     assert cli.main(["words", "notes.epub", "--sections", "2", "--words", str(path)]) == 0
     assert capsys.readouterr().out == "The voice knows every word in these sections.\n"
 
