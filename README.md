@@ -50,7 +50,7 @@ Useful options:
 
 ```bash
 dogear make mybook.epub --format mp3      # a folder of numbered MP3s plus a playlist
-dogear make mybook.epub --format both     # the M4B and the MP3 folder
+dogear make mybook.epub --format m4b,mp3  # the M4B and the MP3 folder
 dogear make mybook.epub --sections 3      # just section 3, to try the voice first
 dogear make mybook.epub --voice bf_emma   # another voice; see `dogear voices`
 dogear make mybook.epub --speed 1.0       # faster (the default is 0.9)
@@ -73,6 +73,7 @@ Everything Dogear prints is plain text, written to read well with a screen reade
 
 - **EPUB, PDF, and Kindle** (MOBI and AZW3, through Calibre). EPUB chapters come from the
   book's table of contents.
+- **A title track** opens the book with its title and who wrote it.
 - **Headings** are read with a pause after them. Longer pauses mark bigger breaks: a
   sentence, a paragraph, a scene break, a chapter.
 - **Image descriptions** are read as "Image: ...". Decorative images are skipped.

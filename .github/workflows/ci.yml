@@ -69,11 +69,11 @@ jobs:
         run: |
           printf "[models]\ndir = '%s'\n" "${{ runner.temp }}/dogear-models" > voice.toml
           uv run --frozen dogear make tests/fixtures/*.epub --config voice.toml \
-            --sections 1-2 --format both -o out
+            --sections 1-2 --format m4b,mp3 -o out
       - name: Check the output
         shell: bash
         run: |
           chapters=$(ffprobe -v error -show_chapters -of csv=p=0 out/*.m4b | wc -l)
           echo "M4B chapters: $chapters"
-          test "$chapters" -eq 2
+          test "$chapters" -eq 3  # the title track, then the two sections
           ls out/*MP3*

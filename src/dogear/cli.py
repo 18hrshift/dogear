@@ -28,7 +28,7 @@ from dogear.document import (
 )
 from dogear.errors import DogearError
 from dogear.extract import extract_book
-from dogear.make import FORMATS, MakeRequest, make_audiobook, parse_sections
+from dogear.make import MakeRequest, make_audiobook, parse_formats, parse_sections
 from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
 from dogear.voice import find_voice, prepare_kokoro
@@ -107,9 +107,10 @@ def _parser() -> argparse.ArgumentParser:
         parents=[common],
         help="make an audiobook",
         description=(
-            "Read a book aloud and save it as an M4B audiobook, a folder of MP3 files, or "
-            "both. The first run downloads the voice (about 340 MB). Stopping part way is "
-            "safe: run the same command again and it continues where it left off."
+            "Read a book aloud and save it as an M4B audiobook, a folder of MP3 files, an "
+            "EPUB or DAISY talking book, or several of these. The first run downloads the "
+            "voice (about 340 MB). Stopping part way is safe: run the same command again "
+            "and it continues where it left off."
         ),
     )
     make.add_argument("book", type=Path, help=BOOK_HELP)
@@ -118,8 +119,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     make.add_argument(
         "--format",
-        choices=[*FORMATS, "both"],
-        help="m4b: one audiobook file; mp3: a folder of MP3 files; both (default: from config)",
+        metavar="LIST",
+        help="what to make, separated by commas: m4b (one audiobook file), mp3 (a folder of "
+        "MP3 files), epub (EPUB 3 talking book), daisy (DAISY 2.02 talking book), or all "
+        "(default: from config)",
     )
     make.add_argument("--voice", help="voice name, from `dogear voices`")
     make.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
@@ -263,7 +266,7 @@ def _block_lines(block) -> list[str]:
 def _make(args: argparse.Namespace, config: Config) -> int:
     _apply_voice_options(args, config)
     if args.format:
-        config["output"]["formats"] = list(FORMATS) if args.format == "both" else [args.format]
+        config["output"]["formats"] = parse_formats(args.format)
     request = MakeRequest(
         book=args.book,
         output_dir=args.output_dir or args.book.resolve().parent,

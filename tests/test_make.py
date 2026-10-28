@@ -9,8 +9,15 @@ from conftest import require_tool
 
 from dogear import cli, make
 from dogear.document import Book, Heading, Metadata, Paragraph, Section
-from dogear.errors import DogearError, ToolNotFoundError, VoiceError
-from dogear.make import MakeRequest, check_language, make_audiobook, parse_sections
+from dogear.errors import DogearError, OutputFolderError, ToolNotFoundError, VoiceError
+from dogear.make import (
+    FORMATS,
+    MakeRequest,
+    check_language,
+    make_audiobook,
+    parse_formats,
+    parse_sections,
+)
 from dogear.voice.engine import SpeechPlan
 
 RATE = 24000
@@ -72,25 +79,41 @@ def chapter_titles(m4b: Path) -> list[str]:
         text=True,
         check=True,
     )
-    return result.stdout.split()
+    return result.stdout.splitlines()
 
 
 def test_makes_an_m4b_named_after_the_title(setup, config, tmp_path):
     require_tool("ffmpeg")
     saved = run(config, tmp_path, setup)
     assert saved == [tmp_path / "out" / "A Short Book Part 1.m4b"]
-    assert chapter_titles(saved[0]) == ["One", "Two", "Three"]
-    assert any(line.startswith("Making an audiobook of A Short Book") for line in setup["lines"])
-    assert "Section 3 of 3 done: Three." in setup["lines"]
+    # The title track comes first.
+    assert chapter_titles(saved[0]) == ["A Short Book: Part 1", "One", "Two", "Three"]
+    assert any(
+        line.startswith("Making an audiobook of A Short Book: Part 1: 3 sections and a title")
+        for line in setup["lines"]
+    )
+    assert "Section 4 of 4 done: Three." in setup["lines"]
+
+
+def test_the_title_track_can_be_turned_off(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    config["narration"]["announce_title"] = False
+    [m4b] = run(config, tmp_path, setup)
+    assert chapter_titles(m4b) == ["One", "Two", "Three"]
+    assert not any("By Ann Author" in text for text in setup["engine"].rendered)
 
 
 def test_both_formats_and_chosen_sections(setup, config, tmp_path):
     require_tool("ffmpeg")
     config["output"]["formats"] = ["m4b", "mp3"]
     m4b, folder = run(config, tmp_path, setup, sections={1, 3})
-    assert chapter_titles(m4b) == ["One", "Three"]
+    assert chapter_titles(m4b) == ["A Short Book: Part 1", "One", "Three"]
     assert folder.name == "A Short Book Part 1 MP3"
-    assert sorted(p.name for p in folder.glob("*.mp3")) == ["01 - One.mp3", "02 - Three.mp3"]
+    assert sorted(p.name for p in folder.glob("*.mp3")) == [
+        "01 - A Short Book Part 1.mp3",
+        "02 - One.mp3",
+        "03 - Three.mp3",
+    ]
     assert not any("second" in text for text in setup["engine"].rendered)
 
 
@@ -139,6 +162,45 @@ def test_unknown_format_in_config_is_an_error(setup, config, tmp_path):
         run(config, tmp_path, setup)
 
 
+def test_talking_books_get_the_text_tied_to_the_audio(setup, config, tmp_path, monkeypatch):
+    require_tool("ffmpeg")
+    built = {}
+
+    def fake_builder(name):
+        def build(sections, metadata, path, cfg):
+            built[name] = (sections, path)
+
+        return build
+
+    monkeypatch.setattr(make, "build_epub3", fake_builder("epub"))
+    monkeypatch.setattr(make, "build_daisy202", fake_builder("daisy"))
+    config["output"]["formats"] = ["daisy", "epub"]
+    saved = run(config, tmp_path, setup, sections={2})
+    out = tmp_path / "out"
+    assert saved == [
+        out / "A Short Book Part 1 talking book.epub",
+        out / "A Short Book Part 1 DAISY",
+    ]
+    sections, path = built["epub"]
+    assert path == saved[0] and built["daisy"][0] == sections
+    assert [(s.number, s.title) for s in sections] == [(0, "A Short Book: Part 1"), (2, "Two")]
+    two = sections[1]
+    assert [h.text for h in two.headings()] == ["Two"]
+    # Real timings from the render: one sync per sentence, back to back to the end.
+    assert len(two.syncs) == 2
+    assert two.syncs[0].clip.end == two.syncs[1].clip.begin
+    assert two.syncs[-1].clip.end == two.audio.marks[-1] / two.audio.sample_rate
+
+
+def test_nothing_may_replace_the_book_itself(setup, config, tmp_path):
+    config["output"]["formats"] = ["epub"]
+    source = tmp_path / "out" / "A Short Book Part 1 talking book.epub"
+    request = MakeRequest(book=source, output_dir=tmp_path / "out")
+    with pytest.raises(OutputFolderError, match="would replace the book it was made from"):
+        make_audiobook(request, config, setup["lines"].append)
+    assert setup["engine"].rendered == []
+
+
 def test_section_outside_the_book_is_an_error(setup, config, tmp_path):
     with pytest.raises(DogearError, match="There is no section 9; this book has 3."):
         run(config, tmp_path, setup, sections={2, 9})
@@ -149,6 +211,25 @@ def test_section_outside_the_book_is_an_error(setup, config, tmp_path):
 )
 def test_parse_sections(spec, expected):
     assert parse_sections(spec) == expected
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [("m4b", ["m4b"]), ("daisy, M4B", ["daisy", "m4b"]), ("mp3,mp3", ["mp3"])],
+)
+def test_parse_formats(spec, expected):
+    assert parse_formats(spec) == expected
+
+
+def test_parse_formats_all_is_every_format():
+    assert parse_formats("all") == list(FORMATS)
+
+
+@pytest.mark.parametrize(("spec", "named"), [("wav", "wav"), ("m4b,both", "both"), (",", ",")])
+def test_parse_formats_rejects_unknown_names(spec, named):
+    with pytest.raises(DogearError, match=f"'{named}' isn't a format") as err:
+        parse_formats(spec)
+    assert "m4b, mp3, epub, daisy" in err.value.hint
 
 
 @pytest.mark.parametrize("spec", ["", "two", "1-", "3,x"])
@@ -172,7 +253,7 @@ def test_cli_make_passes_options_through(monkeypatch, capsys, tmp_path):
 
     monkeypatch.setattr(cli, "make_audiobook", fake_make)
     book = tmp_path / "book.epub"
-    args = ["make", str(book), "--format", "both", "--voice", "bf_emma", "--speed", "1.1"]
+    args = ["make", str(book), "--format", "m4b,mp3", "--voice", "bf_emma", "--speed", "1.1"]
     assert cli.main([*args, "--sections", "2-3", "--language", "en"]) == 0
     assert capsys.readouterr().out == f"Saved: {tmp_path / 'Book.m4b'}\n"
     assert seen["request"] == MakeRequest(
