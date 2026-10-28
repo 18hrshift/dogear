@@ -10,8 +10,8 @@ each phase and what "done" means.
 
 **Current state:** Phase 1 (first listen). `dogear make` reads an EPUB, PDF, or Kindle book
 into a structured document, narrates it with spoken structure, speaks it with the Kokoro
-voice on the CPU, and packages an M4B and/or an MP3 folder. DAISY and EPUB 3 read-along
-output are Phase 2.
+voice on the CPU, and packages an M4B, an MP3 folder, and/or an EPUB 3 talking book.
+DAISY output is the rest of Phase 2.
 
 ## Working here
 
@@ -40,8 +40,7 @@ it (cached between runs) and makes a short audiobook on each platform.
 | `src/dogear/voice/` | Voice engines. `engine.py` is the interface (`plan` is cheap and gives the cache key; `render` makes audio). `kokoro.py` runs Kokoro with onnxruntime; `g2p.py` turns English into phonemes (misaki, plus the espeak-ng program for unknown words); `downloads.py` and `catalog.toml` fetch model files pinned by SHA-256. |
 | `src/dogear/render/` | Speaking a narrated book into one WAV per section, through the sentence cache (`cache.py`), with plain-text progress (`progress.py`). Records where each utterance starts in the audio. |
 | `src/dogear/readalong/` | Talking-book text: `build.py` turns passages and audio timings into text items with ids and syncs (`model.py`), shared by the EPUB 3 and DAISY packagers; `outline.py` settles heading levels across the book and sorts page numbers. |
-| `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). |
-| `src/dogear/make.py` | `dogear make` from start to finish: extract, narrate, speak, package. |
+| `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). The EPUB 3 talking book is `epub3` (putting it together, written next to the output and moved into place), with `epub3_text` (a section's content document), `epub3_smil` (its Media Overlay), `epub3_nav` (contents, page list, landmarks), `epub3_package` (the package document), `epub3_a11y` (accessibility claims decided from the content), `epub3_container` (the zip), `epub3_xhtml` (what the XHTML documents share), and `epub3.css`; `language_tag` checks a book's language tags before they go into markup. || `src/dogear/make.py` | `dogear make` from start to finish: extract, narrate, speak, package. |
 | `src/dogear/paths.py` | Per-user folders for downloaded models and the speech cache. |
 | `src/dogear/ocr.py` | Adding a text layer to scanned PDFs. |
 | `src/dogear/cli.py` | The `dogear` command. |

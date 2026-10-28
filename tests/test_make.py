@@ -5,7 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from audio_builder import probe
 from conftest import require_tool
+from epub3_reader import Epub
 
 from dogear import cli, make
 from dogear.document import Book, Heading, Metadata, Paragraph, Section
@@ -190,6 +192,40 @@ def test_talking_books_get_the_text_tied_to_the_audio(setup, config, tmp_path, m
     assert len(two.syncs) == 2
     assert two.syncs[0].clip.end == two.syncs[1].clip.begin
     assert two.syncs[-1].clip.end == two.audio.marks[-1] / two.audio.sample_rate
+
+
+def test_makes_an_epub_talking_book(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    config["output"]["formats"] = ["epub"]
+    [path] = run(config, tmp_path, setup, sections={1, 3})
+    assert path == tmp_path / "out" / "A Short Book Part 1 talking book.epub"
+    assert "Building the EPUB talking book." in setup["lines"]
+    book = Epub(path)
+    titles = [book.xpath(book.doc(i.get("href")), "//x:title/text()") for i in book.spine()]
+    assert titles == [["A Short Book: Part 1"], ["One"], ["Three"]]
+    items = book.items()
+    for overlay_id, smil in book.overlays():
+        [audio_href] = set(book.xpath(smil, "//smil:audio/@src"))
+        mp3 = tmp_path / overlay_id
+        mp3.write_bytes(book.files[book.root + audio_href])
+        [stream] = probe(mp3)["streams"]
+        assert (stream["codec_name"], stream["sample_rate"]) == ("mp3", "44100")
+        # The last clip ends where the spoken audio does, within the MP3's length.
+        last_end = book.clips(smil)[-1][1] / 1000
+        assert last_end <= float(probe(mp3)["format"]["duration"])
+        assert items[overlay_id].get("media-type") == "application/smil+xml"
+
+
+def test_an_epub_without_the_title_track_has_no_title_page(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    config["output"]["formats"] = ["epub"]
+    config["narration"]["announce_title"] = False
+    book = Epub(run(config, tmp_path, setup, sections={2})[0])
+    [doc] = book.spine()
+    assert not book.xpath(book.doc(doc.get("href")), "//*[@epub:type='titlepage']")
+    assert book.xpath(book.nav(), "//x:nav[@epub:type='landmarks']//x:a/@epub:type") == [
+        "bodymatter"
+    ]
 
 
 def test_nothing_may_replace_the_book_itself(setup, config, tmp_path):
