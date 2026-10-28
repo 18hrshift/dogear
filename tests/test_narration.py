@@ -627,3 +627,17 @@ def test_title_track_words_come_from_config(config, narration):
     narration["words"]["and"] = "&"
     title_book = Book(Metadata("T", authors=["A", "B"]), [], Path("b.epub"), "epub")
     assert spoken(narrate_title(title_book, config).utterances)[1] == "Written by A & B."
+
+
+def test_page_markers_before_the_opening_heading_follow_it(config, narration):
+    narration["announce_pages"] = True
+    result = section_narration(config, PageMarker("5"), Heading(1, "Two"), Paragraph("Text."))
+    assert spoken(result.utterances) == ["Two.", "Page five.", "Text."]
+    assert [type(p.block) for p in result.passages] == [Heading, PageMarker, Paragraph]
+
+
+def test_page_markers_before_other_text_stay_where_they_are(config, narration):
+    narration["announce_pages"] = True
+    result = section_narration(config, PageMarker("5"), Paragraph("Text."), title="Two")
+    # The title Dogear adds still comes first; the page is announced where it was printed.
+    assert spoken(result.utterances) == ["Two.", "Page five.", "Text."]

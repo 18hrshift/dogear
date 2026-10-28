@@ -17,7 +17,8 @@ def build_epub3(
 ) -> None:
     """Write the talking book to `path`, a .epub file.
 
-    `sections` come from `readalong.build_readalong`, in reading order, each with its
-    loudness-normalized WAV and the syncs that tie its text to that audio.
+    `sections` come from `readalong.build_readalong`, in reading order, with their audio
+    already encoded by `talking_audio` (each `section.audio.path` is the MP3 to put in
+    the book) and the syncs that tie their text to it, in seconds.
     """
     raise NotImplementedError("EPUB 3 output is not built yet")

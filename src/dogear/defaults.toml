@@ -211,6 +211,9 @@ roman_numeral_keywords = [
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
+# Talking books (EPUB and DAISY) use constant-bitrate mono MP3, which every DAISY player
+# can play. 64k keeps a voice clear at about 29 MB an hour; 48k is smaller.
+talking_book_bitrate = "64k"
 # Each chapter is turned up or down by one fixed amount (linear gain, so nothing pumps)
 # to land at this integrated loudness. -20 LUFS sits inside the -18 to -23 dB RMS range
 # ACX (Audible) asks of audiobooks. Kokoro's peaks are high for its loudness: its

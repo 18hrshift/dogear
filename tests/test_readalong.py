@@ -255,3 +255,41 @@ def test_heading_levels_pull_up_jumps_the_book_also_uses_shallower():
 )
 def test_page_kinds(label, kind):
     assert page_kind(label) == kind
+
+
+def test_an_utterance_that_came_out_silent_gets_no_sync(config):
+    chapter = Section("One", blocks=[Heading(1, "One"), Paragraph("Hush. Then words.")])
+    [narration] = narrate_book(book(chapter), config)
+    hush = next(i for i, u in enumerate(narration.utterances) if u.text == "Hush.")
+    # One second per utterance, except none for "Hush.": no audio and no pause after it.
+    marks = [i if i <= hush else i - 1 for i in range(len(narration.utterances) + 1)]
+    audio = ChapterAudio("One", Path("a.wav"), tuple(marks), 1)
+    [section] = build_readalong([narration], [audio], "en")
+    hush_id = section.items[1].sentences[0].id
+    assert hush_id not in {s.target for s in section.syncs}
+    assert all(s.clip.end > s.clip.begin for s in section.syncs)
+
+
+def test_a_silent_heading_points_at_what_follows(config):
+    chapter = Section("One", blocks=[Heading(1, "One"), Paragraph("Words.")])
+    [narration] = narrate_book(book(chapter), config)
+    heading = next(i for i, u in enumerate(narration.utterances) if u.text == "One")
+    marks = [0 if i <= heading + 1 else i for i in range(len(narration.utterances) + 1)]
+    audio = ChapterAudio("One", Path("a.wav"), tuple(marks), 1)
+    [section] = build_readalong([narration], [audio], "en")
+    [title] = section.headings()
+    assert section.syncs[title.sync].target == section.items[1].sentences[0].id
+
+
+def test_a_section_with_no_audio_at_all_is_refused(config):
+    [narration] = narrate_book(book(CHAPTER), config)
+    audio = ChapterAudio("One", Path("a.wav"), (0,) * (len(narration.utterances) + 1), 1)
+    with pytest.raises(ValueError, match="came out silent"):
+        build_readalong([narration], [audio], "en")
+
+
+def test_announced_pages_are_marked_so_players_can_skip_them(config):
+    config["narration"]["announce_pages"] = True
+    [section] = readalong(config, book(CHAPTER))
+    page = section.items[1]
+    assert [s.target for s in section.syncs if s.page] == [page.id]

@@ -66,20 +66,22 @@ class _SectionBuilder:
         self.narration = narration
         self.utterances = narration.utterances
         self.prefix = prefix
-        self.spoken = [i for i, u in enumerate(self.utterances) if u.spoken]
+        self.spoken: list[int] = []  # utterances with audio, set by _clips
         self.targets: dict[int, str] = {}  # utterance index to the id of what shows it
+        self.page_utterances: set[int] = set()
         self.page_count = 0
 
     def build(self, audio: ChapterAudio, language: str | None) -> SectionText:
-        items = tuple(self._item(p) for p in self.narration.passages)
         clips = self._clips(audio)
+        items = tuple(self._item(p) for p in self.narration.passages)
         syncs = []
         for k, i in enumerate(self.spoken, start=1):
             if i not in self.targets:
                 raise RuntimeError(
                     f"Utterance {i} of section {self.narration.number} belongs to no passage."
                 )
-            syncs.append(Sync(f"{self.prefix}-par{k}", self.targets[i], clips[i]))
+            page = i in self.page_utterances
+            syncs.append(Sync(f"{self.prefix}-par{k}", self.targets[i], clips[i], page))
         section = self.narration.section
         return SectionText(
             number=self.narration.number,
@@ -98,6 +100,13 @@ class _SectionBuilder:
                 f"The audio for section {self.narration.number} has no timings for its "
                 f"{len(self.utterances)} utterances."
             )
+        said = [i for i, u in enumerate(self.utterances) if u.spoken]
+        nexts = [*said[1:], len(self.utterances)]
+        # Players can't play an empty clip, so an utterance that came out silent with no
+        # pause after it gets none; its text simply isn't highlighted.
+        self.spoken = [i for i, n in zip(said, nexts, strict=True) if marks[n] > marks[i]]
+        if not self.spoken:
+            raise ValueError(f"Section {self.narration.number} came out silent.")
         ends = [*self.spoken[1:], len(self.utterances)]
         return {
             i: Clip(marks[i] / rate, marks[end] / rate)
@@ -110,7 +119,10 @@ class _SectionBuilder:
             case Heading(level=level, text=text, lang=lang):
                 [i] = parts[0]
                 self.targets[i] = self._id(i)
-                return HeadingText(self._id(i), level, text, self._sync_at(i), lang)
+                sync = self._sync_at(i)
+                if sync is None:  # silent, with nothing after it: the section's last words
+                    sync = len(self.spoken) - 1
+                return HeadingText(self._id(i), level, text, sync, lang)
             case Paragraph(lang=lang):
                 return ParagraphText(self._sentences(parts[0]), lang)
             case ListBlock(ordered=ordered, lang=lang):
@@ -126,6 +138,7 @@ class _SectionBuilder:
                 page_id = f"{self.prefix}-page{self.page_count}"
                 for i in parts[0]:  # "Page 42.", when pages are announced
                     self.targets[i] = page_id
+                    self.page_utterances.add(i)
                 return PageText(page_id, label, page_kind(label), self._sync_at(parts[0].start))
             case SceneBreak():
                 return BreakText()

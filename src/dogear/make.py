@@ -20,6 +20,7 @@ from dogear.output.daisy202 import build_daisy202
 from dogear.output.epub3 import build_epub3
 from dogear.output.ffmpeg import check_ffmpeg
 from dogear.output.filenames import safe_filename
+from dogear.output.talking_audio import encode_talking_audio
 from dogear.paths import cache_dir
 from dogear.readalong import build_readalong
 from dogear.render import render_book
@@ -81,6 +82,7 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
             build_mp3_folder(chapters, book.metadata, outputs["mp3"], config, normalized=True)
         if "epub" in formats or "daisy" in formats:
             sections = build_readalong(narrations, chapters, book.metadata.language)
+            sections = encode_talking_audio(sections, Path(work), config)
             if "epub" in formats:
                 report("Building the EPUB talking book.")
                 build_epub3(sections, book.metadata, outputs["epub"], config)

@@ -17,8 +17,9 @@ def build_daisy202(
 ) -> None:
     """Write the talking book into `folder`, creating it if needed.
 
-    `sections` come from `readalong.build_readalong`, in reading order, each with its
-    loudness-normalized WAV and the syncs that tie its text to that audio. Files Dogear
+    `sections` come from `readalong.build_readalong`, in reading order, with their audio
+    already encoded by `talking_audio` (each `section.audio.path` is the MP3 to put in
+    the book) and the syncs that tie their text to it, in seconds. Files Dogear
     didn't make in `folder` are left alone (see `folder_record`).
     """
     raise NotImplementedError("DAISY 2.02 output is not built yet")

@@ -147,7 +147,7 @@ class _Narrator:
             top = self.title_level
             self._add_heading(out, Heading(top, section.title), lang)
         end_notes: list[Footnote] = []
-        for block in section.blocks:
+        for block in _heading_first(section.blocks):
             self._block(out, block, block_lang(block, lang), end_notes)
         if end_notes:
             self._add_heading(out, Heading(min(top + 1, 6), self.words["notes"]), lang)
@@ -270,6 +270,17 @@ class _Narrator:
 
 def block_lang(block, section_lang: str | None) -> str | None:
     return getattr(block, "lang", None) or section_lang
+
+
+def _heading_first(blocks: list[Block]) -> list[Block]:
+    """Blocks in reading order, except that page markers before a section's opening heading
+    come right after it: a talking book's sections start with their heading."""
+    leading = 0
+    while leading < len(blocks) and isinstance(blocks[leading], PageMarker):
+        leading += 1
+    if 0 < leading < len(blocks) and isinstance(blocks[leading], Heading):
+        return [blocks[leading], *blocks[:leading], *blocks[leading + 1 :]]
+    return blocks
 
 
 def _first_heading_level(section: Section) -> int | None:

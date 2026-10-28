@@ -35,11 +35,13 @@ class Sync:
 
     A section's syncs, in order, cover its audio from the first words to the end with no
     gaps, so playing their clips back to back sounds like the whole track, pauses included.
+    No clip is empty: an utterance that came out silent has no sync.
     """
 
     id: str  # for the SMIL element that pairs the two
     target: str  # id of the element in the section's text
     clip: Clip
+    page: bool = False  # an announced page number ("Page 42."), which players may skip
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,8 @@ class HeadingText:
     id: str
     level: int  # 1 to 6, never more than one deeper than the heading before it in the book
     text: str
-    sync: int  # index of its sync in the section
+    # Index of its sync in the section: its own, or the next one if it came out silent.
+    sync: int
     lang: str | None = None  # set only when it differs from the section's language
 
 
