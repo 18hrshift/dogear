@@ -3,10 +3,9 @@
 **An open talking-book maker.** Turn the books you own into audiobooks that blind and
 low-vision listeners can actually navigate: by chapter, by heading, by print page.
 
-> **Status: early.** Dogear makes M4B audiobooks and MP3 folders with a natural-sounding
-> voice that runs on an ordinary computer, offline. Talking-book formats with heading and
-> page navigation (DAISY, EPUB 3 read-along) come next. [`ROADMAP.md`](ROADMAP.md) has
-> the plan.
+> **Status: early.** Dogear makes M4B audiobooks, MP3 folders, and EPUB 3 talking books
+> (the text and the narration in step) with a natural-sounding voice that runs on an
+> ordinary computer, offline. DAISY comes next. [`ROADMAP.md`](ROADMAP.md) has the plan.
 
 ## Install
 
@@ -57,6 +56,34 @@ dogear make mybook.epub --speed 1.0       # faster (the default is 0.9)
 dogear make mybook.epub -o ~/Audiobooks   # save somewhere else
 dogear make mybook.epub --words names.toml  # your own pronunciations (see below)
 ```
+
+### EPUB talking books
+
+```bash
+dogear make mybook.epub --format epub
+```
+
+This saves `<book title> talking book.epub`, an EPUB 3 book with the text and the
+narration in step (Media Overlays). A reading app that plays them shows the text and
+highlights each sentence as it is read, in black on yellow and underlined. In it:
+
+- **A title page**, read by the title track (unless `announce_title = false`), then one
+  part per section of the book.
+- **A table of contents with every heading**, nested by level. Reading apps move through
+  a talking book by its table of contents, so every heading is there.
+- **Print page numbers**, when the source book has them: shown where each page begins
+  and listed, so an app can go to a page. With `announce_pages = true` they are read
+  aloud too, marked so an app can skip them. The book names where the numbers came from:
+  the source book's identifier, or its title and authors if it has none.
+- **Notes** shown where they are read, **tables** with their column headings, and
+  **image descriptions** as text. Dogear keeps no pictures, only their descriptions.
+- **Accessibility information** that says what the book has, that its voice is
+  synthetic, and that no person has checked it.
+
+[Thorium Reader](https://www.edrlab.org/software/thorium-reader/) (free for Windows,
+macOS, and Linux; 3.5.1 is current) plays EPUB talking books. Add the book to its library
+and open it to hear it with the text highlighted. Thorium's table of contents takes you
+to any heading, and its Go to page command to a print page.
 
 ### Check a book before making it
 
@@ -197,7 +224,7 @@ can't see the screen. Dogear is:
 |---|---|---|
 | M4B with chapters | Phone audiobook apps | Works |
 | MP3 folder + playlist | Anything that plays audio, including older players | Works |
-| EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) | Phase 2 |
+| EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) | Works |
 | DAISY | Talking-book players and apps, with heading and page navigation | Phase 2 |
 
 ## The voice
