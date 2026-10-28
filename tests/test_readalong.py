@@ -197,6 +197,31 @@ def test_heading_levels_are_settled_across_the_book(config):
     assert levels == [[1], [1, 2], [1]]
 
 
+def test_a_title_page_marked_shallower_than_the_chapters_does_not_hold_them(config):
+    # As in Standard Ebooks: the title page is level 1, every chapter level 2.
+    sections = [
+        Section("Titlepage", kind="front", blocks=[Heading(1, "The Book"), Paragraph("x.")]),
+        Section("Imprint", kind="front", blocks=[Heading(2, "Imprint"), Paragraph("x.")]),
+        Section("One", blocks=[Heading(2, "One"), Heading(3, "Part"), Paragraph("y.")]),
+        Section("Two", blocks=[Heading(2, "Two"), Paragraph("z.")]),
+        Section("Colophon", kind="back", blocks=[Heading(1, "Colophon"), Paragraph("c.")]),
+    ]
+    levels = [[h.level for h in s.headings()] for s in readalong(config, book(*sections))]
+    assert levels == [[1], [1], [1, 2], [1], [1]]
+
+
+def test_parts_in_the_body_still_hold_their_chapters(config):
+    sections = [
+        Section("Part One", blocks=[Heading(1, "Part One"), Paragraph("x.")]),
+        Section("One", blocks=[Heading(2, "One"), Paragraph("y.")]),
+        Section("Two", blocks=[Heading(2, "Two"), Paragraph("z.")]),
+        Section("Part Two", blocks=[Heading(1, "Part Two"), Paragraph("w.")]),
+        Section("Three", blocks=[Heading(2, "Three"), Paragraph("v.")]),
+    ]
+    levels = [[h.level for h in s.headings()] for s in readalong(config, book(*sections))]
+    assert levels == [[1], [2], [2], [1], [2]]
+
+
 def test_section_language_and_kind_carry_over(config):
     appendix = Section("Notes", kind="back", lang="en-GB", blocks=[Paragraph("x.")])
     [section] = readalong(config, book(appendix))

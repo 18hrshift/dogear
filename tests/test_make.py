@@ -105,6 +105,21 @@ def test_the_title_track_can_be_turned_off(setup, config, tmp_path):
     assert not any("By Ann Author" in text for text in setup["engine"].rendered)
 
 
+def test_a_title_page_that_says_the_title_replaces_the_title_track(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    title_page = Section(
+        "Titlepage",
+        kind="front",
+        blocks=[Heading(1, "A short book: part 1"), Paragraph("By Ann Author.")],
+    )
+    setup["book"].sections.insert(0, title_page)
+    [m4b] = run(config, tmp_path, setup)
+    assert chapter_titles(m4b) == ["Titlepage", "One", "Two", "Three"]
+    # Choosing sections without it brings the title track back.
+    [m4b] = run(config, tmp_path, setup, sections={2})
+    assert chapter_titles(m4b) == ["A Short Book: Part 1", "One"]
+
+
 def test_both_formats_and_chosen_sections(setup, config, tmp_path):
     require_tool("ffmpeg")
     config["output"]["formats"] = ["m4b", "mp3"]

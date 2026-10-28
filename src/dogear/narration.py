@@ -9,6 +9,7 @@ sentence, a paragraph, a heading, a scene, a chapter. Every choice here comes fr
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass, field, replace
 
@@ -105,6 +106,16 @@ def narrate_title(book: Book, config: Config) -> SectionNarration:
     section = Section(metadata.title, kind="front", blocks=blocks)
     utterances, passages = _Narrator(book, config).section(section)
     return SectionNarration(0, section, utterances, passages)
+
+
+def opens_with_title(narration: SectionNarration, title: str) -> bool:
+    """Whether a section starts by saying the book's title, as most title pages do."""
+    first = narration.passages[0].block if narration.passages else None
+    return isinstance(first, Heading) and _words(first.text) == _words(title)
+
+
+def _words(text: str) -> list[str]:
+    return re.sub(r"[^\w\s]", "", text).casefold().split()
 
 
 class _Narrator:

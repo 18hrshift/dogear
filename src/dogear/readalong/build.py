@@ -9,6 +9,7 @@ heard when a player plays them back to back.
 from __future__ import annotations
 
 from bisect import bisect_left
+from collections import Counter
 from dataclasses import replace
 
 from dogear.document import (
@@ -172,9 +173,23 @@ class _SectionBuilder:
 
 
 def _with_book_levels(sections: list[SectionText]) -> list[SectionText]:
-    """Heading levels settled across the whole book. The title track's heading stays 1."""
-    body = [h.level for s in sections if s.number != 0 for h in s.headings()]
-    levels = iter(heading_levels(body))
+    """Heading levels settled across the whole book. The title track's heading stays 1.
+
+    Front and back matter never open at a shallower level than the book's chapters do.
+    Many books mark a title page as level 1 and every chapter as level 2; taken as they
+    are, every chapter would sit under the title page in the contents. Body sections
+    keep their levels, so a book's parts still hold its chapters.
+    """
+    book = [s for s in sections if s.number != 0]
+    chapter_level = _usual_opening_level(book)
+    raw = []
+    for section in book:
+        headings = section.headings()
+        shift = 0
+        if section.kind != "body" and headings and headings[0].level < chapter_level:
+            shift = chapter_level - headings[0].level
+        raw += [min(h.level + shift, 6) for h in headings]
+    levels = iter(heading_levels(raw))
     result = []
     for section in sections:
         items = tuple(
@@ -185,3 +200,9 @@ def _with_book_levels(sections: list[SectionText]) -> list[SectionText]:
         )
         result.append(replace(section, items=items))
     return result
+
+
+def _usual_opening_level(sections: list[SectionText]) -> int:
+    """The level most body sections open with: the book's chapter level."""
+    openings = Counter(s.headings()[0].level for s in sections if s.kind == "body" and s.headings())
+    return openings.most_common(1)[0][0] if openings else 1

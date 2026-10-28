@@ -288,8 +288,9 @@ tables = "read"
 announce_undescribed_images = false
 # Say "Page 42" where each print page begins, for listeners following a print copy.
 announce_pages = false
-# Start with a short track that says the book's title and who wrote it. Talking books
-# (EPUB and DAISY) open on it too, as their players expect.
+# Start with a short track that says the book's title and who wrote it, unless the book
+# opens with its own title page. Talking books (EPUB and DAISY) open on it too, as their
+# players expect.
 announce_title = true
 
 # Silence, in milliseconds. Longer pauses mark bigger breaks, so a listener hears the

@@ -14,7 +14,7 @@ from dogear.config import Config
 from dogear.document import Book
 from dogear.errors import DogearError, OutputFolderError, VoiceError
 from dogear.extract import extract_book
-from dogear.narration import SectionNarration, narrate_book, narrate_title
+from dogear.narration import SectionNarration, narrate_book, narrate_title, opens_with_title
 from dogear.output import build_m4b, build_mp3_folder, normalize_chapters
 from dogear.output.daisy202 import build_daisy202
 from dogear.output.epub3 import build_epub3
@@ -51,7 +51,8 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
     outputs = _output_paths(book, request, formats)
     narrations = chosen_narrations(narrate_book(book, config), request.sections, len(book.sections))
     chosen = len(narrations)
-    if config["narration"]["announce_title"]:
+    title_page = bool(narrations) and opens_with_title(narrations[0], book.metadata.title)
+    if config["narration"]["announce_title"] and not title_page:
         narrations.insert(0, narrate_title(book, config))
     progress = Progress(
         total_words=sum(n.words() for n in narrations),
