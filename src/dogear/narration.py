@@ -9,10 +9,12 @@ sentence, a paragraph, a heading, a scene, a chapter. Every choice here comes fr
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from collections import Counter
+from dataclasses import dataclass, field, replace
 
 from dogear.config import Config
 from dogear.document import (
+    Block,
     Book,
     Footnote,
     Heading,
@@ -40,10 +42,35 @@ class Utterance:
 
 
 @dataclass(frozen=True)
+class Passage:
+    """Where one block sits among a section's utterances, so read-along text can show it.
+
+    `parts` are ranges of utterance indexes. What each part holds depends on the block:
+
+    - Heading, Paragraph, Footnote: one part, the block's sentences.
+    - ListBlock: one part per item.
+    - Table: the introduction ("Table: Prices."), then one part per body row read aloud.
+      When tables are skipped, only the introduction, which then holds the "not read"
+      sentence too.
+    - Image: the description, then the caption. Either may be empty.
+    - PageMarker: one part, "Page 42." when pages are announced, otherwise empty.
+    - SceneBreak: no parts.
+
+    An empty part still has a position: the index of the utterance that follows it.
+    Blocks that add nothing to the narration (a note already read, a decorative image)
+    have no passage, except page markers and scene breaks, which mark places.
+    """
+
+    block: Block
+    parts: tuple[range, ...]
+
+
+@dataclass(frozen=True)
 class SectionNarration:
-    number: int  # 1-based, as `dogear outline` shows it
+    number: int  # 1-based, as `dogear outline` shows it; 0 for the title track
     section: Section
     utterances: list[Utterance]
+    passages: list[Passage] = field(default_factory=list)  # in reading order
 
     def words(self) -> int:
         return sum(len(u.spoken.split()) for u in self.utterances)
@@ -55,9 +82,9 @@ def narrate_book(book: Book, config: Config) -> list[SectionNarration]:
     narrations = []
     for number, section in enumerate(book.sections, start=1):
         read_earlier = set(narrator.read_notes)
-        utterances = narrator.section(section)
+        utterances, passages = narrator.section(section)
         if narrator.has_content(utterances, section, read_earlier):
-            narrations.append(SectionNarration(number, section, utterances))
+            narrations.append(SectionNarration(number, section, utterances, passages))
         else:
             log.info(
                 "Section %d, %s, was left out of the audio: its notes are read where the "
@@ -66,6 +93,18 @@ def narrate_book(book: Book, config: Config) -> list[SectionNarration]:
                 section.title,
             )
     return narrations
+
+
+def narrate_title(book: Book, config: Config) -> SectionNarration:
+    """A short opening track: the book's title, then who wrote it."""
+    metadata = book.metadata
+    words = config["narration"]["words"]
+    blocks: list[Block] = [Heading(1, metadata.title)]
+    if metadata.authors:
+        blocks.append(Paragraph(f"{words['by']} {_join(metadata.authors, words['and'])}."))
+    section = Section(metadata.title, kind="front", blocks=blocks)
+    utterances, passages = _Narrator(book, config).section(section)
+    return SectionNarration(0, section, utterances, passages)
 
 
 class _Narrator:
@@ -80,6 +119,8 @@ class _Narrator:
             b.note_id: b for s in book.sections for b in s.blocks if isinstance(b, Footnote)
         }
         self.read_notes: set[str] = set()
+        self.title_level = _title_level(book)
+        self._passages: list[Passage] = []
 
     def has_content(
         self, utterances: list[Utterance], section: Section, read_earlier: set[str]
@@ -97,39 +138,46 @@ class _Narrator:
         has_notes = any(isinstance(b, Footnote) for b in spoken_blocks)
         return not (has_notes and all_notes_read) and any(u.spoken for u in utterances)
 
-    def section(self, section: Section) -> list[Utterance]:
+    def section(self, section: Section) -> tuple[list[Utterance], list[Passage]]:
         out = [Utterance("", "", self.pauses["section_start_ms"])]
+        self._passages = []
         lang = section.lang or self.language
-        if not _starts_with_heading(section):
-            self._heading(out, section.title, lang)
+        top = _first_heading_level(section)
+        if top is None:
+            top = self.title_level
+            self._add_heading(out, Heading(top, section.title), lang)
         end_notes: list[Footnote] = []
         for block in section.blocks:
             self._block(out, block, block_lang(block, lang), end_notes)
         if end_notes:
-            self._heading(out, self.words["notes"], lang)
+            self._add_heading(out, Heading(min(top + 1, 6), self.words["notes"]), lang)
             for note in end_notes:
                 self._note(out, note, block_lang(note, lang))
         _extend_pause(out, self.pauses["section_end_ms"])
-        return out
+        return out, self._passages
 
     def _block(self, out: list[Utterance], block, lang: str | None, end_notes: list) -> None:
         match block:
-            case Heading(text=text):
-                self._heading(out, text, lang)
+            case Heading():
+                self._add_heading(out, block, lang)
             case Paragraph(text=text, note_refs=refs):
-                self._sentences(out, text, lang, self.pauses["paragraph_ms"])
+                part = self._sentences(out, text, lang, self.pauses["paragraph_ms"])
+                self._passages.append(Passage(block, (part,)))
                 if self.settings["footnotes"] == "after_paragraph":
                     for note_id in refs:
                         if note_id in self.notes and note_id not in self.read_notes:
                             note = self.notes[note_id]
                             self._note(out, note, block_lang(note, lang))
             case ListBlock(items=items, ordered=ordered):
+                parts = []
                 for n, item in enumerate(items, start=1):
-                    # "1: Buy milk." stays one utterance; "1. Buy milk." would split in two.
-                    numbered = f"{n}: {item}" if ordered else item
-                    self._sentences(out, _sentence(numbered), lang, 0)
+                    # The number is said ("1: Buy milk.", which stays one utterance where
+                    # "1. Buy milk." would split in two) but not shown: a list shows its own.
+                    prefix = f"{n}: " if ordered else ""
+                    parts.append(self._sentences(out, _sentence(item), lang, 0, prefix))
                     _extend_pause(out, self.pauses["list_item_ms"])
                 _extend_pause(out, self.pauses["paragraph_ms"])
+                self._passages.append(Passage(block, tuple(parts)))
             case Table():
                 self._table(out, block, lang)
             case Image():
@@ -141,13 +189,21 @@ class _Narrator:
                 elif mode != "skip" and note_id not in self.read_notes:
                     self._note(out, block, lang)
             case PageMarker(label=label):
+                part = range(len(out), len(out))
                 if self.settings["announce_pages"]:
-                    self._sentences(out, f"{self.words['page']} {label}.", lang, 0)
+                    part = self._sentences(out, f"{self.words['page']} {label}.", lang, 0)
                     _extend_pause(out, self.pauses["sentence_ms"])
+                self._passages.append(Passage(block, (part,)))
             case SceneBreak():
                 _extend_pause(out, self.pauses["scene_break_ms"])
+                self._passages.append(Passage(block, ()))
             case _:
                 raise TypeError(f"not a block: {block!r}")
+
+    def _add_heading(self, out: list[Utterance], heading: Heading, lang: str | None) -> None:
+        start = len(out)
+        self._heading(out, heading.text, lang)
+        self._passages.append(Passage(heading, (range(start, len(out)),)))
 
     def _heading(self, out: list[Utterance], text: str, lang: str | None) -> None:
         if out[-1].spoken:
@@ -157,51 +213,85 @@ class _Narrator:
             spoken += "."  # so the voice closes the heading instead of trailing off
         out.append(Utterance(text, spoken, self.pauses["heading_ms"]))
 
-    def _sentences(self, out: list[Utterance], text: str, lang: str | None, end_ms: int) -> None:
-        for sentence in split_sentences(text, self.sentences):
-            spoken = normalize_for_speech(sentence, self.speech, lang)
+    def _sentences(
+        self, out: list[Utterance], text: str, lang: str | None, end_ms: int, prefix: str = ""
+    ) -> range:
+        """Add `text` sentence by sentence. `prefix` is said before the first, not shown."""
+        start = len(out)
+        for n, sentence in enumerate(split_sentences(text, self.sentences)):
+            said = prefix + sentence if n == 0 else sentence
+            spoken = normalize_for_speech(said, self.speech, lang)
             out.append(Utterance(sentence, spoken, self.pauses["sentence_ms"]))
         _extend_pause(out, end_ms)
+        return range(start, len(out))
 
     def _note(self, out: list[Utterance], note: Footnote, lang: str | None) -> None:
         self.read_notes.add(note.note_id)
-        self._sentences(
+        part = self._sentences(
             out, f"{self.words['note']}: {note.text}", lang, self.pauses["paragraph_ms"]
         )
+        self._passages.append(Passage(note, (part,)))
 
     def _image(self, out: list[Utterance], image: Image, lang: str | None) -> None:
         label = self.words["image"]
+        start = len(out)
+        description = caption = range(start, start)
         if image.alt:
-            self._sentences(out, _sentence(f"{label}: {image.alt}"), lang, 0)
+            description = self._sentences(out, _sentence(f"{label}: {image.alt}"), lang, 0)
         elif image.caption or (image.alt is None and self.settings["announce_undescribed_images"]):
-            self._sentences(out, f"{label}.", lang, 0)
+            description = self._sentences(out, f"{label}.", lang, 0)
         if image.caption:
-            self._sentences(out, _sentence(image.caption), lang, 0)
+            caption = self._sentences(out, _sentence(image.caption), lang, 0)
+        else:
+            caption = range(len(out), len(out))
         _extend_pause(out, self.pauses["paragraph_ms"])
+        if len(out) > start:
+            self._passages.append(Passage(image, (description, caption)))
 
     def _table(self, out: list[Utterance], table: Table, lang: str | None) -> None:
         label = self.words["table"]
         intro = f"{label}: {table.caption}" if table.caption else f"{label}."
+        start = len(out)
         self._sentences(out, _sentence(intro), lang, self.pauses["sentence_ms"])
         if self.settings["tables"] == "skip":
             self._sentences(out, self.words["table_skipped"], lang, self.pauses["paragraph_ms"])
+            self._passages.append(Passage(table, (range(start, len(out)),)))
             return
+        parts = [range(start, len(out))]
         headers = table.rows[0] if table.header_rows else ()
         for n, row in enumerate(table.rows[table.header_rows :], start=1):
-            self._sentences(out, _row_text(self.words["row"], n, headers, row), lang, 0)
+            parts.append(
+                self._sentences(out, _row_text(self.words["row"], n, headers, row), lang, 0)
+            )
             _extend_pause(out, self.pauses["list_item_ms"])
         _extend_pause(out, self.pauses["paragraph_ms"])
+        self._passages.append(Passage(table, tuple(parts)))
 
 
 def block_lang(block, section_lang: str | None) -> str | None:
     return getattr(block, "lang", None) or section_lang
 
 
-def _starts_with_heading(section: Section) -> bool:
+def _first_heading_level(section: Section) -> int | None:
+    """The level of the heading a section opens with, or None if it opens with something else."""
     for block in section.blocks:
         if not isinstance(block, PageMarker):
-            return isinstance(block, Heading)
-    return False
+            return block.level if isinstance(block, Heading) else None
+    return None
+
+
+def _title_level(book: Book) -> int:
+    """The heading level for a section title Dogear adds: the level most sections open with."""
+    levels = Counter(_first_heading_level(s) for s in book.sections)
+    levels.pop(None, None)
+    return levels.most_common(1)[0][0] if levels else 1
+
+
+def _join(names: list[str], and_word: str) -> str:
+    """'A', 'A and B', or 'A, B and C'."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} {and_word} {names[-1]}"
 
 
 def _row_text(row_word: str, n: int, headers: tuple[str, ...], row: tuple[str, ...]) -> str:

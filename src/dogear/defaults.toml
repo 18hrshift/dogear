@@ -276,6 +276,9 @@ tables = "read"
 announce_undescribed_images = false
 # Say "Page 42" where each print page begins, for listeners following a print copy.
 announce_pages = false
+# Start with a short track that says the book's title and who wrote it. Talking books
+# (EPUB and DAISY) open on it too, as their players expect.
+announce_title = true
 
 # Silence, in milliseconds. Longer pauses mark bigger breaks, so a listener hears the
 # structure.
@@ -297,6 +300,8 @@ table = "Table"
 row = "Row"
 page = "Page"
 table_skipped = "Table not read."
+by = "By"  # the title track: "By Robert Louis Stevenson."
+and = "and"  # "By Ann Smith and Bob Jones."
 
 [render]
 # Where rendered sentences are kept so later runs reuse them. Empty means the usual
@@ -311,6 +316,8 @@ edge_silence_db = -50.0
 edge_silence_keep_ms = 60
 
 [output]
-# What `dogear make` produces: "m4b" (one audiobook file with chapters) and/or "mp3"
-# (a folder of numbered MP3 files with a playlist).
+# What `dogear make` produces, one or more of: "m4b" (one audiobook file with chapters),
+# "mp3" (a folder of numbered MP3 files with a playlist), "epub" (an EPUB 3 talking book:
+# the text and the audio in step, for reading apps such as Thorium Reader), and "daisy"
+# (a DAISY 2.02 talking book, for DAISY players and apps).
 formats = ["m4b"]
