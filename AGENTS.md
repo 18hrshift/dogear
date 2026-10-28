@@ -41,6 +41,9 @@ it (cached between runs) and makes a short audiobook on each platform.
 | `src/dogear/render/` | Speaking a narrated book into one WAV per section, through the sentence cache (`cache.py`), with plain-text progress (`progress.py`). |
 | `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). |
 | `src/dogear/make.py` | `dogear make` from start to finish: extract, narrate, speak, package. |
+| `src/dogear/pronunciations.py` | The user's pronunciation files (`[pronunciation]`, `--words`): reading and checking them. `speech/word_match.py` finds their words in text. Sounds-like entries are applied first in `speech/normalize.py`; phoneme entries are pinned in `voice/g2p.py` and checked against Kokoro's symbols in `voice/kokoro.py`. |
+| `src/dogear/unknown_words.py` | `dogear words`: the words the voice would hand to espeak-ng, most frequent first. Needs spaCy's model, not the Kokoro voice. |
+| `src/dogear/say.py` | `dogear say`: a short text spoken into a WAV file through the same normalization, voice, and renderer as `dogear make`. |
 | `src/dogear/paths.py` | Per-user folders for downloaded models and the speech cache. |
 | `src/dogear/ocr.py` | Adding a text layer to scanned PDFs. |
 | `src/dogear/cli.py` | The `dogear` command. |
