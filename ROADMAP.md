@@ -25,6 +25,7 @@ and documented.
 | Network | Offline by default | Cloud voices are opt-in and warn that the book text leaves the machine. |
 | Pronunciation | misaki dictionaries, then the eSpeak NG program | misaki (Apache-2.0) is what Kokoro was trained with. Its packaged English setup loads espeak-ng as a GPL library, so Dogear runs the espeak-ng program instead, only for words misaki doesn't know. |
 | Pace and level | Speed 0.9, -20 LUFS | Kokoro at 1.0 read about 190 words a minute; narrators average about 155. Its peaks are high for its loudness, so -20 LUFS (inside ACX's range) needs about 5 dB of limiting where -18 needed 7. |
+| DAISY | DAISY 2.02, written by Dogear itself; DAISY Pipeline 2 (1.15.5) only validates it | Every player surveyed in October 2026 that reads DAISY 3 also reads 2.02, so DAISY 3 isn't needed now (it would matter for a library that requires it). Dogear already has exact timings, and writing the files itself keeps installs Python-only. Pipeline 2 is a Java server, and in a test its own EPUB to DAISY conversion left out metadata and failed its own validator. |
 
 **Open question:** who is the first real listener, and what device do they use? That decides
 which output Phase 1 polishes first.
@@ -83,8 +84,10 @@ Goal: output a listener can navigate without sight.
 
 - [ ] EPUB 3 with Media Overlays. Sentence-level rendering already gives exact timings for
       every sentence, which is what the SMIL sync files need.
-- [ ] DAISY output (2.02 for the widest player support; DAISY 3 to evaluate). Evaluate
-      generating it ourselves versus handing EPUB 3 to DAISY Pipeline 2.
+- [x] DAISY 2.02 output with full text and full audio: headings at every level, print
+      pages, and each sentence tied to its audio. Dogear writes it itself; DAISY Pipeline
+      2 only validates it (`scripts/check-daisy.sh`). DAISY 3 isn't needed now (see the
+      decisions above).
 - [ ] Navigation by heading level and by print page.
 - [ ] User-editable pronunciation dictionary (names, places, jargon).
 - [ ] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY validators

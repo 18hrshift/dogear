@@ -3,10 +3,9 @@
 **An open talking-book maker.** Turn the books you own into audiobooks that blind and
 low-vision listeners can actually navigate: by chapter, by heading, by print page.
 
-> **Status: early.** Dogear makes M4B audiobooks and MP3 folders with a natural-sounding
-> voice that runs on an ordinary computer, offline. Talking-book formats with heading and
-> page navigation (DAISY, EPUB 3 read-along) come next. [`ROADMAP.md`](ROADMAP.md) has
-> the plan.
+> **Status: early.** Dogear makes M4B audiobooks, MP3 folders, and DAISY 2.02 talking
+> books with a natural-sounding voice that runs on an ordinary computer, offline. EPUB 3
+> read-along output comes next. [`ROADMAP.md`](ROADMAP.md) has the plan.
 
 ## Install
 
@@ -50,12 +49,38 @@ Useful options:
 
 ```bash
 dogear make mybook.epub --format mp3      # a folder of numbered MP3s plus a playlist
+dogear make mybook.epub --format daisy    # a DAISY talking book (see below)
 dogear make mybook.epub --format m4b,mp3  # the M4B and the MP3 folder
 dogear make mybook.epub --sections 3      # just section 3, to try the voice first
 dogear make mybook.epub --voice bf_emma   # another voice; see `dogear voices`
 dogear make mybook.epub --speed 1.0       # faster (the default is 0.9)
 dogear make mybook.epub -o ~/Audiobooks   # save somewhere else
 ```
+
+### DAISY talking books
+
+`dogear make mybook.epub --format daisy` saves a folder named `<book title> DAISY` that
+holds a DAISY 2.02 talking book, with the full text and the full audio:
+
+- `ncc.html`, the book's map: every heading, at its level, and every print page.
+- For each section, an MP3 file, its text as an `.html` file, and a `.smil` file that
+  ties each sentence of the text to the stretch of audio that reads it.
+
+A listener can move by heading level and by print page, and an app that shows the text
+highlights each sentence as it's read. Page numbers read aloud (`announce_pages = true`)
+are marked so that players that let you turn page numbers off can skip them.
+
+To listen:
+
+- **Thorium Reader**, a free reading app for Windows, macOS, and Linux: open `ncc.html`
+  from the folder.
+- **Dolphin EasyReader**: zip the folder and import the zip.
+- **A DAISY player**, such as a Victor Reader Stream or a Plextalk Pocket: copy the whole
+  folder to the player's memory card, where its manual says talking books go.
+
+These all list DAISY 2.02 among the formats they read. Dogear's DAISY books pass the
+DAISY Pipeline 2 validator, but they haven't been tried on these players yet. If you try
+one, please tell us how it went.
 
 ### Check a book before making it
 
@@ -104,9 +129,8 @@ The full list, with what each one does, is in
 There are good ebook-to-audiobook converters already. None of them are built for people who
 can't see the screen. Dogear is:
 
-- **Made for listening without sight.** It will produce DAISY talking books and EPUB 3 with
-  synchronized audio, not just MP3s. Listeners can jump by heading or print page on players
-  like Thorium Reader or a Victor Reader Stream.
+- **Made for listening without sight.** It makes DAISY talking books, not just MP3s, and
+  EPUB 3 with synchronized audio is next. Listeners can jump by heading or by print page.
 - **Structure-aware.** Headings, image descriptions, footnotes, and tables are read on purpose,
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
 - **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
@@ -121,7 +145,7 @@ can't see the screen. Dogear is:
 | M4B with chapters | Phone audiobook apps | Works |
 | MP3 folder + playlist | Anything that plays audio, including older players | Works |
 | EPUB 3 with Media Overlays | Read along with highlighted text (low vision, dyslexia) | Phase 2 |
-| DAISY | Talking-book players and apps, with heading and page navigation | Phase 2 |
+| DAISY 2.02 | Talking-book players and apps, with heading and page navigation | Works |
 
 ## The voice
 

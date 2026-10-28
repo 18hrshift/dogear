@@ -10,8 +10,8 @@ each phase and what "done" means.
 
 **Current state:** Phase 1 (first listen). `dogear make` reads an EPUB, PDF, or Kindle book
 into a structured document, narrates it with spoken structure, speaks it with the Kokoro
-voice on the CPU, and packages an M4B and/or an MP3 folder. DAISY and EPUB 3 read-along
-output are Phase 2.
+voice on the CPU, and packages an M4B, an MP3 folder, and/or a DAISY 2.02 talking book.
+EPUB 3 read-along output is the rest of Phase 2.
 
 ## Working here
 
@@ -25,6 +25,13 @@ Some tests need ffmpeg, Tesseract, or eSpeak NG and skip without them. CI instal
 and sets `DOGEAR_REQUIRE_TOOLS=ffmpeg,ffprobe,tesseract,espeak-ng`, which turns those skips
 into failures. Unit tests never load the real voice; a separate CI job (`voice`) downloads
 it (cached between runs) and makes a short audiobook on each platform.
+
+DAISY output is validated outside pytest, with DAISY Pipeline 2 in Docker:
+
+```bash
+uv run python tests/daisy_samples.py /tmp/daisy        # sample books, with a fake voice
+scripts/check-daisy.sh /tmp/daisy/*/*DAISY             # exits 0 only if every book passes
+```
 
 ## Layout
 
@@ -40,7 +47,9 @@ it (cached between runs) and makes a short audiobook on each platform.
 | `src/dogear/voice/` | Voice engines. `engine.py` is the interface (`plan` is cheap and gives the cache key; `render` makes audio). `kokoro.py` runs Kokoro with onnxruntime; `g2p.py` turns English into phonemes (misaki, plus the espeak-ng program for unknown words); `downloads.py` and `catalog.toml` fetch model files pinned by SHA-256. |
 | `src/dogear/render/` | Speaking a narrated book into one WAV per section, through the sentence cache (`cache.py`), with plain-text progress (`progress.py`). Records where each utterance starts in the audio. |
 | `src/dogear/readalong/` | Talking-book text: `build.py` turns passages and audio timings into text items with ids and syncs (`model.py`), shared by the EPUB 3 and DAISY packagers; `outline.py` settles heading levels across the book and sorts page numbers. |
-| `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). |
+| `src/dogear/output/` | Packaging, one module per job: `loudness` (one gain per chapter to a target, with a capped limiter), `m4b`, `mp3_folder` with `playlist` and safe `filenames`, `tags`, `cover`, and `folder_record` (so a re-run replaces only its own files). `talking_audio` encodes talking-book MP3s; `book_identity` gives their identifier and narrator. DAISY 2.02: `daisy202` puts the book in its folder; `daisy202_plan` names the files and settles the metadata and times; `daisy202_clock` rounds clip times to milliseconds and writes them; `daisy202_xhtml` is the XHTML 1.0 skeleton; `daisy202_text`, `daisy202_smil`, and `daisy202_ncc` write the text documents, SMIL files, and NCC. |
+| `scripts/check-daisy.sh` | Validates DAISY 2.02 books with DAISY Pipeline 2's `daisy202-validator` (pinned Docker image), saving its report next to each book. Used locally and in CI. |
+| `tests/daisy_samples.py`, `tests/dtd/` | A book with every kind of block, made into DAISY books through `dogear make` with a fake voice; and the W3C XHTML 1.0 and SMIL 1.0 DTDs the unit tests validate against, offline. |
 | `src/dogear/make.py` | `dogear make` from start to finish: extract, narrate, speak, package. |
 | `src/dogear/paths.py` | Per-user folders for downloaded models and the speech cache. |
 | `src/dogear/ocr.py` | Adding a text layer to scanned PDFs. |
@@ -99,6 +108,9 @@ Downloaded on first use, not bundled: the Kokoro-82M model and voices (Apache-2.
 External programs (not bundled, run as separate processes, never linked): ffmpeg, Tesseract,
 Calibre, and eSpeak NG (GPL-3.0, used only for words misaki's dictionaries don't have, the
 same fallback Kokoro's own pipeline uses).
+
+CI only, never needed to run Dogear: DAISY Pipeline 2 (LGPL-3.0), run from its Docker image
+by `scripts/check-daisy.sh` to validate DAISY output.
 
 ## Prior art
 
