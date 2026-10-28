@@ -508,6 +508,18 @@ def test_split_then_normalize(config, say):
     ]
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It was published in 1886 by\nRobert Louis Stevenson.",
+        "It was published in 1886 by \n Robert Louis Stevenson.",
+        "It was published in 1886  by\r\n\tRobert   Louis Stevenson.",
+    ],
+)
+def test_line_breaks_and_runs_of_spaces_are_one_space(say, text):
+    assert say(text) == "It was published in eighteen eighty-six by Robert Louis Stevenson."
+
+
 # The user's pronunciation files, set in config.
 
 

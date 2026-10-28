@@ -40,7 +40,10 @@ _PUNCTUATION = {
 _EN_DASH_RANGE = re.compile(r"(?<=\d)\s*–\s*(?=\d)")  # 1990–1995 -> 1990 to 1995
 _DASHES = re.compile(r"\s*[–—]\s*")
 _MARKUP = re.compile(r"[#*_`~]")
-_SPACES = re.compile(r"[ \t]{2,}")
+# Any run of spaces, tabs, or line breaks. A line break inside a sentence (from <br/> in
+# a book's colophon or a poem) is a space to the voice: misaki would otherwise join the
+# words on either side into one unknown word.
+_SPACES = re.compile(r"\s+")
 
 # One pass over every number, most specific form first. The lookbehind keeps numbers
 # inside words or version strings ("v1.2", "MP3") as they are.
