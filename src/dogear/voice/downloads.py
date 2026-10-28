@@ -22,7 +22,7 @@ Report = Callable[[str], None]
 _CHUNK = 1 << 20
 _REPORT_FROM = 50 << 20  # files at least this big get progress lines...
 _REPORT_EVERY = 0.25  # ...at each quarter
-ISSUES_URL = "https://github.com/18hrshift/dogear/issues"
+ISSUES_URL = "https://github.com/18hrshift/dogear-app/issues"
 
 
 @dataclass(frozen=True)

@@ -22,10 +22,10 @@ programs first:
 Then install Dogear itself with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install git+https://github.com/18hrshift/dogear
+uv tool install git+https://github.com/18hrshift/dogear-app
 ```
 
-(`pipx install git+https://github.com/18hrshift/dogear` works too.) Dogear isn't on PyPI
+(`pipx install git+https://github.com/18hrshift/dogear-app` works too.) Dogear isn't on PyPI
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
 install Tesseract OCR.
 

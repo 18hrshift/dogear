@@ -18,7 +18,7 @@ and documented.
 | Decision | Choice | Why |
 |---|---|---|
 | Name | Dogear | A dog-eared page, plus an ear for listening. |
-| Home | `github.com/18hrshift/dogear` | |
+| Home | `github.com/18hrshift/dogear-app` | |
 | License | Apache-2.0 | Permissive, with a patent grant. Matches the default voice engine (Kokoro). |
 | Default voice engine | Kokoro-82M | Apache-2.0, runs on a laptop CPU, the most-downloaded open TTS model on Hugging Face. |
 | Hardware baseline | CPU only | A GPU makes it faster, never required. |
@@ -69,7 +69,7 @@ Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with
 - [x] Screen-reader-friendly CLI: no animations at all, occasional plain-text progress lines
       ("Section 3 of 12 done: The Storm. About 40 minutes left."), errors that say what to
       do next.
-- [x] Install with one command: `uv tool install git+https://github.com/18hrshift/dogear`
+- [x] Install with one command: `uv tool install git+https://github.com/18hrshift/dogear-app`
       (or `pipx install`).
 - [ ] Publish to PyPI. The name `dogear` was taken there on 2026-10-25 by an unrelated
       tool, so the package needs another name (the command can stay `dogear`). The project

@@ -21,7 +21,7 @@ load the real voice. To hear your change, run `uv run dogear make` on a public-d
 (the first run downloads the voice, about 340 MB).
 
 ```bash
-git clone https://github.com/18hrshift/dogear
+git clone https://github.com/18hrshift/dogear-app
 cd dogear
 uv sync
 bash test.sh        # lint, format check, and tests; must pass before every merge
