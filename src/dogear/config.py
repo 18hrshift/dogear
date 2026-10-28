@@ -27,6 +27,10 @@ FREEFORM_TABLES: dict[tuple[str, str], WordTableValues] = {
     ("speech", "currency_scales"): "text",
     ("speech", "units"): "pair",
 }
+# What each item must be in lists that are empty by default, where the default can't show it.
+EMPTY_LIST_ITEMS: dict[tuple[str, ...], type] = {
+    ("pronunciation", "files"): str,
+}
 
 Config = dict[str, Any]
 
@@ -71,7 +75,7 @@ def _merge(base: Config, override: Config, where: tuple[str, ...]) -> Config:
             else:
                 merged[key] = _merge(default, value, here)
         else:
-            _check_type(name, default, value)
+            _check_type(here, default, value)
             merged[key] = value
     return merged
 
@@ -93,7 +97,8 @@ def _is_pair(value: Any) -> bool:
     return isinstance(value, list) and len(value) == 2 and all(isinstance(v, str) for v in value)
 
 
-def _check_type(name: str, default: Any, value: Any) -> None:
+def _check_type(where: tuple[str, ...], default: Any, value: Any) -> None:
+    name = ".".join(where)
     expected = type(default)
     if expected is float:
         ok = isinstance(value, int | float) and not isinstance(value, bool)
@@ -105,5 +110,7 @@ def _check_type(name: str, default: Any, value: Any) -> None:
         raise ConfigError(
             f"Setting '{name}' must be {expected.__name__}, got {type(value).__name__} ({value!r})."
         )
-    if expected is list and default and not all(isinstance(v, type(default[0])) for v in value):
-        raise ConfigError(f"Every item in '{name}' must be {type(default[0]).__name__}.")
+    if expected is list:
+        item = type(default[0]) if default else EMPTY_LIST_ITEMS.get(where)
+        if item and not all(isinstance(v, item) for v in value):
+            raise ConfigError(f"Every item in '{name}' must be {item.__name__}.")

@@ -5,6 +5,9 @@ itself and every engine gets the same words. Abbreviation tables come from confi
 are English for now; numbers use num2words in the book's language when it supports it.
 Currency, clock times, units, and roman numerals are English only: other languages say
 them differently, so their text keeps the digits and symbols for now.
+
+The user's pronunciation files come first, before any of Dogear's own rewrites, so an
+entry matches the book's spelling ("St. John", not "Saint John").
 """
 
 from __future__ import annotations
@@ -12,11 +15,12 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from num2words import num2words
 
 from dogear.config import Config
+from dogear.pronunciations import PronunciationDictionary, dictionary_from_config
 from dogear.speech.money import say_money
 from dogear.speech.roman import heading_numerals, keyword_numerals
 from dogear.speech.spoken import ENGLISH, Pair, keep_final_period, say_amount
@@ -66,6 +70,8 @@ class SpeechRules:
     currency_cents: dict[str, Pair]
     currency_scales: dict[str, str]
     units: dict[str, Pair]
+    # The user's pronunciation files: sounds-like entries are applied here.
+    dictionary: PronunciationDictionary = field(default_factory=PronunciationDictionary)
 
     @classmethod
     def from_config(cls, config: Config) -> SpeechRules:
@@ -80,6 +86,7 @@ class SpeechRules:
             currency_cents=_pairs(speech["currency_cents"]),
             currency_scales=dict(speech["currency_scales"]),
             units=_pairs(speech["units"]),
+            dictionary=dictionary_from_config(config),
         )
 
     def patterns(self) -> list[tuple[re.Pattern[str], str]]:
@@ -98,7 +105,7 @@ class SpeechRules:
 
 def normalize_for_speech(text: str, rules: SpeechRules, lang: str | None) -> str:
     """One sentence of body text, rewritten as the words a voice should say."""
-    return _speak(_normalize_punctuation(text), rules, lang)
+    return _speak(_prepare(text, rules), rules, lang)
 
 
 def normalize_heading(text: str, rules: SpeechRules, lang: str | None) -> str:
@@ -107,10 +114,15 @@ def normalize_heading(text: str, rules: SpeechRules, lang: str | None) -> str:
     BEGINNING" is "CHAPTER one THE BEGINNING". Body text leaves both alone, since there
     a bare numeral may be a letter and a lone "I" before a word may be the pronoun.
     """
-    text = _normalize_punctuation(text)
+    text = _prepare(text, rules)
     if _is_english(lang):
         text = heading_numerals(text, rules.roman_keywords)
     return _speak(text, rules, lang)
+
+
+def _prepare(text: str, rules: SpeechRules) -> str:
+    """Punctuation made plain, then the user's sounds-like entries."""
+    return rules.dictionary.say_sounds_like(_normalize_punctuation(text))
 
 
 def _speak(text: str, rules: SpeechRules, lang: str | None) -> str:
