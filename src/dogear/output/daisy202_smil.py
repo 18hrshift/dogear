@@ -15,7 +15,7 @@ from lxml import etree
 
 from dogear.output.daisy202_clock import clock, npt, timecount
 from dogear.output.daisy202_plan import BookPlan, SectionPlan
-from dogear.output.daisy202_xhtml import text
+from dogear.output.xml_text import xml_safe
 
 DOCTYPE = (
     '<!DOCTYPE smil PUBLIC "-//W3C//DTD SMIL 1.0//EN" "http://www.w3.org/TR/REC-smil/SMIL10.dtd">'
@@ -29,7 +29,7 @@ def smil_document(book: BookPlan, plan: SectionPlan) -> etree._Element:
     for name, content in [
         ("dc:format", "Daisy 2.02"),
         ("dc:identifier", book.identifier),
-        ("dc:title", text(book.title)),
+        ("dc:title", xml_safe(book.title)),
         ("ncc:generator", book.generator),
         ("ncc:totalElapsedTime", clock(plan.elapsed)),
         ("ncc:timeInThisSmil", clock(plan.duration)),

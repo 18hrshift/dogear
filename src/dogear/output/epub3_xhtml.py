@@ -4,9 +4,9 @@ writing it out.
 
 from __future__ import annotations
 
-import re
-
 from lxml import etree
+
+from dogear.output.xml_text import xml_safe
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
 EPUB_NS = "http://www.idpf.org/2007/ops"
@@ -15,15 +15,6 @@ XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 # The book's one stylesheet, beside the documents that link to it.
 STYLESHEET = "dogear.css"
-
-# Characters XML can't hold: control characters other than tab and line ends, unpaired
-# surrogates, and the two non-characters. They carry no words.
-_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
-
-
-def xml_safe(text: str) -> str:
-    """`text` without the characters XML can't hold, which a damaged book file can contain."""
-    return _NOT_XML.sub("", text)
 
 
 def new_document(title: str, lang: str) -> tuple[etree._Element, etree._Element]:

@@ -23,6 +23,7 @@ from dogear.output import daisy202_xhtml as x
 from dogear.output.daisy202_clock import whole_seconds
 from dogear.output.daisy202_plan import BookPlan
 from dogear.output.daisy202_text import PAGE_CLASSES
+from dogear.output.xml_text import xml_safe
 from dogear.readalong.model import HeadingText, PageText
 
 
@@ -95,7 +96,7 @@ def ncc_document(book: BookPlan, today: date) -> etree._Element:
         if entry.css_class:
             el.set("class", entry.css_class)
         link = x.element("a", el, href=entry.href)
-        link.text = x.text(entry.text)
+        link.text = xml_safe(entry.text)
     return html
 
 

@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from lxml import etree
 
 from dogear.output.epub3_smil import clock
-from dogear.output.epub3_xhtml import XML_LANG, xml_safe
+from dogear.output.epub3_xhtml import XML_LANG
+from dogear.output.xml_text import xml_safe
 
 OPF_NS = "http://www.idpf.org/2007/opf"
 DC_NS = "http://purl.org/dc/elements/1.1/"

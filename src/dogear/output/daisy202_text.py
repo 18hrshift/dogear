@@ -17,6 +17,7 @@ from lxml import etree
 
 from dogear.output import daisy202_xhtml as x
 from dogear.output.daisy202_plan import BookPlan, SectionPlan
+from dogear.output.xml_text import xml_safe
 from dogear.readalong.model import (
     BreakText,
     HeadingText,
@@ -49,7 +50,7 @@ def _item(body: etree._Element, item: TextItem, number: int) -> None:
     match item:
         case HeadingText(id=id_, level=level, text=words, lang=lang):
             heading = x.element(f"h{level}", body, id=id_)
-            heading.text = x.text(words)
+            heading.text = xml_safe(words)
             _lang(heading, lang, number)
         case ParagraphText(sentences=sentences, lang=lang):
             _lang(_sentences(x.element("p", body), sentences), lang, number)
@@ -73,13 +74,13 @@ def _item(body: etree._Element, item: TextItem, number: int) -> None:
             paragraph = x.element("p", note)
             if label.strip():
                 marker = x.element("span", paragraph, **{"class": "label"})
-                marker.text = x.text(label.strip())
+                marker.text = xml_safe(label.strip())
                 marker.tail = " "
             _sentences(paragraph, sentences)
             _lang(note, lang, number)
         case PageText(id=id_, label=label, kind=kind):
             page = x.element("span", body, id=id_, **{"class": PAGE_CLASSES[kind]})
-            page.text = x.text(label)
+            page.text = xml_safe(label)
         case BreakText():
             x.element("hr", body, **{"class": "scene-break"})
         case _:
@@ -93,7 +94,7 @@ def _sentences(parent: etree._Element, sentences: tuple[Sentence, ...]) -> etree
         if last is not None:
             last.tail = " "
         last = x.element("span", parent, id=sentence.id)
-        last.text = x.text(sentence.text)
+        last.text = xml_safe(sentence.text)
     return parent
 
 
@@ -115,7 +116,7 @@ def _rows(group: etree._Element, rows: tuple[RowText, ...], header: bool) -> Non
         tr = x.element("tr", group, **({"id": row.id} if row.id else {}))
         for value in row.cells:
             cell = x.element("th", tr, scope="col") if header else x.element("td", tr)
-            cell.text = x.text(value)
+            cell.text = xml_safe(value)
 
 
 def _lang(el: etree._Element, lang: str | None, number: int) -> None:

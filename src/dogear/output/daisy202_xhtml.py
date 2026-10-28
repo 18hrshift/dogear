@@ -8,10 +8,12 @@ which read it as plain HTML, can still parse.
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 
 from lxml import etree
+
+from dogear.output.language_tag import language_tag as checked_language_tag
+from dogear.output.xml_text import xml_safe
 
 log = logging.getLogger(__name__)
 
@@ -25,10 +27,6 @@ DOCTYPE = (
 # Elements HTML writes without an end tag. Any other element left empty is written
 # with one (<p></p>, not <p/>), which an HTML parser would read as an unclosed start tag.
 _VOID = {"meta", "link", "hr", "br", "img", "col", "area", "base", "input", "param"}
-# xsd:language, which the DAISY validator checks dc:language and lang against.
-_LANGUAGE = re.compile(r"[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*")
-# Characters XML 1.0 can't hold at all, such as control codes a PDF may carry.
-_NOT_XML = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
 
 
 def element(tag: str, parent: etree._Element | None = None, **attrs: str) -> etree._Element:
@@ -39,23 +37,18 @@ def element(tag: str, parent: etree._Element | None = None, **attrs: str) -> etr
     return etree.SubElement(parent, name, attrs)
 
 
-def text(value: str) -> str:
-    """`value` with any characters XML can't hold taken out."""
-    return _NOT_XML.sub("", value)
-
-
 def document(title: str, lang: str) -> tuple[etree._Element, etree._Element, etree._Element]:
     """A new document's html, head, and body, with its title and character set."""
     html = etree.Element(f"{{{NS}}}html", nsmap={None: NS})
     set_lang(html, lang)
     head = element("head", html)
     element("meta", head, **{"http-equiv": "Content-Type", "content": "text/html; charset=utf-8"})
-    element("title", head).text = text(title)
+    element("title", head).text = xml_safe(title)
     return html, head, element("body", html)
 
 
 def meta(head: etree._Element, name: str, content: str, **attrs: str) -> None:
-    element("meta", head, name=name, content=text(content), **attrs)
+    element("meta", head, name=name, content=xml_safe(content), **attrs)
 
 
 def set_lang(el: etree._Element, lang: str) -> None:
@@ -72,11 +65,10 @@ def language_tag(tag: str | None, where: str) -> str | None:
     """
     if tag is None or not tag.strip():
         return None
-    cleaned = tag.strip().replace("_", "-")
-    if _LANGUAGE.fullmatch(cleaned):
-        return cleaned
-    log.warning("Ignoring the language %r of %s: it isn't a language tag.", tag, where)
-    return None
+    cleaned = checked_language_tag(tag)
+    if cleaned is None:
+        log.warning("Ignoring the language %r of %s: it isn't a language tag.", tag, where)
+    return cleaned
 
 
 def write(html: etree._Element, path: Path) -> None:

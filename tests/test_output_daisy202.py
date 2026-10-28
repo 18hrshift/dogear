@@ -28,7 +28,8 @@ from dogear.output.book_identity import book_uid
 from dogear.output.chapter import ChapterAudio
 from dogear.output.daisy202 import build_daisy202
 from dogear.output.daisy202_clock import clip_bounds, clock, npt, timecount, whole_seconds
-from dogear.output.daisy202_xhtml import language_tag, text
+from dogear.output.daisy202_xhtml import language_tag
+from dogear.output.xml_text import xml_safe
 from dogear.readalong import build_readalong
 from dogear.readalong.model import Clip, HeadingText, SectionText, Sync
 
@@ -428,7 +429,7 @@ def test_characters_xml_cannot_hold_are_left_out(write_book):
     book = small_book(chapter("One", Paragraph("A bell\x07 rang.")))
     folder = write_book(book)
     assert "A bell rang." in (folder / "s002.html").read_text(encoding="utf-8")
-    assert text("a\x0cb\ud800c") == "abc"
+    assert xml_safe("a\x0cb\ud800c\ufffe") == "abc"
 
 
 def test_the_dtd_check_catches_html5(write_book):
