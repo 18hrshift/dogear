@@ -7,10 +7,12 @@ files are downloaded on first use and checked against `catalog.toml`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.paths import models_dir
+from dogear.pronunciations import dictionary_from_config
 from dogear.tools import find_tool
 from dogear.voice.catalog import (
     VoiceInfo,
@@ -37,20 +39,23 @@ class KokoroSetup:
 
 def make_engine(config: Config, report: Report) -> VoiceEngine:
     """The configured voice, downloading its files first if needed."""
-    # Checked first, so a missing program is reported before a long download.
+    # Checked first, so a missing program or a mistake in a pronunciation file is
+    # reported before a long download.
     espeak = find_tool("espeak_ng", config)
+    dictionary = dictionary_from_config(config)
     setup = prepare_kokoro(config, report)
 
     from dogear.voice.g2p import EnglishG2P
-    from dogear.voice.kokoro import KokoroEngine
+    from dogear.voice.kokoro import KokoroEngine, check_phonemes, load_vocab
 
+    check_phonemes(dictionary, load_vocab(setup.tokenizer.path))
     models = models_dir(config)
     kokoro = catalog()["kokoro"]
     return KokoroEngine(
         model=setup.model.path,
         tokenizer=setup.tokenizer.path,
         voice=setup.voice_file.path,
-        g2p=EnglishG2P(spacy_model_dir(models), setup.voice.british, espeak),
+        g2p=EnglishG2P(spacy_model_dir(models), setup.voice.british, espeak, dictionary),
         speed=config["voice"]["speed"],
         threads=config["kokoro"]["threads"],
         sample_rate=kokoro["sample_rate"],
@@ -77,12 +82,26 @@ def prepare_kokoro(config: Config, report: Report) -> KokoroSetup:
         tokenizer=kokoro_file("tokenizer", "", models),
         voice_file=kokoro_file("voice", voice.name, models),
     )
-    needed = [setup.model, setup.tokenizer, setup.voice_file]
-    if not spacy_model_dir(models).is_dir():
-        needed.append(spacy_wheel(models))
+    needed = [setup.model, setup.tokenizer, setup.voice_file, *_spacy_download(models)]
     ensure_files(needed, config, report)
     unpack_spacy_model(models)
     return setup
+
+
+def prepare_spacy(config: Config, report: Report) -> Path:
+    """spaCy's English model folder, downloading it (about 13 MB) first if needed.
+
+    Enough for misaki to tag and look up words without the Kokoro model, as
+    `dogear words` does.
+    """
+    models = models_dir(config)
+    ensure_files(_spacy_download(models), config, report)
+    return unpack_spacy_model(models)
+
+
+def _spacy_download(models: Path) -> list[RemoteFile]:
+    """The spaCy wheel, unless its model folder is already unpacked."""
+    return [] if spacy_model_dir(models).is_dir() else [spacy_wheel(models)]
 
 
 def find_voice(name: str) -> VoiceInfo:
