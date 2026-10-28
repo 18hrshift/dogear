@@ -208,6 +208,15 @@ roman_numeral_keywords = [
 "km/h" = ["kilometer per hour", "kilometers per hour"]
 "kph" = ["kilometer per hour", "kilometers per hour"]
 
+[pronunciation]
+# Your own pronunciation files, for names, places, and other words the voice says wrong.
+# Each file lists words and how to say them; the README explains how to write one. Give
+# each file's full path in quotes, such as "~/books/words.toml" (~ is your home folder)
+# or "C:/Users/me/words.toml". List as many as you like, separated by commas. When two
+# files list the same word, the one later in the list wins. To add a file for one run
+# only, use --words FILE with `dogear make`, `text`, `words`, or `say`.
+files = []
+
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"

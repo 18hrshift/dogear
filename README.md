@@ -55,6 +55,7 @@ dogear make mybook.epub --sections 3      # just section 3, to try the voice fir
 dogear make mybook.epub --voice bf_emma   # another voice; see `dogear voices`
 dogear make mybook.epub --speed 1.0       # faster (the default is 0.9)
 dogear make mybook.epub -o ~/Audiobooks   # save somewhere else
+dogear make mybook.epub --words names.toml  # your own pronunciations (see below)
 ```
 
 ### Check a book before making it
@@ -68,6 +69,82 @@ dogear download                           # fetch the voice now, before going of
 ```
 
 Everything Dogear prints is plain text, written to read well with a screen reader.
+
+### Fix how a word is said
+
+The voice reads most English well, but names and made-up words can come out wrong. You
+can fix them in a pronunciation file: a plain text file you write yourself, such as
+`names.toml`:
+
+```toml
+[words]
+Utterson = "utter son"             # the voice reads this spelling instead
+"St. John" = "sin jun"             # several words, or a word with a dot, go in quotes
+Lanyon = { phonemes = "lˈænjən" }  # exact phonemes, for experts (see below)
+```
+
+- Each line under `[words]` is one entry: the word as the book writes it, then how to
+  say it. Most entries are a spelling that sounds right: the voice reads "utter son"
+  wherever the book says "Utterson".
+- A word matches whole and in any capitals: "Utterson" also matches "UTTERSON" and the
+  possessive "Utterson's", but not "Uttersons". When the book's word starts with a
+  capital, so does the spelling.
+- Put the word in quotes if it has spaces, dots, apostrophes, or letters other than A
+  to Z (such as "Zoë").
+- When entries overlap, the longest wins: with entries for "John" and "St. John",
+  "St. John" uses its own.
+
+Use the file for one run with `--words` (`make`, `text`, `words`, and `say` all take
+it), or list it in your settings so every book uses it:
+
+```toml
+[pronunciation]
+files = ["~/names.toml"]
+```
+
+When two files list the same word, the later one wins; a `--words` file comes after the
+ones in your settings.
+
+To fix a book's words:
+
+1. List the words the voice doesn't know. It guesses these, and they're usually names.
+   The first time, this downloads a small language model (about 13 MB), not the whole
+   voice.
+
+   ```bash
+   dogear words mybook.epub                # all of them, most frequent first
+   dogear words mybook.epub --sections 3   # just section 3
+   ```
+
+   Each is a numbered line, such as "1. Utterson, 131 times." Words your pronunciation
+   files already cover aren't listed.
+2. Listen to one in a sentence. `dogear say` speaks the way `dogear make` would and
+   saves a WAV file:
+
+   ```bash
+   dogear say "Mr. Utterson the lawyer." -o test.wav
+   ```
+
+3. If it sounds wrong, add an entry, then listen again with the file:
+
+   ```bash
+   dogear say "Mr. Utterson the lawyer." -o test.wav --words names.toml
+   ```
+
+4. Make the book with the file. If you made it before, only the sentences whose words
+   changed are spoken again; the rest are reused.
+
+`dogear text mybook.epub --spoken --words names.toml` shows every line with your
+spellings in place.
+
+**Exact phonemes, for experts.** An entry can give the phonemes the voice should use,
+written in the symbols of misaki, the voice's pronunciation dictionary
+([the list of symbols](https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md)).
+`dogear say "Lanyon" -o test.wav --phonemes` shows the phonemes the voice uses now, a
+good place to start. Phoneme entries work with the Kokoro voice only, and only for plain
+words (letters, spaces, hyphens, and apostrophes): Dogear spells out abbreviations and
+numbers before the voice reads them, so write "Saint John", not "St. John". A symbol the
+voice doesn't have stops Dogear with an error that names it.
 
 ### What it reads, and how
 
@@ -130,6 +207,7 @@ an open model small enough to run on a CPU. It has 28 English voices, American a
 `dogear voices` lists them with Kokoro's own quality grades. The default, `af_heart`, is the
 best rated. Pronunciation comes from the dictionaries Kokoro was trained with
 ([misaki](https://github.com/hexgrad/misaki)), with eSpeak NG for words they don't have.
+Your own pronunciation files come first.
 
 ## Get involved
 

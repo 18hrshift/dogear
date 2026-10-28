@@ -45,3 +45,7 @@ class VoiceError(DogearError):
 
 class OutputFolderError(DogearError):
     """The output folder holds files Dogear must not overwrite, such as another book's audio."""
+
+
+class PronunciationError(DogearError):
+    """A pronunciation file is missing or unreadable, or has an entry Dogear can't use."""

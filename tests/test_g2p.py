@@ -12,8 +12,9 @@ import pytest
 from misaki.en import MToken
 
 from dogear.errors import ToolFailedError
+from dogear.pronunciations import load_dictionary
 from dogear.voice import g2p
-from dogear.voice.g2p import EnglishG2P, EspeakFallback, to_misaki
+from dogear.voice.g2p import EnglishG2P, EspeakFallback, count_unknown_words, to_misaki
 
 # misaki 0.9.4 loads its dictionaries with a deprecated importlib call.
 pytestmark = pytest.mark.filterwarnings("ignore:open_text is deprecated:DeprecationWarning")
@@ -250,3 +251,104 @@ def test_output_has_no_edge_whitespace(blank_spacy, tmp_path):
     g = EnglishG2P(tmp_path, british=False, espeak=None)
     phonemes = g("  Hello  ")
     assert phonemes == phonemes.strip()
+
+
+# Phoneme entries from the user's pronunciation files.
+
+WORDS = """\
+[words]
+Lanyon = { phonemes = "lˈænjən" }
+Watt = { phonemes = "wˈɑt" }
+Ross = { phonemes = "ɹˈɔs" }
+"Hyde Park" = { phonemes = "ʤˈʌmbO pˈɑɹk" }
+Poole = { phonemes = "pˈOlA" }
+Utterson = "utter son"
+"""
+
+
+@pytest.fixture
+def words(tmp_path):
+    path = tmp_path / "words.toml"
+    path.write_text(WORDS, encoding="utf-8")
+    return load_dictionary([path])
+
+
+@pytest.mark.parametrize(
+    ("text", "phonemes"),
+    [
+        ("Hello Lanyon", "həlˈO lˈænjən"),
+        ("Hello LANYON", "həlˈO lˈænjən"),
+        ("Hello Hyde Park", "həlˈO ʤˈʌmbO pˈɑɹk"),  # several words, pinned as one
+        ("Hello Hyde  Park", "həlˈO ʤˈʌmbO pˈɑɹk"),
+        # A possessive gets misaki's own ending for the sound before it.
+        ("Hello Lanyon's", "həlˈO lˈænjənz"),
+        ("Hello Lanyon’s", "həlˈO lˈænjənz"),
+        ("Hello Watt's", "həlˈO wˈɑts"),
+        ("Hello Ross's", "həlˈO ɹˈɔsᵻz"),
+    ],
+)
+def test_phoneme_entries_are_pinned_exactly(blank_spacy, tmp_path, words, text, phonemes):
+    assert EnglishG2P(tmp_path, british=False, espeak=None, dictionary=words)(text) == phonemes
+
+
+def test_pinned_possessives_follow_the_accent(blank_spacy, tmp_path, words):
+    british = EnglishG2P(tmp_path, british=True, espeak=None, dictionary=words)
+    assert british("Hello Ross's") == "həlˈQ ɹˈɔsɪz"
+
+
+def test_pinned_words_never_reach_espeak(blank_spacy, tmp_path, espeak, words, caplog):
+    espeak.answer("Lanyon", "lˈanjən")
+    g = EnglishG2P(tmp_path, british=False, espeak=PROGRAM, dictionary=words)
+    with caplog.at_level(logging.WARNING, logger="dogear.voice.g2p"):
+        assert g("Hello Lanyon") == "həlˈO lˈænjən"
+    assert espeak.calls() == []
+    assert caplog.records == []
+
+
+def test_sounds_like_entries_are_not_pinned(blank_spacy, tmp_path, espeak, words):
+    # Sounds-like entries are applied to the text before the voice sees it.
+    espeak.answer("Utterson", "ˈʌɾɚsən")
+    g = EnglishG2P(tmp_path, british=False, espeak=PROGRAM, dictionary=words)
+    assert g("Hello Utterson") == "həlˈO ˈʌTəɹsən"
+
+
+def test_a_word_inside_a_longer_token_is_not_pinned_and_later_ones_still_are(
+    blank_spacy, tmp_path, words
+):
+    # spaCy keeps "lanyon@example.com" as one token. misaki's own markup slips here and
+    # pins Poole's phonemes to the word after it.
+    g = EnglishG2P(tmp_path, british=False, espeak=None, dictionary=words)
+    phonemes = g("Hello lanyon@example.com and Poole")
+    assert "lˈænjən" not in phonemes
+    assert phonemes.endswith("ænd pˈOlA")
+
+
+def test_book_text_is_never_read_as_misaki_markup(blank_spacy, tmp_path):
+    # Through misaki's markup parser, this would be just the phonemes "x".
+    phonemes = EnglishG2P(tmp_path, british=False, espeak=None)("[Hello](/x/)")
+    assert "həlˈO" in phonemes
+
+
+def test_without_a_dictionary_nothing_is_pinned(blank_spacy, tmp_path, espeak):
+    espeak.answer("Lanyon", "lˈanjən")
+    assert EnglishG2P(tmp_path, british=False, espeak=PROGRAM)("Hello Lanyon") == "həlˈO lˈanjən"
+
+
+# Counting unknown words, for `dogear words`.
+
+
+def test_count_unknown_words_counts_what_would_go_to_espeak(blank_spacy, tmp_path, words):
+    texts = ["Hello Zorblax", "Zorblax's hello, Lanyon and Utterson", "Hello Zorblax"]
+    counts = count_unknown_words(texts, tmp_path / "model", british=False, dictionary=words)
+    # Lanyon has a phoneme entry, so it's known; the rest go to espeak-ng as written.
+    assert counts == {"Zorblax": 2, "Zorblax's": 1, "Utterson": 1}
+    assert blank_spacy == [(tmp_path / "model", ["tok2vec", "tagger"])]
+
+
+def test_count_unknown_words_never_runs_espeak(blank_spacy, tmp_path, monkeypatch):
+    def no_programs(*args, **kwargs):
+        raise AssertionError("counting must not run espeak-ng")
+
+    monkeypatch.setattr(g2p, "run_tool", no_programs)
+    empty = load_dictionary([])
+    assert count_unknown_words(["Hello Zorblax"], tmp_path, False, empty) == {"Zorblax": 1}

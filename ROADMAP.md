@@ -86,7 +86,7 @@ Goal: output a listener can navigate without sight.
 - [ ] DAISY output (2.02 for the widest player support; DAISY 3 to evaluate). Evaluate
       generating it ourselves versus handing EPUB 3 to DAISY Pipeline 2.
 - [ ] Navigation by heading level and by print page.
-- [ ] User-editable pronunciation dictionary (names, places, jargon).
+- [x] User-editable pronunciation dictionary (names, places, jargon).
 - [ ] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY validators
       for DAISY.
 - [ ] Tested by at least one blind or low-vision listener on Thorium Reader and one hardware
