@@ -213,7 +213,8 @@ roman_numeral_keywords = [
 # Each file lists words and how to say them; the README explains how to write one. Give
 # each file's full path in quotes, such as "~/books/words.toml" (~ is your home folder)
 # or "C:/Users/me/words.toml". List as many as you like, separated by commas. When two
-# files list the same word, the one later in the list wins.
+# files list the same word, the one later in the list wins. To add a file for one run
+# only, use --words FILE with `dogear make`, `text`, `words`, or `say`.
 files = []
 
 [audio]
