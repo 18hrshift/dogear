@@ -81,7 +81,7 @@ Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with
 
 Goal: output a listener can navigate without sight.
 
-- [ ] EPUB 3 with Media Overlays. Sentence-level rendering already gives exact timings for
+- [x] EPUB 3 with Media Overlays. Sentence-level rendering already gives exact timings for
       every sentence, which is what the SMIL sync files need.
 - [ ] DAISY output (2.02 for the widest player support; DAISY 3 to evaluate). Evaluate
       generating it ourselves versus handing EPUB 3 to DAISY Pipeline 2.
