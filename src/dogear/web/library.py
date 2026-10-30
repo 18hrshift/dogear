@@ -99,7 +99,8 @@ class Library:
             self.maker.stop(book_id)  # the job marks it stopped when the child ends
 
     def delete(self, book_id: str) -> None:
-        """Stop anything working on the book, then remove its folder."""
+        """Stop anything working on the book, then remove its folder. If that fails,
+        nothing is deleted and the book stays listed."""
         self._existing(book_id)
         for worker in (self.reader, self.maker):
             if worker.stop(book_id):
@@ -108,8 +109,10 @@ class Library:
             self.store.delete(book_id)
         except OSError as e:
             raise DogearError(
-                f"Dogear couldn't delete everything in the book's folder: {e}.",
-                hint="Try again in a moment. If a file is open in another program, close it.",
+                f"Dogear couldn't delete the book's folder ({e.strerror or e}), so nothing "
+                "was deleted.",
+                hint="If a file from this book is open in another program, such as a player, "
+                "close that program. Then try again.",
             ) from None
 
     def progress(self, book_id: str) -> Progress:

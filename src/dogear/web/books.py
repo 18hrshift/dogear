@@ -55,6 +55,7 @@ STATES: tuple[State, ...] = (
 RECORD = "book.json"
 MADE = "made"
 ZIPS = "zips"
+TRASH_PREFIX = "deleted-"  # a deleted book's folder, moved aside until its files are gone
 MAX_NAME_CHARS = 255  # of the uploaded file's name, as shown
 ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{16}")
 
@@ -119,6 +120,9 @@ class BookStore:
         unread = []
         with self._lock:
             for folder in sorted(self.dir.iterdir()):
+                if folder.name.startswith(TRASH_PREFIX):
+                    _remove_trash(folder)  # a deleted book's files, left by a failed delete
+                    continue
                 record = _read_record(folder)
                 if record is None:
                     continue
@@ -200,10 +204,17 @@ class BookStore:
             log.save()
 
     def delete(self, book_id: str) -> None:
+        """Delete the book's folder and forget the book. The folder is first moved aside
+        in one step (a rename), so a delete either works or leaves the book whole and
+        listed, to try again: Windows won't rename a folder holding a file another
+        program has open. That raises OSError. If deleting what was moved aside fails,
+        the next start tries again."""
         with self._lock:
+            trash = self.dir / f"{TRASH_PREFIX}{book_id}-{secrets.token_hex(4)}"
+            os.rename(self.folder(book_id), trash)
             self._books.pop(book_id, None)
             self._progress.pop(book_id, None)
-            shutil.rmtree(self.folder(book_id), ignore_errors=False)
+        _remove_trash(trash)
 
     def folder(self, book_id: str) -> Path:
         if not ID_PATTERN.fullmatch(book_id):
@@ -217,6 +228,16 @@ class BookStore:
     def _save(self, record: BookRecord) -> None:
         data = json.dumps(_to_json(record), indent=1).encode("utf-8")
         write_atomically(self.folder(record.id) / RECORD, data)
+
+
+def _remove_trash(folder: Path) -> None:
+    shutil.rmtree(folder, ignore_errors=True)
+    if folder.exists():
+        log.warning(
+            "Couldn't delete everything in %s, which held a deleted book. Dogear tries "
+            "again when it next starts.",
+            folder,
+        )
 
 
 def _to_json(record: BookRecord) -> dict[str, Any]:
