@@ -143,7 +143,7 @@ def test_children_are_told_to_watch_for_the_servers_end():
     options = popen_options()
     assert options["env"][STOP_WITH_SERVER_ENV] == "1"
     assert options["stdin"] == subprocess.PIPE
-    assert options.get("start_new_session") is (os.name != "nt")
+    assert bool(options.get("start_new_session")) == (os.name != "nt")
 
 
 def test_what_counts_as_stopped():

@@ -9,7 +9,6 @@ tidying up as it would in a terminal.
 
 from __future__ import annotations
 
-import _thread
 import os
 import signal
 import sys
@@ -32,12 +31,14 @@ def stop_with_server_when_asked() -> None:
 
 
 def ctrl_c() -> None:
-    """Press Ctrl+C for this process's main thread. On Linux and macOS a real SIGINT is
-    sent to that thread, which also cuts short whatever it is waiting for (a sleep, a
-    program it runs); interrupt_main() alone would wait until that ended. On Windows the
-    server's Job object ends the child anyway (windows_job.py)."""
+    """Press Ctrl+C for this process's main thread, so it also stops waiting for whatever
+    it waits for (a sleep, a program it runs). _thread.interrupt_main() alone would let
+    it finish that first. On Linux and macOS a SIGINT is sent to the main thread. On
+    Windows, raising SIGINT runs Python's handler here, as a real Ctrl+C does, and that
+    wakes the main thread's waits that watch for Ctrl+C. (If it still doesn't stop, the
+    server's Job object ends it: windows_job.py.)"""
     if os.name == "nt":
-        _thread.interrupt_main()
+        signal.raise_signal(signal.SIGINT)
     else:
         signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
 

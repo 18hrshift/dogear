@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -42,9 +43,17 @@ def test_another_process_holds_it_until_it_dies(tmp_path):
         holder.kill()  # no tidying up: the system lets go of the lock
         holder.wait()
         holder.stdout.close()
-    lock = FileLock.try_acquire(path)
+    lock = acquire_soon(path)
     assert lock is not None
     lock.release()
+
+
+def acquire_soon(path, seconds: float = 10):
+    """The lock, once the system lets go of a dead holder's. Windows may take a moment."""
+    deadline = time.monotonic() + seconds
+    while (lock := FileLock.try_acquire(path)) is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return lock
 
 
 def test_without_create_a_missing_file_is_not_made(tmp_path):

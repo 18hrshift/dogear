@@ -3,6 +3,7 @@ that died without ever touching one a running `dogear make` is using."""
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from dogear.file_lock import FileLock
@@ -74,7 +75,10 @@ def test_a_folder_in_use_by_another_run_is_kept_until_that_run_dies(tmp_path):
     finally:
         stop_run(other)
     assert theirs.exists()  # killed, so it couldn't delete its folder
-    assert remove_stale(root) == [theirs]
+    deadline = time.monotonic() + 10  # Windows may take a moment to let go of its lock
+    while (removed := remove_stale(root)) == [] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert removed == [theirs]
     assert not theirs.exists()
 
 
