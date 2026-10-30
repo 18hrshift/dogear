@@ -13,7 +13,7 @@ from dogear.config import Config
 from dogear.errors import DogearError
 from dogear.web import choices
 from dogear.web.books import ID_PATTERN, MADE, BookRecord
-from dogear.web.downloads import NotAvailable, downloads, media_type, output_path, zip_folder
+from dogear.web.downloads import NotAvailable, downloads, media_type, output_path
 from dogear.web.forms import FormTooBig, read_form
 from dogear.web.library import CAN_CHOOSE, Library
 from dogear.web.progress import LEFT_OUT_MANY, LEFT_OUT_ONE, MAX_KEPT, left_out_sentence
@@ -246,5 +246,8 @@ async def download(request: Request) -> Response:
     except NotAvailable:
         raise HTTPException(404) from None
     if path.is_dir():
-        path = await run_in_threadpool(zip_folder, path, folder)
+        try:
+            path = await run_in_threadpool(_library(request).zip, record.id, path)
+        except NotAvailable:  # it's being made again
+            raise HTTPException(404) from None
     return FileResponse(path, media_type=media_type(path), filename=path.name)

@@ -12,6 +12,7 @@ from pathlib import Path
 from dogear.errors import DogearError
 from dogear.web.books import BookRecord, BookStore, Choices
 from dogear.web.child import STOP_GRACE_SECONDS, Stopper
+from dogear.web.downloads import NotAvailable, zip_folder
 from dogear.web.making import make_book
 from dogear.web.progress import Progress
 from dogear.web.reading import read_book
@@ -106,7 +107,8 @@ class Library:
             if worker.stop(book_id):
                 worker.wait_until_not_running(book_id, STOP_GRACE_SECONDS + 5)
         try:
-            self.store.delete(book_id)
+            with self.store.made_lock(book_id):  # not while it's being zipped
+                self.store.delete(book_id)
         except OSError as e:
             raise DogearError(
                 f"Dogear couldn't delete the book's folder ({e.strerror or e}), so nothing "
@@ -114,6 +116,16 @@ class Library:
                 hint="If a file from this book is open in another program, such as a player, "
                 "close that program. Then try again.",
             ) from None
+
+    def zip(self, book_id: str, output: Path) -> Path:
+        """A zip of an output folder of a finished book. Raises NotAvailable if the book
+        isn't finished, which is checked holding the made lock, so a make that started
+        meanwhile is never zipped half-way."""
+        with self.store.made_lock(book_id):
+            record = self.store.get(book_id)
+            if record is None or record.state != "done":
+                raise NotAvailable(str(output))
+            return zip_folder(output, self.folder(book_id), record.run)
 
     def progress(self, book_id: str) -> Progress:
         return self.store.progress(book_id)

@@ -2,10 +2,10 @@
 
 Every book has its own folder under the web folder's `books`, named by a random id. It
 holds `book.json` (the record), the uploaded file (`book.epub` or similar), `made` (what
-was made from it), `zips` (folders zipped for download), and `progress.json` (the lines
-of its latest make, progress.py). The record is saved on every change, so a restarted
-server lists every book. One that was waiting or being made when the server stopped
-shows as stopped.
+was made from it), `zips` (folders zipped for download, by make run), and
+`progress.json` (the lines of its latest make, progress.py). The record is saved on
+every change, so a restarted server lists every book. One that was waiting or being
+made when the server stopped shows as stopped.
 
 Records are immutable: a change makes a new one, so pages share them without copying.
 """
@@ -58,6 +58,7 @@ ZIPS = "zips"
 TRASH_PREFIX = "deleted-"  # a deleted book's folder, moved aside until its files are gone
 MAX_NAME_CHARS = 255  # of the uploaded file's name, as shown
 ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{16}")
+RUN_PATTERN = re.compile(r"[0-9a-f]{0,32}")
 
 CLOSED_ERROR = "Dogear was closed before this book was finished."
 CLOSED_HINT = "Choose Start again to carry on. What was already spoken is kept."
@@ -90,6 +91,7 @@ class BookRecord:
     error: str = ""
     hint: str = ""
     outputs: tuple[Output, ...] = ()
+    run: str = ""  # names the latest make, whose outputs these are
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "outputs", tuple(self.outputs))  # however it was given
@@ -112,6 +114,7 @@ class BookStore:
         self._lock = threading.RLock()
         self._books: dict[str, BookRecord] = {}
         self._progress: dict[str, ProgressLog] = {}
+        self._made_locks: dict[str, threading.Lock] = {}
 
     def load(self) -> list[str]:
         """Read every saved record. Returns the ids of books that were still being read,
@@ -186,6 +189,12 @@ class BookStore:
             self._save(record)
             return record
 
+    def made_lock(self, book_id: str) -> threading.Lock:
+        """Held while the book's `made` folder is zipped, and while a make starts (and
+        clears what an earlier make left), so a zip never mixes two makes."""
+        with self._lock:
+            return self._made_locks.setdefault(book_id, threading.Lock())
+
     def progress(self, book_id: str) -> Progress:
         """The lines of the book's latest make (none for a book that isn't listed)."""
         log = self._progress_log(book_id)
@@ -214,6 +223,7 @@ class BookStore:
             os.rename(self.folder(book_id), trash)
             self._books.pop(book_id, None)
             self._progress.pop(book_id, None)
+            self._made_locks.pop(book_id, None)
         _remove_trash(trash)
 
     def folder(self, book_id: str) -> Path:
@@ -262,6 +272,9 @@ def _from_json(data: dict[str, Any], book_id: str) -> BookRecord:
         raise ValueError("the record doesn't match its folder")
     if data["extension"] not in EXTRACTORS:
         raise ValueError(f"{data['extension']!r} isn't a kind of book Dogear reads")
+    run = str(data.get("run", ""))
+    if not RUN_PATTERN.fullmatch(run):
+        raise ValueError(f"{run!r} isn't a make run Dogear names")
     choices = data.get("choices")
     if choices is not None:
         choices = Choices(
@@ -284,4 +297,5 @@ def _from_json(data: dict[str, Any], book_id: str) -> BookRecord:
         outputs=tuple(
             Output(format=str(o["format"]), path=str(o["path"])) for o in data.get("outputs", [])
         ),
+        run=run,
     )

@@ -4,6 +4,7 @@ why it failed."""
 
 from __future__ import annotations
 
+import secrets
 import shutil
 from pathlib import Path
 
@@ -19,9 +20,14 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
     if record is None or record.choices is None:
         return
     folder = store.folder(book_id)
-    shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make are stale
-    store.clear_lines(book_id)
-    store.update(book_id, state="making", error="", hint="", outputs=())
+    with store.made_lock(book_id):
+        # Not while a zip of the last make's outputs is being made: they're about to be
+        # made again. And no zip is made from now until this make is done (Library.zip).
+        store.clear_lines(book_id)
+        store.update(
+            book_id, state="making", run=secrets.token_hex(8), error="", hint="", outputs=()
+        )
+        shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make
     command = child_command(make_args(record, folder), settings.config_file)
     try:
         child = start_lines(command)
