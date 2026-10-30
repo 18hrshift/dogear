@@ -229,6 +229,9 @@ announce_pages = true          # say "Page 42" where each print page begins
 The full list, with what each one does, is in
 [`src/dogear/defaults.toml`](src/dogear/defaults.toml).
 
+To use the same settings file for every command without typing `--config` each time, set
+the `DOGEAR_CONFIG` environment variable to its full path. `--config` still wins when given.
+
 ## Why another audiobook tool?
 
 There are good ebook-to-audiobook converters already. None of them are built for people who

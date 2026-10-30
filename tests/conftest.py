@@ -23,6 +23,12 @@ def require_tool(program: str) -> str:
     pytest.skip(f"{program} not installed")
 
 
+@pytest.fixture(autouse=True)
+def _no_settings_file_from_the_environment(monkeypatch):
+    """A developer's own DOGEAR_CONFIG must not change what the tests see."""
+    monkeypatch.delenv("DOGEAR_CONFIG", raising=False)
+
+
 @pytest.fixture
 def config():
     return default_config()
