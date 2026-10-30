@@ -195,6 +195,7 @@ def status_json(found: Listen, listens: Listens) -> dict[str, Any]:
         "page_url": page,
         "status_url": f"{page}/status",
         "audio_url": f"{page}/audio" if found.state == "done" else "",
+        "text": found.text,
         "said": list(found.said),
         "error": found.error,
         "hint": found.hint,

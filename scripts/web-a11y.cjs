@@ -94,6 +94,71 @@ async function focusProblems(page) {
   return problems;
 }
 
+// A short silent WAV: 16-bit mono at 24 kHz, as the voice makes.
+function silence(seconds) {
+  const rate = 24000;
+  const data = Math.round(rate * seconds) * 2;
+  const wav = Buffer.alloc(44 + data);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + data, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); // PCM
+  wav.writeUInt16LE(1, 22); // mono
+  wav.writeUInt32LE(rate, 24);
+  wav.writeUInt32LE(rate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(data, 40);
+  return wav;
+}
+
+// listen.js in a real browser, with Dogear's answers stood in for: pressing Listen says
+// "Getting it ready" once and nothing more (nothing over the recording, nothing after
+// it), and the player it adds is named for what it says.
+async function listenProblems(browser, base) {
+  const page = await (await browser.newContext()).newPage();
+  await page.route("**/listen", (route) => {
+    const text = new URLSearchParams(route.request().postData() || "").get("text");
+    route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ state: "done", text, audio_url: "/recording.wav", error: "", hint: "" }),
+    });
+  });
+  await page.route("**/recording.wav", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silence(0.5) }),
+  );
+  await page.goto(`${base}/pronunciations-full.html`, { waitUntil: "load" });
+  const word = (await page.textContent("#word-1 legend")).trim();
+  await page.evaluate(() => {
+    const region = document.getElementById("listen-status-1");
+    window.said = [];
+    window.played = [];
+    new MutationObserver(() => window.said.push(region.textContent)).observe(region, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    region.parentNode.addEventListener("playing", () => window.played.push("playing"), true);
+    region.parentNode.addEventListener("ended", () => window.played.push("ended"), true);
+  });
+  await page.click("button[form='listen-1']");
+  await page.waitForFunction(() => window.played.includes("ended"), null, { timeout: 15000 });
+  await page.waitForTimeout(300); // anything said after it ends shows up by now
+  const said = await page.evaluate(() => window.said);
+  const name = await page.getAttribute("#listen-status-1-player", "aria-label");
+  const problems = [];
+  if (JSON.stringify(said) !== JSON.stringify(["Getting it ready.", ""])) {
+    problems.push(`Listen's status said ${JSON.stringify(said)}, not "Getting it ready." alone.`);
+  }
+  if (name !== `Recording of ${word}`) {
+    problems.push(`Listen's player is named ${JSON.stringify(name)}, not "Recording of ${word}".`);
+  }
+  return problems.concat(await axeProblems(page));
+}
+
 async function main() {
   const pages = fs.readdirSync(pagesDir).filter((name) => name.endsWith(".html")).sort();
   if (pages.length === 0) {
@@ -123,6 +188,9 @@ async function main() {
       }
       await context.close();
     }
+    for (const problem of await listenProblems(browser, base)) {
+      report.push({ page: "pronunciations-full", view: "Listen played in place", problem });
+    }
   } finally {
     await browser.close();
     server.close();
@@ -130,7 +198,10 @@ async function main() {
   fs.writeFileSync(path.join(pagesDir, "a11y-report.json"), JSON.stringify(report, null, 2));
   const checks = pages.length * VIEWS.length;
   if (report.length === 0) {
-    console.log(`All ${pages.length} pages passed, in ${VIEWS.length} views each (${checks} checks).`);
+    console.log(
+      `All ${pages.length} pages passed, in ${VIEWS.length} views each (${checks} checks), ` +
+        "and Listen played in place.",
+    );
     return;
   }
   console.log(`Found ${report.length} problem${report.length === 1 ? "" : "s"}:`);

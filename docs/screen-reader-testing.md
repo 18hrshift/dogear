@@ -75,8 +75,9 @@ confusing or missing, and anything that took longer than it should.
 8. **Fix a word.** On the book's page, follow "check how words are said" and choose
    Check the words. You should hear when the list is ready. Move through the words by
    heading: each group should start with the word, then how often it comes up. Choose
-   Listen on one: you should hear "Getting it ready", then the word, and nothing should
-   play until you choose Listen. Type a spelling in its "Say it like" field (such as
+   Listen on one: you should hear "Getting it ready", then the word, with nothing spoken
+   over it, and nothing should play until you choose Listen. The player should be named
+   "Recording of" the word. Type a spelling in its "Say it like" field (such as
    "utter son" for Utterson), choose Save, and Listen again. Then open Pronunciations from
    the links at the top of the page and find the word there.
 9. **Delete.** Delete the book. You should be asked to confirm first, then be back on

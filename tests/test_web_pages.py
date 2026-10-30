@@ -289,6 +289,7 @@ def test_the_recording_page_has_a_player_a_download_and_what_was_said(pages):
     [audio] = page.xpath("//audio")
     assert audio.get("controls") is not None and audio.get("autoplay") is None
     assert audio.get("src").endswith("/audio")
+    assert audio.get("aria-label") == "Recording of Mr. Utterson the lawyer."
     assert page.xpath("//a[@download]/text()") == ["Download the recording"]
     assert "Said: Mister Utter son the lawyer." in page.text_content()
     assert not page.xpath("//script")

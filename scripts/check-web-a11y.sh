@@ -2,8 +2,9 @@
 # Check every page of `dogear serve`, in every state, for accessibility problems: axe-core
 # in a real browser (Chromium, through Playwright), at desktop width and at 320 CSS
 # pixels, in light and dark color schemes, plus checks axe doesn't make (no sideways
-# scrolling at 320 pixels or with text at 200% and wider spacing, and a visible focus
-# ring on everything the Tab key reaches).
+# scrolling at 320 pixels or with text at 200% and wider spacing, a visible focus ring
+# on everything the Tab key reaches, and Listen played in place by listen.js: what its
+# status says, and the name of the player it adds).
 #
 #   scripts/check-web-a11y.sh [DIR]
 #
