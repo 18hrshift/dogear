@@ -7,6 +7,10 @@ low-vision listeners can actually navigate: by chapter, by heading, by print pag
 > and DAISY 2.02, with the text and the narration in step) with a natural-sounding voice
 > that runs on an ordinary computer, offline. [`ROADMAP.md`](ROADMAP.md) has the plan.
 
+**Making books for someone, with no programming?** Start with the
+[guide for helpers](docs/guide-for-helpers.md). The rest of this page covers everything,
+including the `dogear` command.
+
 ## Install
 
 There are three ways: an installer, which needs nothing else; Python; or, for a shared
