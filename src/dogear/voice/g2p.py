@@ -65,6 +65,8 @@ class EspeakFallback:
 
     `data` is the folder holding the espeak-ng-data that `program` should read, for a
     copy that can't find its own (the one in a standalone build). None lets it look.
+    espeak-ng is run in that folder and told `--path=.`, because on Windows it reads its
+    arguments in the system code page, which can't spell every user's folder name.
     """
 
     def __init__(self, program: str, british: bool, data: Path | None = None) -> None:
@@ -82,11 +84,12 @@ class EspeakFallback:
 
     def _lookup(self, word: str) -> str | None:
         voice = "en-gb" if self.british else "en-us"
-        data = [f"--path={self.data}"] if self.data else []
+        data = ["--path=."] if self.data else []
         result = run_tool(
             [self.program, *data, "-q", "--ipa", "--tie=^", "-v", voice],
             input=word + "\n",
             timeout=_ESPEAK_TIMEOUT,
+            cwd=self.data,
         )
         ipa = " ".join(result.stdout.split())
         return to_misaki(ipa, self.british) if ipa else None

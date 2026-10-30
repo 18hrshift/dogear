@@ -79,9 +79,14 @@ def find_tool(key: str, config: Config) -> str:
 
 
 def run_tool(
-    cmd: list[str], *, timeout: float | None = None, input: str | None = None
+    cmd: list[str],
+    *,
+    timeout: float | None = None,
+    input: str | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a program, raising ToolFailedError with the tail of its output on failure.
+    """Run a program, in folder `cwd` if given, raising ToolFailedError with the tail of
+    its output on failure.
 
     Text from a book goes in through `input`, never as an argument, so it can't be
     mistaken for an option.
@@ -98,6 +103,7 @@ def run_tool(
             errors="replace",
             timeout=timeout,
             input=input,
+            cwd=cwd,
             env=bundle.program_environment(),
         )
     except subprocess.TimeoutExpired:
