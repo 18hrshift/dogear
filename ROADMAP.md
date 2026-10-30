@@ -26,10 +26,12 @@ and documented.
 | Pronunciation | misaki dictionaries, then the eSpeak NG program | misaki (Apache-2.0) is what Kokoro was trained with. Its packaged English setup loads espeak-ng as a GPL library, so Dogear runs the espeak-ng program instead, only for words misaki doesn't know. |
 | Pace and level | Speed 0.9, -20 LUFS | Kokoro at 1.0 read about 190 words a minute; narrators average about 155. Its peaks are high for its loudness, so -20 LUFS (inside ACX's range) needs about 5 dB of limiting where -18 needed 7. |
 | DAISY | DAISY 2.02, written by Dogear itself; DAISY Pipeline 2 (1.15.5) only validates it | Every player surveyed in October 2026 that reads DAISY 3 also reads 2.02, so DAISY 3 isn't needed now (it would matter for a library that requires it). Dogear already has exact timings, and writing the files itself keeps installs Python-only. Pipeline 2 is a Java server, and in a test its own EPUB to DAISY conversion left out metadata and failed its own validator. |
-
 | Talking-book audio | Constant-bitrate mono MP3 at 44.1 kHz, 64 kbps | The one sample rate DAISY 2.02 players, DAISY 3 players, and EPUB's core MP3 type all accept. The voice makes 24 kHz; resampling doesn't move the sync times. |
 | Title track | On by default, unless the book opens with its own title page | DAISY 2.02 requires the book's title first. Every format gets the same opening, and a book whose title page already says it doesn't say it twice. |
 | Accessibility claims | Say what the book has; claim no WCAG conformance | A conformance claim means a person evaluated the book. Dogear can't do that for any book it is given, so its EPUBs describe their features and say no one has checked them. |
+| Web page | `dogear serve`: server-rendered HTML (Starlette, Jinja2) that works without JavaScript | Plain pages work best with every screen reader and on old phones. Each book runs as a `dogear make` child process, so the server never parses an untrusted book, and stopping a book is just stopping a process. An access key in the link guards it, even on the computer itself. |
+| Installers | PyInstaller, with ffmpeg (LGPL build) and eSpeak NG compiled from pinned sources, and the default voice inside | A helper installs one thing and makes a book offline. No LGPL ffmpeg build existed for every platform, so Dogear builds its own. Inno Setup on Windows, a `.dmg` on macOS, a tarball with menu entries on Linux. Unsigned until the project has certificates. |
+| Docker image | Debian's ffmpeg, eSpeak NG, and Tesseract, the default voice inside, everything kept on a `/data` volume | For a shared computer at a library or school: one command runs the web page, offline once built. |
 
 **Open question:** who is the first real listener, and what device do they use? That decides
 which output Phase 2 polishes first.
@@ -106,12 +108,20 @@ Goal: output a listener can navigate without sight.
 
 Goal: a helper with no Python experience can make a book.
 
-- [ ] Standalone installers for Windows, macOS, and Linux with the default voice bundled.
-- [ ] Local web UI, usable from a phone on the same network. Meets WCAG 2.2 AA.
+- [x] Standalone installers for Windows, macOS, and Linux with the default voice bundled.
+      CI builds each one, installs it, and makes a book with it offline.
+- [ ] Publish the installers as downloads, signed. Needs the project owner: a release
+      process, a Windows code-signing certificate, and an Apple Developer account. Until
+      then they are unsigned and only built from source or taken from CI.
+- [x] Local web UI, usable from a phone on the same network. Meets WCAG 2.2 AA as far as
+      automated checks (axe-core, in CI) and a review by hand can tell; the test matrix
+      below is the real check.
 - [ ] Screen-reader test matrix for the UI: NVDA and JAWS (Windows), VoiceOver (macOS, iOS),
-      TalkBack (Android), Orca (Linux).
-- [ ] Docker image for libraries, schools, and volunteer groups.
-- [ ] Plain-language guide written for helpers, not developers.
+      TalkBack (Android), Orca (Linux). The plan and the tasks are in
+      [`docs/screen-reader-testing.md`](docs/screen-reader-testing.md); it needs testers.
+- [x] Docker image for libraries, schools, and volunteer groups.
+- [x] Plain-language guide written for helpers, not developers:
+      [`docs/guide-for-helpers.md`](docs/guide-for-helpers.md).
 
 ## Phase 4: More voices and languages
 

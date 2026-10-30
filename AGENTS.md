@@ -8,11 +8,13 @@ Dogear is an open talking-book maker: books in, navigable audio out, built first
 and low-vision listeners. Read [`ROADMAP.md`](ROADMAP.md) before starting work. It defines
 each phase and what "done" means.
 
-**Current state:** Phase 2 (talking book). `dogear make` reads an EPUB, PDF, or Kindle book
-into a structured document, narrates it with spoken structure, speaks it with the Kokoro
-voice on the CPU, and packages an M4B, an MP3 folder, an EPUB 3 talking book, and/or a
-DAISY 2.02 talking book. Phase 3 has begun: `dogear serve` is a local web page that does
-the same from a browser, running `dogear` itself as a child process for each book.
+**Current state:** Phase 3 (anyone can run it). `dogear make` reads an EPUB, PDF, or Kindle
+book into a structured document, narrates it with spoken structure, speaks it with the
+Kokoro voice on the CPU, and packages an M4B, an MP3 folder, an EPUB 3 talking book, and/or
+a DAISY 2.02 talking book. `dogear serve` is a local web page that does the same from a
+browser, running `dogear` itself as a child process for each book. Standalone installers
+(`packaging/`) and a Docker image (`Dockerfile`, `docker/`) carry everything, the voice
+included.
 
 ## Working here
 
