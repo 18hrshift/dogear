@@ -9,6 +9,44 @@ low-vision listeners can actually navigate: by chapter, by heading, by print pag
 
 ## Install
 
+There are two ways: an installer, which needs nothing else, or Python.
+
+### With an installer
+
+The installers hold everything Dogear needs: its own Python, ffmpeg, eSpeak NG, and the
+voice, so it can make a book without an internet connection. On Windows and Linux they
+install Dogear for you alone, with no administrator password. They aren't offered as
+downloads yet; until they are, someone comfortable with a terminal can build one (see
+below).
+
+- **Windows** (64-bit): run `Dogear-<version>-windows-x86_64-setup.exe`. The installer
+  isn't signed yet, so Windows may say "Windows protected your PC". Choose "More info",
+  then "Run anyway". The installer can also put the `dogear` command on your PATH. To
+  remove Dogear, use Settings, Apps, Installed apps.
+- **Mac** (Apple silicon, macOS 14 or newer): open `Dogear-<version>-macos-arm64.dmg` and
+  drag Dogear into Applications. Dogear isn't signed by Apple yet, so macOS stops it the
+  first time; "Read me first.txt" on the disk image says how to open it.
+- **Linux** (64-bit PC): unpack `Dogear-<version>-linux-x86_64.tar.gz`, open a terminal in
+  its folder, and run `sh install.sh`. To remove Dogear, run
+  `sh ~/.local/opt/dogear/uninstall.sh`.
+
+Choosing Dogear in the Start menu, in Applications, or in your applications menu opens a
+window running `dogear serve`, Dogear's web interface: keep that window open while you
+use Dogear, and close it to stop Dogear. The web interface is still being built; until
+it's in, use the `dogear` command in a terminal (on a Mac, it's
+`/Applications/Dogear.app/Contents/Resources/dogear/dogear`).
+
+To build an installer, on the system it's for, from a copy of this repository:
+
+```bash
+uv run --no-dev --group installer python packaging/build.py
+```
+
+It saves the installer in `dist/`. Each system needs a few build tools as well;
+[`packaging/README.md`](packaging/README.md) lists them.
+
+### With Python
+
 Dogear runs on Windows, macOS, and Linux with Python 3.11 or newer. It needs two free
 programs first:
 

@@ -9,6 +9,7 @@ import os
 import shutil
 
 import pytest
+from standalone_build import FakeBuild
 
 from dogear.config import default_config
 
@@ -46,3 +47,9 @@ def _per_user_folders_in_a_temporary_home(monkeypatch, tmp_path_factory):
 @pytest.fixture
 def config():
     return default_config()
+
+
+@pytest.fixture
+def standalone_build(tmp_path, monkeypatch) -> FakeBuild:
+    """Dogear running as a standalone build, with an empty bundled folder to fill."""
+    return FakeBuild(tmp_path / "standalone", monkeypatch)

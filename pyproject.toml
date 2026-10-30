@@ -47,6 +47,11 @@ dev = [
     "reportlab>=4",  # BSD: builds PDF test fixtures
     "httpx2>=2.16",
 ]
+# Building the standalone installers (packaging/build.py). Never needed to run Dogear.
+installer = [
+    # GPL-2.0-or-later, with an exception that lets the programs it builds use any license.
+    "pyinstaller>=6.22",
+]
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -58,6 +63,7 @@ packages = ["src/dogear"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+pythonpath = ["packaging"]  # the installer build's modules (dogear_build), for its tests
 
 [tool.ruff]
 line-length = 100
