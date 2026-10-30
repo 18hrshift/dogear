@@ -37,11 +37,17 @@ def dogear_command() -> list[str]:
     return [sys.executable, "-m", "dogear"]
 
 
-def child_command(args: list[str], config_file: Path | None) -> list[str]:
-    """The full command for `dogear ARGS`, with the server's own --config if it has one."""
+def child_command(
+    args: list[str], config_file: Path | None, *, text: str | None = None
+) -> list[str]:
+    """The full command for `dogear ARGS`, with the server's own --config if it has one.
+    `text`, which a person typed, comes last, after `--`, so that nothing in it can be
+    read as an option."""
     command = [*dogear_command(), *args]
     if config_file is not None:
         command += ["--config", str(config_file)]
+    if text is not None:
+        command += ["--", text]
     return command
 
 

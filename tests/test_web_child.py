@@ -184,6 +184,23 @@ def test_the_servers_config_file_is_passed_on(monkeypatch):
     assert command[-2:] == ["--config", str(Path("/home/me/dogear.toml"))]
 
 
+def test_typed_text_comes_last_after_two_hyphens_so_it_is_never_an_option(monkeypatch):
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    config = Path("/home/me/dogear.toml")
+    command = child_command(["say", "-o", "a.wav"], config, text="--config=/tmp/evil.toml")
+    assert command[2:] == [
+        "dogear",
+        "say",
+        "-o",
+        "a.wav",
+        "--config",
+        str(config),
+        "--",
+        "--config=/tmp/evil.toml",
+    ]
+    assert child_command(["say", "-o", "a.wav"], None, text="-x")[-2:] == ["--", "-x"]
+
+
 def test_children_write_utf8_and_open_no_window_on_windows(monkeypatch):
     options = popen_options()
     assert options["env"][UTF8_OUTPUT_ENV] == "1"

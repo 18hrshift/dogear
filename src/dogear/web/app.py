@@ -19,6 +19,7 @@ from dogear.web.access_key import AccessKey, StartTokens, WrongKeyDelay
 from dogear.web.guard import Guard
 from dogear.web.headers import SecurityHeaders
 from dogear.web.library import Library
+from dogear.web.page_words import PageWords
 from dogear.web.settings import WebSettings
 from dogear.web.templating import make_templates
 
@@ -77,6 +78,7 @@ def create_app(
     app.state.config = config
     app.state.key = key
     app.state.library = library
+    app.state.page_words = PageWords(settings.words_file, settings.word_limits)
     app.state.templates = make_templates()
     app.state.wrong_keys = WrongKeyDelay()
     app.state.start_tokens = StartTokens()

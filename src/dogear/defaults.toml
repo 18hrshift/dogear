@@ -348,8 +348,18 @@ port = 8765
 max_upload_mb = 200
 # Reading a book to list its sections stops after this many seconds. Kindle books are
 # converted with Calibre first, which can take up to kindle.convert_timeout_seconds.
+# The same limit applies to checking a book's words and to saying something for Listen
+# (the first Listen may download the voice).
 read_timeout_seconds = 900
 # Where uploaded books, everything made from them, and the page's access key are kept.
 # Empty means a folder named web in the usual per-user data folder. Each book has its own
 # folder, deleted with it.
 dir = ""
+# The page keeps the words fixed on it in its own pronunciation file, words.toml in the
+# folder above, and uses it for every book it makes, after the files in
+# pronunciation.files, so its entries win. The page saves at most this many words...
+max_pronunciations = 1000
+# ...each at most this many characters long, as the book writes it...
+max_word_chars = 80
+# ...and each spelling (such as "utter son" for Utterson) at most this many characters.
+max_spelling_chars = 160
