@@ -1,6 +1,6 @@
 # Contributing to Dogear
 
-Thanks for helping. Dogear is early (Phase 1 of [`ROADMAP.md`](ROADMAP.md)), so feedback on
+Thanks for helping. Dogear is early (Phase 3 of [`ROADMAP.md`](ROADMAP.md)), so feedback on
 the roadmap is as useful as code.
 
 ## If you are blind or have low vision
@@ -13,6 +13,10 @@ Open an issue (there's an "Accessibility barrier" form) or start a discussion ab
 - Anything in Dogear's docs, output, or tools that doesn't work with your screen reader.
   We treat that as a bug.
 
+To test Dogear's web page with your screen reader, follow
+[`docs/screen-reader-testing.md`](docs/screen-reader-testing.md). It lists the tasks to
+try and how to report what you find.
+
 ## If you write code
 
 You need [uv](https://docs.astral.sh/uv/) and Python 3.11 or newer. Some tests also use
@@ -22,7 +26,7 @@ load the real voice. To hear your change, run `uv run dogear make` on a public-d
 
 ```bash
 git clone https://github.com/18hrshift/dogear-app
-cd dogear
+cd dogear-app
 uv sync
 bash test.sh        # lint, format check, and tests; must pass before every merge
 uv run dogear --help
