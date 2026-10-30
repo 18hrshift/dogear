@@ -3,6 +3,7 @@ come. Its `Saved:` lines say what it made; `Error:` and `What to do:` say why it
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from dogear.web.books import MADE, ZIPS, BookRecord, BookStore, Output
 from dogear.web.child import Stopper, child_command, interrupted, read_lines, start_lines
 from dogear.web.reading import problem_from_output
 from dogear.web.settings import WebSettings
+
+log = logging.getLogger(__name__)
 
 
 def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: Stopper) -> None:
@@ -33,10 +36,11 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
         return
     stopper.attach(child)
     process = child.process
+    assert process.stdout is not None
     saved: list[str] = []
     problem: list[str] = []
+    keep = _LineKeeper(store, book_id)
     try:
-        assert process.stdout is not None
         for line in read_lines(process.stdout):
             if line.startswith("Saved: "):
                 saved.append(line.removeprefix("Saved: "))
@@ -44,8 +48,15 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
                 problem.append(line)
             elif line.strip() and not stopper.requested.is_set():
                 # After a stop, what's left is `dogear`'s goodbye, written for a terminal.
-                store.add_line(book_id, line)
+                keep(line)
         returncode = process.wait()
+    except BaseException:
+        # A bug here. The child mustn't run on unwatched: Stop couldn't reach it, and
+        # Start again would start a second one. It is stopped, and this job ends only
+        # once it has ended. (Closing its output first means it can't hang writing.)
+        process.stdout.close()
+        child.end()
+        raise
     finally:
         stopper.detach()
         child.close()
@@ -66,6 +77,24 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             )
         else:
             store.update(book_id, state="done", outputs=outputs)
+
+
+class _LineKeeper:
+    """Keeps progress lines. A line that can't be saved (a full disk, say) is no reason
+    to stop making the book: it is logged in Dogear's window, once per book."""
+
+    def __init__(self, store: BookStore, book_id: str) -> None:
+        self._store = store
+        self._book_id = book_id
+        self._warned = False
+
+    def __call__(self, line: str) -> None:
+        try:
+            self._store.add_line(self._book_id, line)
+        except OSError as e:
+            if not self._warned:
+                self._warned = True
+                log.warning("Couldn't save progress for book %s: %s", self._book_id, e)
 
 
 def make_args(record: BookRecord, folder: Path) -> list[str]:

@@ -1,8 +1,10 @@
 """Reading and making books in child processes, one at a time, with a stand-in `dogear`
 (tests/fake_dogear.py): the queue, stopping, starting again, failures, restarts."""
 
+import errno
 import io
 import json
+import logging
 import os
 import signal
 import sys
@@ -13,9 +15,9 @@ from pathlib import Path
 import pytest
 from web_samples import CHOSEN, add_book, sample_app, sample_config, sample_summary, visitor
 
-from dogear.web import child
-from dogear.web.books import CLOSED_ERROR, BookRecord, Choices
-from dogear.web.library import Library
+from dogear.web import child, making
+from dogear.web.books import CLOSED_ERROR, BookRecord, BookStore, Choices
+from dogear.web.library import UNEXPECTED, Library
 from dogear.web.making import make_args, saved_outputs, section_spec
 from dogear.web.reading import INTERRUPTED_ERROR
 from dogear.web.settings import web_settings
@@ -208,6 +210,52 @@ def test_a_book_being_read_when_the_server_stops_is_read_again_when_it_starts(
     set_behaviour(restarted, book_id, "ok")
     with visitor(restarted):
         wait_for(restarted, book_id, "ready")
+
+
+def test_a_full_disk_for_progress_lines_does_not_stop_the_book(running, monkeypatch, caplog):
+    app, client = running
+    book_id = upload(client, "ok")
+    wait_for(app, book_id, "ready")
+
+    def full(self, book_id, line):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(BookStore, "add_line", full)
+    with caplog.at_level(logging.WARNING, logger="dogear.web.making"):
+        choose(client, book_id)
+        wait_for(app, book_id, "done")
+    warnings = [r.getMessage() for r in caplog.records if r.name == "dogear.web.making"]
+    assert warnings == [
+        f"Couldn't save progress for book {book_id}: [Errno 28] No space left on device"
+    ]
+
+
+def test_a_bug_while_making_ends_the_child_before_the_job_ends(running, monkeypatch, pids):
+    """Otherwise the child would run on with nothing watching it: Stop couldn't reach it,
+    and Start again would start a second child for the same book."""
+    app, client = running
+    book_id = upload(client, "slow")
+    pids()  # reading it
+    wait_for(app, book_id, "ready")
+
+    def broken(stream):
+        yield next(child.read_lines(stream))  # the child is under way
+        raise RuntimeError("a bug in the server")
+
+    monkeypatch.setattr(making, "read_lines", broken)
+    choose(client, book_id)
+    maker = pids()
+    record = wait_for(app, book_id, "failed")
+    assert record.error == UNEXPECTED
+    assert app.state.library.maker.running() is None
+    if os.name != "nt":
+        with pytest.raises(ProcessLookupError):
+            os.kill(maker, 0)  # ended, and waited for
+
+    monkeypatch.setattr(making, "read_lines", child.read_lines)
+    set_behaviour(app, book_id, "ok")
+    client.post(f"/books/{book_id}/again")
+    wait_for(app, book_id, "done")
 
 
 def test_a_failed_make_says_why_and_start_again_runs_it_again(running, commands):
