@@ -1,0 +1,17 @@
+# Settings for Dogear in its Docker image (DOGEAR_CONFIG points here). Everything not set
+# here comes from Dogear's defaults (src/dogear/defaults.toml). To change more, mount your
+# own file over this one: docker run -v ./my-settings.toml:/etc/dogear/config.toml ...
+# and keep these keys in it.
+
+[models]
+# Inside the image, downloaded when it was built.
+dir = "/opt/dogear/models"
+
+[render]
+# On the /data volume, so a stopped book carries on where it left off.
+cache_dir = "/data/cache"
+
+[web]
+# Uploaded books, what's made from them, and the access key, on the /data volume so they
+# (and the key, so the same link keeps working) outlast the container.
+dir = "/data/web"

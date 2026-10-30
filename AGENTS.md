@@ -74,6 +74,7 @@ the keyboard alone, with a screen reader, at 320 CSS pixels wide, and with text 
 | `tests/daisy_samples.py`, `tests/dtd/` | A book with every kind of block, made into DAISY books through `dogear make` with a fake voice; and the W3C XHTML 1.0 and SMIL 1.0 DTDs the unit tests validate against, offline. |
 | `scripts/check-web-a11y.sh`, `scripts/web-a11y.cjs` | Checks every web page in every state with axe-core 4.14.0 in Playwright 1.64.1's headless Chromium (pinned, downloaded into `$DOGEAR_VALIDATORS`): desktop and 320 pixels wide, light and dark, plus no sideways scrolling with text at 200% and a focus ring on everything Tab reaches. Used locally and in CI. |
 | `tests/web_samples.py`, `tests/fake_dogear.py` | The web app with books in every state, each page saved as HTML (for the unit tests and `check-web-a11y.sh`); and a stand-in `dogear` command the web tests run as the child process. |
+| `Dockerfile`, `docker/` | The Docker image: Dogear, ffmpeg, eSpeak NG, Tesseract, and the default voice, running `dogear serve --lan` with everything it keeps on a `/data` volume. `docker/config.toml` is its settings file (via `DOGEAR_CONFIG`); `docker/README.md` is the guide. The `Docker` workflow builds it and makes a book offline with it. |
 
 ## Project rules
 

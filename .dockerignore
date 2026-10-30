@@ -1,0 +1,10 @@
+# Only what the image builds from: pyproject.toml, uv.lock, README.md, LICENSE, src/, and
+# docker/config.toml. Everything else stays out of the build context.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+!docker/config.toml
+**/__pycache__

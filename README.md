@@ -28,6 +28,10 @@ uv tool install git+https://github.com/18hrshift/dogear-app
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
 install Tesseract OCR.
 
+For a shared computer or a server, such as at a library or school, there is also a Docker
+image with everything inside, the voice included: see
+[`docker/README.md`](docker/README.md).
+
 ## Use it in a web browser
 
 If you'd rather not type commands, Dogear has a web page. Start it with:
