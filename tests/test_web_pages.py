@@ -8,6 +8,8 @@ import lxml.html
 import pytest
 from web_samples import render_pages
 
+from dogear.web.templating import NOT_IN_HTML
+
 ERROR_PAGES = {
     "home-upload-error",
     "choose-errors",
@@ -38,12 +40,20 @@ WORD_PAGES = {
 
 
 @pytest.fixture(scope="module")
-def pages(tmp_path_factory):
+def page_texts(tmp_path_factory):
     folder = tmp_path_factory.mktemp("pages")
-    return {
-        name: lxml.html.fromstring(path.read_text(encoding="utf-8"))
-        for name, path in render_pages(folder).items()
-    }
+    return {name: path.read_text(encoding="utf-8") for name, path in render_pages(folder).items()}
+
+
+@pytest.fixture(scope="module")
+def pages(page_texts):
+    return {name: lxml.html.fromstring(text) for name, text in page_texts.items()}
+
+
+def test_no_page_holds_a_character_html_forbids(page_texts):
+    # words-errors echoes a typed NUL back; libxml2 on Windows once ended the page there.
+    for name, text in page_texts.items():
+        assert not NOT_IN_HTML.search(text), name
 
 
 def test_every_state_has_a_page(pages):
