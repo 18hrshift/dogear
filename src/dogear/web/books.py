@@ -128,7 +128,8 @@ class BookStore:
         return unread
 
     def create(self, original_name: str, extension: str, upload: Path) -> BookRecord:
-        """A new book, in state "reading", with `upload` moved into its folder."""
+        """A new book, in state "reading", with `upload` moved into its folder. Raises
+        OSError, keeping nothing, if it can't be saved."""
         with self._lock:
             book_id = secrets.token_urlsafe(12)
             while book_id in self._books or not ID_PATTERN.fullmatch(book_id):
@@ -141,10 +142,15 @@ class BookStore:
                 state="reading",
             )
             folder = self.folder(book_id)
-            folder.mkdir(parents=True)
-            os.replace(upload, folder / record.source_name)
+            try:
+                folder.mkdir(parents=True)
+                os.replace(upload, folder / record.source_name)
+                self._save(record)
+            except OSError:
+                # A full disk, say: no half-made book is left behind or listed.
+                shutil.rmtree(folder, ignore_errors=True)
+                raise
             self._books[book_id] = record
-            self._save(record)
             return copy.deepcopy(record)
 
     def get(self, book_id: str) -> BookRecord | None:

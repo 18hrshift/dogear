@@ -19,7 +19,7 @@ from dogear.web.library import CAN_CHOOSE, Library
 from dogear.web.settings import WebSettings
 from dogear.web.status import describe
 from dogear.web.templating import message, render
-from dogear.web.uploads import ACCEPT, UploadError, receive_book
+from dogear.web.uploads import ACCEPT, UploadError, disk_problem, receive_book
 
 DELETED = "The book was deleted."
 # Pages for these states keep checking for news (with JavaScript) while the book stays
@@ -71,11 +71,15 @@ async def upload(request: Request) -> Response:
     settings: WebSettings = request.app.state.settings
     try:
         received = await receive_book(request, settings.incoming_dir, settings.max_upload_bytes)
+        try:
+            record = await run_in_threadpool(
+                _library(request).add, received.original_name, received.extension, received.path
+            )
+        except OSError as e:
+            received.path.unlink(missing_ok=True)
+            raise disk_problem(e) from None
     except UploadError as e:
         return _home(request, errors={"book": e.message}, status_code=e.status_code)
-    record = await run_in_threadpool(
-        _library(request).add, received.original_name, received.extension, received.path
-    )
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 
