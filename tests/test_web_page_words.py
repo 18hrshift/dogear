@@ -9,7 +9,7 @@ import pytest
 from dogear.config import default_config
 from dogear.errors import DogearError, PronunciationError
 from dogear.pronunciations import load_dictionary, read_pronunciation_file
-from dogear.web import page_words
+from dogear.web import atomic, page_words
 from dogear.web.page_words import (
     ChangedElsewhere,
     EntryError,
@@ -190,3 +190,35 @@ def test_a_full_disk_is_a_plain_error(words, monkeypatch):
     with pytest.raises(DogearError, match="No space left on device") as error:
         words.save({"Hyde": "hide"})
     assert "disk" in error.value.hint
+
+
+def test_a_file_another_program_has_open_says_so(words, monkeypatch):
+    words.save({"Utterson": "utter son"})
+    monkeypatch.setattr(atomic.time, "sleep", lambda seconds: None)
+    real_replace = os.replace
+
+    def in_use(source, target):
+        # As Windows does while a child or a virus checker has the file open.
+        if os.fspath(target) == os.fspath(words.path):
+            raise PermissionError(13, "The process cannot access the file")
+        real_replace(source, target)
+
+    monkeypatch.setattr(atomic.os, "replace", in_use)
+    with pytest.raises(DogearError) as error:
+        words.save({"Hyde": "hide"})
+    assert error.value.message == (
+        "Dogear couldn't save its word list: another program had the pronunciation file "
+        f"open ({words.path})."
+    )
+    assert error.value.hint == "Try saving again in a moment."
+    assert saved(words) == [("Utterson", "utter son", None)]
+
+
+def test_other_write_errors_dont_blame_the_disk(words, monkeypatch):
+    def refused(path, data, check=None):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(page_words, "write_atomically", refused)
+    with pytest.raises(DogearError, match="Read-only file system") as error:
+        words.save({"Hyde": "hide"})
+    assert error.value.hint == "Check that Dogear can still write to that folder, then try again."

@@ -18,6 +18,7 @@ can't read is never left in place.
 
 from __future__ import annotations
 
+import errno
 import threading
 import unicodedata
 from collections.abc import Mapping
@@ -26,7 +27,7 @@ from pathlib import Path
 from dogear.errors import DogearError, PronunciationError
 from dogear.pronunciation_writer import pronunciation_file_text
 from dogear.pronunciations import Pronunciation, read_pronunciation_file, word_key
-from dogear.web.atomic import write_atomically
+from dogear.web.atomic import FileInUse, write_atomically
 from dogear.web.private import private_folder
 from dogear.web.settings import WordLimits
 
@@ -35,6 +36,8 @@ HEADER = (
     "Saving on the page writes it again. Phoneme entries written here by hand are kept."
 )
 BUG_HINT = "This is a bug in Dogear. Please report it."
+# What writing to a full disk, or past a disk quota, fails with.
+DISK_FULL = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
 
 
 class EntryError(Exception):
@@ -192,10 +195,19 @@ class PageWords:
         try:
             private_folder(self.path.parent, tighten=False)
             write_atomically(self.path, data, check=read_back)
+        except FileInUse:
+            raise DogearError(
+                f"Dogear couldn't save its word list: another program had the pronunciation "
+                f"file open ({self.path}).",
+                hint="Try saving again in a moment.",
+            ) from None
         except OSError as e:
+            full = e.errno in DISK_FULL
             raise DogearError(
                 f"Dogear couldn't save its word list in {self.path.parent}: {e.strerror or e}.",
-                hint="Check that the disk isn't full, then try again.",
+                hint="Check that the disk isn't full, then try again."
+                if full
+                else "Check that Dogear can still write to that folder, then try again.",
             ) from None
 
 

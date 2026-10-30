@@ -2,6 +2,7 @@
 trying any text with Listen, and the errors and limits."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import lxml.html
 import pytest
 from web_samples import changed_elsewhere, sample_app, sample_config, save_form, visitor
 
-from dogear.web import child
+from dogear.web import atomic, child
 from dogear.web.settings import WordLimits
 from dogear.web.spelling_forms import form_limits
 
@@ -305,6 +306,32 @@ def test_a_word_file_broken_by_hand_is_reported_not_overwritten(running):
     assert "is not valid TOML" in response.text
     assert add(client, "Hyde", "hide").status_code == 500
     assert words_file.read_text(encoding="utf-8") == "[words]\nUtterson = utter son\n"
+
+
+def test_a_word_file_another_program_has_open_is_reported(running, monkeypatch):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    words_file = app.state.settings.words_file
+    monkeypatch.setattr(atomic.time, "sleep", lambda seconds: None)
+    real_replace = os.replace
+
+    def in_use(source, target):
+        if os.fspath(target) == os.fspath(words_file):
+            raise PermissionError(13, "The process cannot access the file")
+        real_replace(source, target)
+
+    monkeypatch.setattr(atomic.os, "replace", in_use)
+    response = client.post(
+        "/pronunciations", data=typed(save_form(client, "/pronunciations"), "Utterson", "utter sun")
+    )
+    assert response.status_code == 500
+    tree = tree_of(response)
+    assert texts(tree, "//h1") == ["Dogear couldn't save the words"]
+    page = " ".join(tree.text_content().split())
+    assert "another program had the pronunciation file open" in page
+    assert "Try saving again in a moment." in page
+    assert "disk" not in page
+    assert saved(app) == [("Utterson", "utter son", None)]
 
 
 def test_the_save_form_is_bounded_by_the_word_limits(tmp_path, commands):
