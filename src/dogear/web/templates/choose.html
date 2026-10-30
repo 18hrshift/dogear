@@ -4,6 +4,7 @@
 <h1>Choose what to make</h1>
 {% if errors %}{{ error_summary(errors, {"english": "english", "format": "format-" ~ formats[0].name, "voice": "voice", "speed": "speed-" ~ speeds[0].value, "section": "section-" ~ summary.sections[0].number}) }}{% endif %}
 <p>Book: <strong>{{ summary.title }}</strong>{% if summary.authors %}, by {{ summary.authors | join(", ") }}{% endif %}. It has {{ about }}.</p>
+<p>Before making it, you can <a href="/books/{{ book_id }}/words">check how words are said</a>: find the names the voice may say wrong, listen to them, and fix them.</p>
 
 <form method="post" action="/books/{{ book_id }}/choose" novalidate>
   {% if ask_language %}

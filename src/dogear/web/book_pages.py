@@ -33,7 +33,8 @@ def _library(request: Request) -> Library:
     return request.app.state.library
 
 
-def _book(request: Request) -> BookRecord:
+def requested_book(request: Request) -> BookRecord:
+    """The book named in the address, or a 404 page if there is none."""
     book_id = request.path_params["book_id"]
     record = _library(request).get(book_id) if ID_PATTERN.fullmatch(book_id) else None
     if record is None:
@@ -86,7 +87,7 @@ async def upload(request: Request) -> Response:
 
 
 async def book_page(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     if record.state == "ready":
         return RedirectResponse(f"/books/{record.id}/choose", status_code=303)
     library = _library(request)
@@ -114,7 +115,7 @@ async def book_page(request: Request) -> Response:
 
 async def book_status(request: Request) -> Response:
     """The book's status as JSON, for the page's progress updates."""
-    record = _book(request)
+    record = requested_book(request)
     library = _library(request)
     status = _describe(library, record)
     recent = library.progress(record.id).last(STATUS_LINES)
@@ -134,7 +135,7 @@ def _describe(library: Library, record: BookRecord) -> Status:
 
 
 async def choose_page(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     if record.state not in CAN_CHOOSE or record.summary is None:
         return RedirectResponse(f"/books/{record.id}", status_code=303)
     config: Config = request.app.state.config
@@ -143,7 +144,7 @@ async def choose_page(request: Request) -> Response:
 
 
 async def choose_submit(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     if record.state not in CAN_CHOOSE or record.summary is None:
         return RedirectResponse(f"/books/{record.id}", status_code=303)
     try:
@@ -192,13 +193,13 @@ def _choose(
 
 
 async def stop(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     await run_in_threadpool(_library(request).stop, record.id)
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 
 async def read_again(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     try:
         _library(request).read_again(record.id)
     except DogearError:
@@ -207,7 +208,7 @@ async def read_again(request: Request) -> Response:
 
 
 async def start_again(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     try:
         _library(request).start_again(record.id)
     except DogearError:
@@ -216,12 +217,12 @@ async def start_again(request: Request) -> Response:
 
 
 async def delete_page(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     return render(request, "delete.html", f"Delete {record.title}?", book=record)
 
 
 async def delete_submit(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     try:
         await run_in_threadpool(_library(request).delete, record.id)
     except DogearError as e:
@@ -236,7 +237,7 @@ async def delete_submit(request: Request) -> Response:
 
 
 async def download(request: Request) -> Response:
-    record = _book(request)
+    record = requested_book(request)
     number = request.path_params["number"]
     if record.state != "done" or not 0 <= number < len(record.outputs):
         raise HTTPException(404)

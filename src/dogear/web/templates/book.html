@@ -54,6 +54,9 @@
 <p>On the computer running Dogear, these are saved in this folder:</p>
 <p class="path"><code>{{ made_folder }}</code></p>
 <p><a href="/books/{{ book.id }}/choose">Make it again with other choices</a></p>
+
+<h2>Fix how words are said</h2>
+<p>If the voice says a name wrong, <a href="/books/{{ book.id }}/words">check how words are said</a>, fix it, then make the book again. Only the sentences with the words you fixed are spoken again.</p>
 {% endif %}
 
 {% if book.state in ("waiting", "making") or (book.state in ("failed", "stopped") and progress.lines) %}
