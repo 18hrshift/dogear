@@ -6,16 +6,20 @@ The program runs with an empty home folder, so no voice or speech cache from ear
 can be used; a PATH with nothing on it, so only the bundled ffmpeg and espeak-ng can be
 found; and web proxies pointed at a closed port, so any download fails at once. Then it
 runs dogear --version, voices, say, and make (the first section of the test book, as an
-M4B). It passes only if each step works and no voice file was downloaded.
+M4B), and starts the web page (dogear serve) and uploads the test book to it. It passes
+only if each step works and no voice file was downloaded.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +28,8 @@ CLOSED_PORT = "http://127.0.0.1:9"
 # What Windows programs need from the environment to start at all.
 WINDOWS_KEEP = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS")
 MODEL_SUFFIXES = (".onnx", ".bin", ".whl", ".cfg")
+SERVE_PORT = 18765  # not the default, so a Dogear already running here doesn't clash
+READ_SECONDS = 120  # for the web page to read the test book
 
 
 class Failed(Exception):
@@ -71,8 +77,85 @@ def smoke_test(program: Path, scratch: Path) -> None:
     check(len(books) == 1, f"make saved no M4B:\n{made}")
     with books[0].open("rb") as f:
         check(f.read(8)[4:] == b"ftyp", f"{books[0].name} isn't an MP4 file")
+    check_web_page(program, env)
     downloaded = [p for p in home.rglob("*") if p.suffix in MODEL_SUFFIXES]
     check(not downloaded, f"voice files were written outside the bundle: {downloaded}")
+
+
+def check_web_page(program: Path, env: dict[str, str]) -> None:
+    """Start `dogear serve`, open its access link, and upload the test book. The book's
+    sections are listed only once a child `dogear outline` has run, so this also checks
+    that the build can run itself as a child process, as every book on the page needs."""
+    print(f"Running: dogear serve --no-browser --port {SERVE_PORT}", flush=True)
+    server = subprocess.Popen(
+        [str(program), "serve", "--no-browser", "--port", str(SERVE_PORT)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        link = _access_link(server)
+        browser = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),  # this computer, never through a proxy
+            urllib.request.HTTPCookieProcessor(),
+        )
+        home_page = _read(browser, urllib.request.Request(link))
+        check("Make a talking book" in home_page, "the web page didn't open")
+        book = _upload(browser, f"http://127.0.0.1:{SERVE_PORT}")
+        deadline = time.monotonic() + READ_SECONDS
+        while 'name="section"' not in (page := _read(browser, urllib.request.Request(book))):
+            check("Error:" not in page, f"the web page couldn't read the book:\n{page}")
+            check(time.monotonic() < deadline, "the web page didn't list the book's sections")
+            time.sleep(1)
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+def _access_link(server: subprocess.Popen) -> str:
+    seen = []
+    for line in server.stdout:
+        seen.append(line)
+        found = re.search(r"http://127\.0\.0\.1:\d+/start\?key=\S+", line)
+        if found:
+            return found.group(0)
+    check(False, "dogear serve printed no access link:\n" + "".join(seen))
+    raise AssertionError  # unreachable: check raised
+
+
+def _upload(browser: urllib.request.OpenerDirector, site: str) -> str:
+    """POST the test book as the page's form does. Returns the book page's address."""
+    boundary = "dogear-smoke-test-boundary"
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="book"; filename="{BOOK.name}"\r\n'.encode(),
+            b"Content-Type: application/epub+zip\r\n\r\n",
+            BOOK.read_bytes(),
+            f"\r\n--{boundary}--\r\n".encode(),
+        ]
+    )
+    request = urllib.request.Request(
+        f"{site}/books",
+        data=body,
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Origin": site,
+        },
+    )
+    with browser.open(request, timeout=60) as response:
+        return response.geturl()  # where the upload redirected to
+
+
+def _read(browser: urllib.request.OpenerDirector, request: urllib.request.Request) -> str:
+    with browser.open(request, timeout=60) as response:
+        return response.read().decode("utf-8")
 
 
 def offline_environment(home: Path, empty: Path, tmp: Path) -> dict[str, str]:

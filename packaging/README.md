@@ -32,9 +32,8 @@ Each build makes the installer for the platform it runs on, in `dist/`:
 
 In every case the bundle is the `dogear` command itself: `dogear make`, `dogear outline`,
 and the rest work as in a Python install. The shortcuts run `dogear serve`, Dogear's local
-web interface, which is being built separately: until it is merged, they stop with an
-error that `serve` isn't a command. When frozen, `dogear serve` runs each book as a child
-process with `[sys.executable, "make", ...]`, which is this program.
+web page. When frozen, `dogear serve` runs each book as a child process with
+`[sys.executable, "make", ...]`, which is this program.
 
 ## How it works
 
@@ -95,7 +94,9 @@ uv run --no-project python packaging/smoke_test.py dist/dogear/dogear   # dogear
 downloads about 370 MB (the voice and the source archives) and compiles for several
 minutes; later builds reuse both.
 The smoke test runs the bundle with an empty home folder, nothing on PATH, and downloads
-blocked, so it passes only on what the bundle carries.
+blocked, so it passes only on what the bundle carries. Besides `say` and `make`, it starts
+`dogear serve` and uploads the test book, which only works if the bundle can run itself as
+a child process.
 
 What each platform needs as well:
 

@@ -9,7 +9,8 @@ low-vision listeners can actually navigate: by chapter, by heading, by print pag
 
 ## Install
 
-There are two ways: an installer, which needs nothing else, or Python.
+There are three ways: an installer, which needs nothing else; Python; or, for a shared
+computer or server, Docker.
 
 ### With an installer
 
@@ -31,9 +32,9 @@ below).
   `sh ~/.local/opt/dogear/uninstall.sh`.
 
 Choosing Dogear in the Start menu, in Applications, or in your applications menu opens a
-window running `dogear serve`, Dogear's web interface: keep that window open while you
-use Dogear, and close it to stop Dogear. The web interface is still being built; until
-it's in, use the `dogear` command in a terminal (on a Mac, it's
+window running `dogear serve`, and your web browser opens at Dogear's page (see "Use it
+in a web browser" below). Keep that window open while you use Dogear, and close it to stop
+Dogear. The `dogear` command works in a terminal too (on a Mac, it's
 `/Applications/Dogear.app/Contents/Resources/dogear/dogear`).
 
 To build an installer, on the system it's for, from a copy of this repository:
@@ -66,8 +67,10 @@ uv tool install git+https://github.com/18hrshift/dogear-app
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
 install Tesseract OCR.
 
-For a shared computer or a server, such as at a library or school, there is also a Docker
-image with everything inside, the voice included: see
+### With Docker
+
+For a shared computer or a server, such as at a library or school, there is a Docker image
+with everything inside, the voice included, running the web page: see
 [`docker/README.md`](docker/README.md).
 
 ## Use it in a web browser
