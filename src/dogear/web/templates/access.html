@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import error_summary, error_message, describedby %}
+{% block main %}
+<h1>This page needs Dogear's access link</h1>
+{% if errors %}{{ error_summary(errors, {"key": "access-key"}) }}{% endif %}
+<p>Only people with Dogear's access link can use it. The link is shown in the window where Dogear was started. It looks like this: http://127.0.0.1:8765/start?key=abcde-fghjk-mnpqr-stuvw-xyz23</p>
+<p>Open that link in this browser, or type the key from it below. The key is the part after key=.</p>
+{% if offer_continue %}
+<p>If you just opened the access link from another website, such as web mail, <a href="/">continue to Dogear</a>.</p>
+{% endif %}
+<form method="post" action="/access" novalidate>
+  <div class="field{% if errors.get('key') %} has-error{% endif %}">
+    <label for="access-key">Access key (required)</label>
+    <p class="hint" id="access-key-hint">Five groups of five letters and numbers. Capitals, spaces, and hyphens don't matter.</p>
+    {{ error_message(errors, "key", "access-key-error") }}
+    <input type="text" id="access-key" name="key" value="{{ typed }}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="{{ describedby('access-key-hint', errors, 'key', 'access-key-error') }}">
+  </div>
+  <button type="submit">Open Dogear</button>
+</form>
+{% endblock %}

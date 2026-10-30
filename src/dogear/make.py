@@ -113,9 +113,14 @@ def _output_paths(book: Book, request: MakeRequest, formats: list[str]) -> dict[
     return paths
 
 
+def speaks_language(language: str | None) -> bool:
+    """Whether the voice speaks a book in `language` (a BCP 47 tag; None if unknown)."""
+    return not language or language.lower().startswith("en")
+
+
 def check_language(book: Book) -> None:
     language = book.metadata.language
-    if language and not language.lower().startswith("en"):
+    if not speaks_language(language):
         raise VoiceError(
             f"This book is marked as being in '{language}', but Dogear's voice only speaks "
             "English so far.",

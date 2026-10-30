@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block head %}
+{% if watching %}<script src="/static/progress.js" defer></script>{% endif %}
+{% endblock %}
+{% block main %}
+<h1>{{ status.heading }}</h1>
+{% if show_title %}<p>Book: <strong>{{ book.title }}</strong></p>{% endif %}
+
+<div id="book-status"{% if watching %} data-status-url="/books/{{ book.id }}/status" data-continues="{{ continues }}" data-changed="Follow the Show the result link to go on." data-changed-link="Show the result"{% endif %}>
+  <p id="status" class="status" role="status">{{ status.sentence }}</p>
+</div>
+
+{% if book.state in ("unreadable", "failed") %}
+<p><strong>Error:</strong> {{ book.error }}</p>
+{% if book.hint %}<p><strong>What to do:</strong> {{ book.hint }}</p>{% endif %}
+{% elif book.state == "stopped" and book.error %}
+<p>{{ book.error }}</p>
+{% endif %}
+
+{% if watching %}
+<p><a id="check-progress" href="/books/{{ book.id }}">Check progress</a></p>
+{% endif %}
+
+{% if book.state in ("waiting", "making") %}
+<form method="post" action="/books/{{ book.id }}/stop">
+  <button type="submit" class="secondary">Stop making this book</button>
+</form>
+{% endif %}
+
+{% if book.state in ("failed", "stopped") %}
+<form method="post" action="/books/{{ book.id }}/again">
+  <button type="submit">Start again</button>
+</form>
+<p><a href="/books/{{ book.id }}/choose">Change what to make</a></p>
+{% endif %}
+
+{% if book.state == "done" %}
+<h2>Download</h2>
+<ul class="downloads">
+  {% for download in downloads %}
+  {% if download.available %}
+  <li><a href="/books/{{ book.id }}/files/{{ download.number }}" download>{{ download.format_name }}: {{ download.file_name }}</a> ({{ download.size }}{% if download.folder %}, a zip file of a folder{% endif %})</li>
+  {% else %}
+  <li>{{ download.format_name }}: {{ download.file_name }} is no longer in its folder. It may have been moved or deleted.</li>
+  {% endif %}
+  {% endfor %}
+</ul>
+<p>On the computer running Dogear, these are saved in this folder:</p>
+<p class="path"><code>{{ made_folder }}</code></p>
+<p><a href="/books/{{ book.id }}/choose">Make it again with other choices</a></p>
+{% endif %}
+
+{% if book.state in ("waiting", "making") or (book.state in ("failed", "stopped") and book.lines) %}
+<h2>Progress so far</h2>
+{% if book.lines_dropped %}<p>Earlier lines aren't shown.</p>{% endif %}
+<ol id="progress-lines" class="progress-lines" start="{{ book.lines_dropped + 1 }}">
+  {% for line in book.lines %}
+  <li>{{ line }}</li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+<h2>Delete</h2>
+<p><a href="/books/{{ book.id }}/delete">Delete this book</a></p>
+{% endblock %}

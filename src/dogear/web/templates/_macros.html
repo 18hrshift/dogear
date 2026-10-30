@@ -1,0 +1,23 @@
+{# The error summary: at the top of the page, focused when the page opens, with a link
+   to each field that has a problem. `targets` maps a field's name to its control's id. #}
+{% macro error_summary(errors, targets) %}
+<div class="error-summary" role="alert" tabindex="-1" autofocus aria-labelledby="error-summary-title">
+  <h2 id="error-summary-title">There is a problem</h2>
+  <ul>
+  {% for field, message in errors.items() %}
+    <li><a href="#{{ targets[field] }}">{{ message }}</a></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endmacro %}
+
+{# The message shown by a field with a problem. Its id goes in the field's aria-describedby. #}
+{% macro error_message(errors, field, id) %}
+{% if errors.get(field) %}
+<p class="error-message" id="{{ id }}"><strong>Error:</strong> {{ errors[field] }}</p>
+{% endif %}
+{% endmacro %}
+
+{% macro describedby(hint_id, errors, field, error_id) -%}
+{{ hint_id }}{% if errors.get(field) %} {{ error_id }}{% endif %}
+{%- endmacro %}

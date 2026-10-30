@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% if errors %}Error: {% endif %}{{ title }} - Dogear</title>
+<link rel="stylesheet" href="/static/dogear.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="site-header">
+  <p class="site-name">Dogear</p>
+  <nav aria-label="Dogear">
+    <ul>
+      <li><a href="/"{% if current == "books" %} aria-current="page"{% endif %}>Your books</a></li>
+      <li><a href="/help"{% if current == "help" %} aria-current="page"{% endif %}>Help</a></li>
+    </ul>
+  </nav>
+</header>
+<main id="main" tabindex="-1">
+{% block main %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <p>Dogear runs on the computer where it was started. Your books, and everything made from them, stay on that computer.</p>
+</footer>
+</body>
+</html>

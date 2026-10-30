@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Delete {{ book.title }}?</h1>
+<p>This deletes the book file you uploaded, and everything Dogear made from it, from the computer running Dogear. It can't be undone.</p>
+{% if book.state in ("reading", "waiting", "making") %}
+<p>Dogear is still working on this book. Deleting it stops that first.</p>
+{% endif %}
+<form method="post" action="/books/{{ book.id }}/delete">
+  <button type="submit" class="danger">Yes, delete it</button>
+</form>
+<p><a href="/books/{{ book.id }}">No, keep it</a></p>
+{% endblock %}

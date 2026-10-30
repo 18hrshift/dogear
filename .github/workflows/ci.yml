@@ -142,3 +142,36 @@ jobs:
             out/**/*.ace
             out/**/*validation report.html
           if-no-files-found: ignore
+
+  web-a11y:
+    # Every page of `dogear serve`, in every state, made with test data and checked with
+    # axe-core in a real browser at desktop width and at 320 pixels, in light and dark.
+    name: Web accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Restore Playwright, its browser, and axe-core
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/dogear-validators
+          key: dogear-web-a11y-${{ runner.os }}-${{ hashFiles('scripts/check-web-a11y.sh') }}
+      - name: Check the web pages
+        shell: bash
+        env:
+          # The browser's system libraries aren't cached, so they're installed each run.
+          DOGEAR_A11Y_INSTALL_DEPS: "1"
+        run: bash scripts/check-web-a11y.sh out/web-pages
+      - name: Keep the pages and the report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-accessibility-report
+          path: out/web-pages
+          if-no-files-found: ignore

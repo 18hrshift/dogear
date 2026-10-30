@@ -1,0 +1,181 @@
+"""The structure every page needs for screen readers and keyboards, checked on every page
+in every state (tests/web_samples.py). The browser check (scripts/check-web-a11y.sh) runs
+axe-core over the same pages; these run with the unit tests, with no browser."""
+
+import re
+
+import lxml.html
+import pytest
+from web_samples import render_pages
+
+ERROR_PAGES = {"home-upload-error", "choose-errors", "choose-language-errors", "access-error"}
+# Pages whose title may repeat: the same list of books, with and without books in it.
+SAME_PAGE = {"home-empty", "home-books", "home-deleted"}
+
+
+@pytest.fixture(scope="module")
+def pages(tmp_path_factory):
+    folder = tmp_path_factory.mktemp("pages")
+    return {
+        name: lxml.html.fromstring(path.read_text(encoding="utf-8"))
+        for name, path in render_pages(folder).items()
+    }
+
+
+def test_every_state_has_a_page(pages):
+    assert set(pages) == {
+        "home-empty",
+        "home-upload-error",
+        "home-books",
+        "home-deleted",
+        "reading",
+        "unreadable",
+        "choose",
+        "choose-errors",
+        "choose-language",
+        "choose-language-errors",
+        "waiting",
+        "making",
+        "done",
+        "failed",
+        "stopped",
+        "delete",
+        "help",
+        "not-found",
+        "access",
+        "access-error",
+    }
+
+
+def test_language_title_and_landmarks(pages):
+    for name, page in pages.items():
+        assert page.get("lang") == "en", name
+        [title] = page.xpath("//title/text()")
+        assert title.endswith(" - Dogear"), name
+        assert title.startswith("Error: ") == (name in ERROR_PAGES), name
+        for landmark in ("header", "main", "footer", "nav"):
+            assert len(page.xpath(f"//{landmark}")) == 1, (name, landmark)
+        assert page.xpath("//nav/@aria-label"), name
+        assert not page.xpath("//meta[@http-equiv]"), name  # no refresh, no time limits
+
+
+def test_titles_say_which_page_and_state(pages):
+    titles = {name: page.xpath("//title/text()")[0] for name, page in pages.items()}
+    distinct = [t for name, t in titles.items() if name not in SAME_PAGE]
+    assert titles["choose-language"] == "Choose what to make: Le Roman - Dogear"
+    assert len(distinct) == len(set(distinct)), titles
+    assert titles["making"] == "Making: The Strange Case of Dr Jekyll and Mr Hyde - Dogear"
+    assert titles["waiting"].startswith("Waiting: ")
+    assert titles["done"].startswith("Ready: ")
+
+
+def test_one_h1_and_no_skipped_heading_levels(pages):
+    for name, page in pages.items():
+        levels = [int(h.tag[1]) for h in page.xpath("//h1|//h2|//h3|//h4|//h5|//h6")]
+        assert levels.count(1) == 1, name
+        assert levels[0] == 1, name
+        for before, after in zip(levels, levels[1:], strict=False):
+            assert after <= before + 1, (name, levels)
+
+
+def test_the_skip_link_comes_first_and_goes_to_main(pages):
+    for name, page in pages.items():
+        first = page.xpath("//body//a|//body//button|//body//input|//body//select")[0]
+        assert first.get("href") == "#main", name
+        assert page.xpath("//main/@id") == ["main"], name
+
+
+def test_every_control_has_a_visible_label(pages):
+    for name, page in pages.items():
+        ids = page.xpath("//@id")
+        assert len(ids) == len(set(ids)), (name, "ids repeat")
+        for control in page.xpath("//input|//select|//textarea"):
+            labels = page.xpath(f"//label[@for='{control.get('id')}']")
+            assert len(labels) == 1 and labels[0].text_content().strip(), (name, control.attrib)
+
+
+def test_described_by_and_error_links_point_at_something(pages):
+    for name, page in pages.items():
+        ids = set(page.xpath("//@id"))
+        for value in page.xpath("//@aria-describedby|//@aria-labelledby"):
+            assert set(value.split()) <= ids, (name, value)
+        for href in page.xpath("//a/@href"):
+            if href.startswith("#"):
+                assert href[1:] in ids, (name, href)
+
+
+def test_choices_are_grouped_in_fieldsets_with_legends(pages):
+    for name, page in pages.items():
+        for control in page.xpath("//input[@type='checkbox' or @type='radio']"):
+            fieldsets = control.xpath("ancestor::fieldset")
+            assert fieldsets and fieldsets[0].xpath("./legend"), (name, control.get("id"))
+
+
+def test_required_fields_say_so_in_words(pages):
+    choose = pages["choose"]
+    legends = [legend.text_content() for legend in choose.xpath("//legend")]
+    assert "What to make (choose at least one)" in legends
+    assert "Sections to read (choose at least one)" in legends
+    assert pages["home-empty"].xpath("//label[@for='book-file']")[0].text == (
+        "Book file (required)"
+    )
+
+
+def test_error_pages_sum_up_the_errors_and_mark_each_field(pages):
+    for name in ERROR_PAGES:
+        page = pages[name]
+        [summary] = page.xpath("//*[@role='alert']")
+        assert summary.get("autofocus") is not None, name
+        targets = [href[1:] for href in summary.xpath(".//a/@href")]
+        assert targets, name
+        for message in page.xpath("//p[@class='error-message']"):
+            assert message.text_content().startswith("Error: "), name
+            assert page.xpath(f"//*[contains(@aria-describedby, '{message.get('id')}')]"), name
+
+
+def test_choices_sent_back_with_errors_are_kept(pages):
+    page = pages["choose-errors"]
+    assert page.xpath("//select[@id='voice']/option[@selected]/@value") == ["af_heart"]
+    assert page.xpath("//input[@name='speed'][@checked]/@value") == ["0.9"]
+    assert page.xpath("//input[@name='format'][@checked]") == []
+
+
+def test_book_pages_have_a_status_region(pages):
+    for name in ("reading", "waiting", "making", "done", "failed", "stopped", "unreadable"):
+        [region] = pages[name].xpath("//*[@role='status']")
+        assert region.text_content().strip(), name
+    making = pages["making"].xpath("//*[@role='status']")[0].text_content()
+    assert making == "Making: Section 2 of 4 done: Story of the Door. About 8 minutes left."
+    waiting = pages["waiting"].xpath("//*[@role='status']")[0].text_content()
+    assert waiting == "Waiting: 1 book ahead of this one."
+
+
+def test_pages_being_made_work_without_javascript(pages):
+    for name in ("reading", "waiting", "making"):
+        page = pages[name]
+        assert page.xpath("//a[@id='check-progress']/text()") == ["Check progress"], name
+        assert page.xpath("//script/@src") == ["/static/progress.js"], name
+    for name in ("done", "failed", "choose", "home-books"):
+        assert not pages[name].xpath("//script"), name
+
+
+def test_actions_are_buttons_and_links_go_somewhere(pages):
+    for name, page in pages.items():
+        for link in page.xpath("//a"):
+            assert link.get("href"), name
+            assert link.text_content().strip(), name
+        for button in page.xpath("//button"):
+            assert button.get("type") == "submit", name
+            assert button.text_content().strip(), name
+        assert not page.xpath("//*[@onclick or @role='button' or @style]"), name
+        assert not page.xpath("//script[not(@src)]"), name  # nothing inline (CSP)
+
+
+def test_done_lists_each_download_with_its_size(pages):
+    links = pages["done"].xpath("//ul[@class='downloads']/li")
+    texts = [re.sub(r"\s+", " ", li.text_content()).strip() for li in links]
+    assert texts == [
+        "M4B audiobook: The Strange Case of Dr Jekyll and Mr Hyde.m4b (3.3 MB)",
+        "MP3 folder: The Strange Case of Dr Jekyll and Mr Hyde MP3.zip (3.4 MB, a zip file of a "
+        "folder)",
+    ]

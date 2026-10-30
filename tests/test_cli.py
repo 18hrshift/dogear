@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,50 @@ def test_outline_reads_as_sentences(book, capsys):
     assert "EPUB file, 2 sections, 18 words." in out
     assert "1. Cover: front matter, 3 words, 1 image." in out
     assert "2. Chapter One: main text, 15 words, print pages 1 to 2, 1 note." in out
+
+
+def test_outline_json_has_the_same_facts(book, capsys):
+    assert cli.main(["outline", "test.epub", "--json"]) == 0
+    out = capsys.readouterr().out
+    assert out.isascii()
+    assert json.loads(out) == {
+        "title": "Test Book",
+        "authors": ["Ann Author"],
+        "language": "en",
+        "source_format": "epub",
+        "words": 18,
+        "sections": [
+            {
+                "number": 1,
+                "title": "Cover",
+                "kind": "front",
+                "words": 3,
+                "first_page": None,
+                "last_page": None,
+                "images": 1,
+                "notes": 0,
+                "tables": 0,
+            },
+            {
+                "number": 2,
+                "title": "Chapter One",
+                "kind": "body",
+                "words": 15,
+                "first_page": "1",
+                "last_page": "2",
+                "images": 0,
+                "notes": 1,
+                "tables": 0,
+            },
+        ],
+    }
+
+
+def test_outline_json_errors_stay_plain_sentences(tmp_path, capsys):
+    assert cli.main(["outline", str(tmp_path / "missing.epub"), "--json"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error: No such file:")
 
 
 def test_text_shows_display_text(book, capsys):
