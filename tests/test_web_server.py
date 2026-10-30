@@ -1,24 +1,90 @@
 """`dogear serve` and its `[web]` settings: each setting changes what the server does."""
 
+import json
+import os
+import signal
 import socket
 import subprocess
 import sys
+import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from web_samples import BASE, sample_app, sample_config, visitor
 
 from dogear import cli, paths
 from dogear.errors import ConfigError, DogearError
-from dogear.web import server
+from dogear.web import child, server
 from dogear.web.server import ServeOptions, bind, lock_web_folder, serve
 from dogear.web.settings import web_settings
+
+FAKE = Path(__file__).parent / "fake_dogear.py"
+# `dogear serve`, with the stand-in `dogear` (tests/fake_dogear.py) for its children.
+SERVER = """
+import sys
+from dogear.web import child
+child.dogear_command = lambda: [sys.executable, sys.argv[1]]
+from dogear.config import default_config
+from dogear.web.server import ServeOptions, serve
+config = default_config()
+config["web"]["dir"] = sys.argv[2]
+sys.exit(serve(ServeOptions(port=int(sys.argv[3]), open_browser=False), config))
+"""
 
 
 def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
+
+
+def eventually(check, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while not check():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Ctrl+C reaches a process group on Linux and macOS")
+def test_ctrl_c_in_the_terminal_leaves_a_book_being_read_to_be_read_again(tmp_path, monkeypatch):
+    web, port, pids = tmp_path / "web", free_port(), tmp_path / "pids"
+    # In a session of its own, like a terminal's foreground job: Ctrl+C there goes to
+    # every process in the job's process group.
+    server_process = subprocess.Popen(
+        [sys.executable, "-c", SERVER, str(FAKE), str(web), str(port)],
+        stdout=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "DOGEAR_FAKE_PIDS": str(pids)},
+        start_new_session=True,
+    )
+    try:
+        link = server_process.stdout.readline().split("link in a web browser: ")[1].strip()
+        base = f"http://127.0.0.1:{port}"
+        with httpx.Client(base_url=base, headers={"Origin": base}) as client:
+            client.get(link)
+            response = client.post("/books", files={"book": ("b.epub", b"slowread", "")})
+            book_id = response.headers["location"].rsplit("/", 1)[1]
+        eventually(lambda: pids.exists() and pids.read_text().strip())
+        reader = int(pids.read_text())
+        os.killpg(server_process.pid, signal.SIGINT)  # Ctrl+C in the server's terminal
+        assert server_process.wait(timeout=60) == 0
+    finally:
+        if server_process.poll() is None:
+            server_process.kill()
+            server_process.wait()
+        server_process.stdout.close()
+    with pytest.raises(ProcessLookupError):
+        os.kill(reader, 0)  # the server stopped it before it stopped itself
+    record = json.loads((web / "books" / book_id / "book.json").read_text())
+    assert (record["state"], record["error"]) == ("reading", "")
+
+    monkeypatch.setattr(child, "dogear_command", lambda: [sys.executable, str(FAKE)])
+    (web / "books" / book_id / "book.epub").write_text("ok")
+    app = sample_app(web)
+    with visitor(app):
+        eventually(lambda: app.state.library.get(book_id).state == "ready")
 
 
 @pytest.fixture

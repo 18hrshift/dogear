@@ -12,12 +12,14 @@ from dataclasses import dataclass, replace
 
 from dogear.book_summary import BookSummary, summary_from_json
 from dogear.web.books import BookStore
-from dogear.web.child import Stopper, child_command, run_captured
+from dogear.web.child import Stopper, child_command, interrupted, run_captured
 from dogear.web.settings import WebSettings
 
 MAX_OUTLINE_BYTES = 4 * 1024 * 1024
 MAX_SECTIONS = 3000
 MAX_TITLE_CHARS = 300  # longer titles are cut for the page
+INTERRUPTED_ERROR = "Something stopped Dogear while it was reading this book."
+READ_AGAIN_HINT = "Choose Read again."
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,9 @@ def read_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
         stopper=stopper,
     )
     if stopper.requested.is_set():
-        return  # it's being deleted
+        # It's being deleted, or the server is stopping. Then it stays "reading", and
+        # the server reads it again when it next starts.
+        return
     if result.timed_out:
         outcome: BookSummary | Problem = Problem(
             f"Reading the book took longer than {settings.read_timeout_seconds:g} seconds, "
@@ -48,6 +52,9 @@ def read_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             "If the book is very long, raise web.read_timeout_seconds in your config file "
             "and try again.",
         )
+    elif interrupted(result.returncode):
+        # Stopped by something other than the server: not a problem with the book.
+        outcome = Problem(INTERRUPTED_ERROR, READ_AGAIN_HINT)
     elif result.returncode != 0:
         outcome = problem_from_output(result.stderr)
     elif result.too_long:

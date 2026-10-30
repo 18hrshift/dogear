@@ -23,7 +23,10 @@ JobFunction = Callable[[BookStore, WebSettings, str, Stopper], None]
 CAN_CHOOSE = ("ready", "done", "failed", "stopped")
 CAN_START_AGAIN = ("failed", "stopped")
 UNEXPECTED = "Dogear stopped because of a problem it didn't expect."
-UNEXPECTED_HINT = "Choose Start again. If it happens again, please report it."
+UNEXPECTED_HINTS = {
+    "unreadable": "Choose Read again. If it happens again, please report it.",
+    "failed": "Choose Start again. If it happens again, please report it.",
+}
 
 
 class Library:
@@ -78,6 +81,15 @@ class Library:
         self.store.update(book_id, state="waiting", error="", hint="")
         self.maker.add(book_id)
 
+    def read_again(self, book_id: str) -> None:
+        """Read a book Dogear couldn't read, as after something has been fixed, such as
+        installing Calibre for a Kindle book, or after reading it was interrupted."""
+        record = self._existing(book_id)
+        if record.state != "unreadable":
+            raise DogearError("This book can't be read again now.")
+        self.store.update(book_id, state="reading", error="", hint="")
+        self.reader.add(book_id)
+
     def stop(self, book_id: str) -> None:
         record = self._existing(book_id)
         if record.state == "waiting" and self.maker.stop(book_id):
@@ -118,7 +130,10 @@ class Library:
             except Exception:
                 # A bug. The book says so, and the worker logs the traceback.
                 self.store.update(
-                    book_id, state=failed_state, error=UNEXPECTED, hint=UNEXPECTED_HINT
+                    book_id,
+                    state=failed_state,
+                    error=UNEXPECTED,
+                    hint=UNEXPECTED_HINTS[failed_state],
                 )
                 raise
 

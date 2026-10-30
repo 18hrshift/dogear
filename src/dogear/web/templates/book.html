@@ -17,6 +17,12 @@
 <p>{{ book.error }}</p>
 {% endif %}
 
+{% if book.state == "unreadable" %}
+<form method="post" action="/books/{{ book.id }}/read">
+  <button type="submit">Read again</button>
+</form>
+{% endif %}
+
 {% if watching %}
 <p><a id="check-progress" href="/books/{{ book.id }}">Check progress</a></p>
 {% endif %}

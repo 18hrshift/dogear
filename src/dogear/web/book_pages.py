@@ -183,6 +183,15 @@ async def stop(request: Request) -> Response:
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 
+async def read_again(request: Request) -> Response:
+    record = _book(request)
+    try:
+        _library(request).read_again(record.id)
+    except DogearError:
+        pass  # being read again already; the book's page says how it's going
+    return RedirectResponse(f"/books/{record.id}", status_code=303)
+
+
 async def start_again(request: Request) -> Response:
     record = _book(request)
     try:

@@ -3,6 +3,8 @@
 
 import io
 import json
+import os
+import signal
 import sys
 import time
 import zipfile
@@ -15,6 +17,7 @@ from dogear.web import child
 from dogear.web.books import CLOSED_ERROR, BookRecord, Choices
 from dogear.web.library import Library
 from dogear.web.making import make_args, saved_outputs, section_spec
+from dogear.web.reading import INTERRUPTED_ERROR
 from dogear.web.settings import web_settings
 
 FAKE = Path(__file__).parent / "fake_dogear.py"
@@ -31,6 +34,27 @@ def commands(monkeypatch, tmp_path):
 
 def logged(log: Path) -> list[list[str]]:
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+@pytest.fixture
+def pids(monkeypatch, tmp_path):
+    """Returns a function that waits for the stand-in's next run and gives its process id."""
+    path = tmp_path / "pids"
+    monkeypatch.setenv("DOGEAR_FAKE_PIDS", str(path))
+    seen = 0
+
+    def next_pid(timeout: float = 30) -> int:
+        nonlocal seen
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            found = path.read_text().split() if path.exists() else []
+            if len(found) > seen:
+                seen += 1
+                return int(found[seen - 1])
+            time.sleep(0.05)
+        raise AssertionError("the child didn't start")
+
+    return next_pid
 
 
 @pytest.fixture
@@ -128,6 +152,62 @@ def test_a_book_dogear_cannot_read_says_why(running):
     assert "<title>Couldn&#39;t read: book.epub - Dogear</title>" in page
     assert "<strong>Error:</strong> This book is locked with DRM." in page
     assert "<strong>What to do:</strong> Use a copy without DRM." in page
+
+
+def test_a_book_dogear_could_not_read_can_be_read_again(running):
+    app, client = running
+    book_id = upload(client, "unreadable")
+    wait_for(app, book_id, "unreadable")
+    page = client.get(f"/books/{book_id}").text
+    assert f'<form method="post" action="/books/{book_id}/read">' in page
+    assert "Read again</button>" in page
+    set_behaviour(app, book_id, "ok")  # say, Calibre was installed in the meantime
+    response = client.post(f"/books/{book_id}/read", follow_redirects=False)
+    assert response.headers["location"] == f"/books/{book_id}"
+    record = wait_for(app, book_id, "ready")
+    assert (record.error, record.hint) == ("", "")
+    assert record.summary.title == "Fake Book"
+
+
+def test_only_a_book_dogear_could_not_read_is_read_again(running, commands):
+    app, client = running
+    book_id = upload(client, "ok")
+    wait_for(app, book_id, "ready")
+    assert "Read again" not in client.get(f"/books/{book_id}/choose").text
+    client.post(f"/books/{book_id}/read")
+    time.sleep(0.3)
+    assert app.state.library.get(book_id).state == "ready"
+    assert [c[0] for c in logged(commands)] == ["outline"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signals are for Linux and macOS")
+def test_a_read_stopped_by_something_else_is_no_bug_and_can_be_read_again(running, pids):
+    """Something other than the server ends the child (a person, the system running out
+    of memory): the book wasn't the problem, so it can simply be read again."""
+    app, client = running
+    book_id = upload(client, "slowread")
+    os.kill(pids(), signal.SIGKILL)
+    record = wait_for(app, book_id, "unreadable")
+    assert (record.error, record.hint) == (INTERRUPTED_ERROR, "Choose Read again.")
+    assert "This is a bug" not in client.get(f"/books/{book_id}").text
+    set_behaviour(app, book_id, "ok")
+    client.post(f"/books/{book_id}/read")
+    wait_for(app, book_id, "ready")
+
+
+def test_a_book_being_read_when_the_server_stops_is_read_again_when_it_starts(
+    tmp_path, commands, pids
+):
+    app = sample_app(tmp_path / "web")
+    with visitor(app) as client:
+        book_id = upload(client, "slowread")
+        pids()  # being read
+    # Closing stopped the child; the book isn't unreadable, and no bug is reported.
+    assert app.state.library.get(book_id).state == "reading"
+    restarted = sample_app(tmp_path / "web")
+    set_behaviour(restarted, book_id, "ok")
+    with visitor(restarted):
+        wait_for(restarted, book_id, "ready")
 
 
 def test_a_failed_make_says_why_and_start_again_runs_it_again(running, commands):

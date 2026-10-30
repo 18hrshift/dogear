@@ -6,9 +6,11 @@ What it does depends on the first word of the book file:
     unreadable  outline fails with `Error:` and `What to do:` lines
     fail        make fails with `Error:` and `What to do:` lines
     slow        make prints a line, then waits (for a test to stop it)
+    slowread    outline waits (for a test to stop it), then lists three sections
     crash       make fails with a traceback and no `Error:` line
 
 When DOGEAR_FAKE_LOG names a file, each run adds its arguments to it as a JSON list.
+When DOGEAR_FAKE_PIDS names a file, each run adds its process id to it, on a line.
 """
 
 from __future__ import annotations
@@ -31,11 +33,21 @@ def main(argv: list[str]) -> int:
     if log:
         with open(log, "a", encoding="utf-8") as file:
             file.write(json.dumps(argv) + "\n")
+    pids = os.environ.get("DOGEAR_FAKE_PIDS")
+    if pids:
+        with open(pids, "a", encoding="utf-8") as file:
+            file.write(f"{os.getpid()}\n")
     command, book = argv[0], Path(argv[1])
     behaviour = book.read_text(encoding="utf-8").split()[0]
     if command == "outline":
         if behaviour == "unreadable":
             return fail()
+        if behaviour == "slowread":
+            try:
+                time.sleep(60)
+            except KeyboardInterrupt:
+                print("Stopped.", file=sys.stderr)
+                return 130
         print(json.dumps(summary()))
         return 0
     if behaviour == "fail":
