@@ -30,6 +30,10 @@ Dogear.
 From Terminal, the dogear command works too:
 /Applications/Dogear.app/Contents/Resources/dogear/dogear --help
 
+To use Dogear from a phone or tablet on the same network as well, start it from Terminal
+instead, with this command. Its window shows a second link to open on the phone:
+/Applications/Dogear.app/Contents/Resources/dogear/dogear serve --lan
+
 To remove Dogear, drag it from Applications to the Trash.
 
 These steps follow Apple's instructions for apps from unidentified developers. They

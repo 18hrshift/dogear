@@ -37,7 +37,8 @@ below).
 
 Choosing Dogear in the Start menu, in Applications, or in your applications menu opens a
 window running `dogear serve`, and your web browser opens at Dogear's page (see "Use it
-in a web browser" below). Keep that window open while you use Dogear, and close it to stop
+in a web browser" below). On Windows and Linux, "Dogear for phones and tablets" next to it
+runs `dogear serve --lan` instead. Keep that window open while you use Dogear, and close it to stop
 Dogear. The `dogear` command works in a terminal too (on a Mac, it's
 `/Applications/Dogear.app/Contents/Resources/dogear/dogear`).
 

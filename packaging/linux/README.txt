@@ -11,7 +11,9 @@ To install:
 
 To start Dogear, choose Dogear in your applications menu. A terminal window opens and
 shows a link for your web browser. Keep that window open while you use Dogear; close it,
-or press Ctrl+C in it, to stop Dogear.
+or press Ctrl+C in it, to stop Dogear. To use Dogear from a phone or tablet on the same
+network as well, choose "Dogear for phones and tablets" instead: its window shows a
+second link to open on the phone.
 
 From a terminal, the dogear command works too. Run: dogear --help
 

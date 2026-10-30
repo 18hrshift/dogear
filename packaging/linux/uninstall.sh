@@ -6,7 +6,7 @@ set -eu
 
 target="$HOME/.local/opt/dogear"
 link="$HOME/.local/bin/dogear"
-desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/dogear.desktop"
+apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 
 if [ ! -d "$target" ]; then
   echo "Error: Dogear isn't installed in $target, so there is nothing to remove." >&2
@@ -17,7 +17,7 @@ fi
 if [ -L "$link" ] && [ "$(readlink "$link")" = "$target/dogear" ]; then
   rm "$link"
 fi
-rm -f "$desktop"
+rm -f "$apps/dogear.desktop" "$apps/dogear-lan.desktop"
 echo "Dogear is uninstalled."
 echo "Voices it downloaded are in ${XDG_DATA_HOME:-$HOME/.local/share}/dogear, and spoken sentences it kept are in ${XDG_CACHE_HOME:-$HOME/.cache}/dogear. Delete those folders too if you no longer need them."
 rm -rf "$target"

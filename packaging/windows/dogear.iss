@@ -48,6 +48,7 @@ Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{autoprograms}\Dogear"; Filename: "{app}\dogear.exe"; Parameters: "serve"; WorkingDir: "{userdocs}"; Comment: "Start Dogear. Keep its window open while you use it."
+Name: "{autoprograms}\Dogear for phones and tablets"; Filename: "{app}\dogear.exe"; Parameters: "serve --lan"; WorkingDir: "{userdocs}"; Comment: "Start Dogear so phones and tablets on the same network can use it too. Keep its window open while you use it."
 Name: "{autodesktop}\Dogear"; Filename: "{app}\dogear.exe"; Parameters: "serve"; WorkingDir: "{userdocs}"; Comment: "Start Dogear. Keep its window open while you use it."; Tasks: desktopicon
 
 [Registry]

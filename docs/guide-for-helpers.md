@@ -112,11 +112,20 @@ its page.
 
 ## Using Dogear from a phone or tablet
 
-Dogear can also be used from a phone on the same Wi-Fi network as the computer, for
-example to upload a book from the phone. For now this needs a terminal: start Dogear with
-`dogear serve --lan` instead of from the menu. It then shows a second link; open that one
-on the phone. Anyone on the network who has the link can use Dogear, so do this only on a
-network you trust, such as your home Wi-Fi.
+Dogear can also be used from a phone or tablet on the same Wi-Fi network as the
+computer, for example to upload a book from the phone. Start it with "Dogear for phones
+and tablets" instead of "Dogear":
+
+- Windows: in the Start menu, next to Dogear.
+- Linux: in your applications menu, next to Dogear.
+- Mac: there is no second app. Open Terminal (in Applications, Utilities) and run
+  `/Applications/Dogear.app/Contents/Resources/dogear/dogear serve --lan`.
+
+The window then shows a second link, with the computer's address on the network. Open
+that one on the phone; sending it to yourself in a message saves typing it. Windows may
+ask whether to let Dogear use the network: allow it on private networks. Anyone on the
+network who has the link can use Dogear, so do this only on a network you trust, such as
+your home Wi-Fi.
 
 ## When something goes wrong
 

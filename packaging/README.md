@@ -12,7 +12,8 @@ Each build makes the installer for the platform it runs on, in `dist/`:
   `install.sh`, `uninstall.sh`, and `README.txt`. `install.sh` installs for one user: the
   program in `~/.local/opt/dogear`, a `dogear` link in `~/.local/bin`, and a `.desktop`
   entry with `Terminal=true` that runs `dogear serve`, so the desktop opens its own
-  terminal window. A tarball was chosen over an AppImage because an AppImage usually
+  terminal window, and a second, "Dogear for phones and tablets", that runs
+  `dogear serve --lan`. A tarball was chosen over an AppImage because an AppImage usually
   needs FUSE 2 (libfuse2), which Ubuntu stopped installing by default in 22.04, and can't
   open a terminal window by itself.
 - **macOS arm64:** `Dogear-<version>-macos-arm64.dmg`, holding `Dogear.app`, a link to
@@ -26,7 +27,8 @@ Each build makes the installer for the platform it runs on, in `dist/`:
 - **Windows x86_64:** `Dogear-<version>-windows-x86_64-setup.exe`, made with Inno Setup
   from `windows/dogear.iss`. It installs for the current user without administrator
   rights, into `%LOCALAPPDATA%\Programs\Dogear`, adds "Dogear" to the Start menu, and
-  offers to put `dogear` on the user's PATH. The shortcut runs `dogear.exe serve`, a
+  offers to put `dogear` on the user's PATH. A second Start menu entry, "Dogear for phones
+  and tablets", runs `dogear.exe serve --lan`. The shortcut runs `dogear.exe serve`, a
   console program, so Windows opens a console window: closing it stops Dogear. The
   uninstaller takes the folder back off PATH.
 

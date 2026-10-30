@@ -8,7 +8,7 @@ import subprocess
 import tarfile
 
 import pytest
-from dogear_build import BuildError, linux, macos
+from dogear_build import BuildError, linux, macos, windows
 from dogear_build.pins import load
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="sh scripts for Linux and macOS")
@@ -58,6 +58,17 @@ def test_install_puts_dogear_in_the_menu_and_on_path(unpacked, tmp_path):
 
 
 @posix_only
+def test_install_adds_a_menu_entry_for_phones_on_the_network(unpacked, tmp_path):
+    home = tmp_path / "home"
+    assert run_sh(unpacked / "install.sh", home).returncode == 0
+    target = home / ".local" / "opt" / "dogear"
+    entry = home / ".local" / "share" / "applications" / "dogear-lan.desktop"
+    desktop = entry.read_text()
+    assert f'Exec="{target}/dogear" serve --lan' in desktop
+    assert "Terminal=true" in desktop and "Name=Dogear for phones and tablets" in desktop
+
+
+@posix_only
 def test_install_again_replaces_the_old_copy(unpacked, tmp_path):
     home = tmp_path / "home"
     run_sh(unpacked / "install.sh", home)
@@ -95,7 +106,8 @@ def test_uninstall_removes_what_install_added(unpacked, tmp_path):
     assert result.returncode == 0, result.stderr
     assert not (home / ".local" / "opt" / "dogear").exists()
     assert not (home / ".local" / "bin" / "dogear").exists()
-    assert not (home / ".local" / "share" / "applications" / "dogear.desktop").exists()
+    for entry in ("dogear.desktop", "dogear-lan.desktop"):
+        assert not (home / ".local" / "share" / "applications" / entry).exists()
     assert "Dogear is uninstalled." in result.stdout
 
 
@@ -199,3 +211,19 @@ def test_hdiutil_failing_every_time_stops_the_build(tmp_path, monkeypatch):
     frozen = fake_bundle(tmp_path / "frozen")
     with pytest.raises(BuildError, match="couldn't make the disk image"):
         macos.make_dmg(frozen, tmp_path, tmp_path / "work", "Dogear-1.0", "1.0", "14.0", print)
+
+
+# Windows.
+
+
+def test_the_start_menu_has_dogear_and_dogear_for_phones():
+    icons = [
+        line
+        for line in windows.SCRIPT.read_text(encoding="utf-8").splitlines()
+        if line.startswith('Name: "{autoprograms}')
+    ]
+    assert any('\\Dogear"' in line and 'Parameters: "serve";' in line for line in icons)
+    assert any(
+        "Dogear for phones and tablets" in line and 'Parameters: "serve --lan";' in line
+        for line in icons
+    )

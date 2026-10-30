@@ -49,6 +49,18 @@ Icon=audio-x-generic
 Categories=AudioVideo;Audio;Utility;Accessibility;
 Keywords=audiobook;talking book;DAISY;EPUB;
 EOF
+cat > "$apps/dogear-lan.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Dogear for phones and tablets
+GenericName=Talking book maker
+Comment=Start Dogear so phones and tablets on the same network can use it too. Keep its window open while you use Dogear.
+Exec="$(desktop_quote "$target/dogear")" serve --lan
+Terminal=true
+Icon=audio-x-generic
+Categories=AudioVideo;Audio;Utility;Accessibility;
+Keywords=audiobook;talking book;DAISY;EPUB;phone;
+EOF
 
 echo "Dogear is installed."
 echo "To start it, choose Dogear in your applications menu. A terminal window opens; keep it open while you use Dogear."
