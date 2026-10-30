@@ -7,11 +7,13 @@ numbered lists, no tables, colors, or animations. Progress and errors go to stde
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from dogear import __version__
+from dogear.book_summary import count, describe_section, summarize, summary_to_json
 from dogear.config import Config, load_config
 from dogear.document import (
     Book,
@@ -35,10 +37,8 @@ from dogear.pronunciations import dictionary_from_config
 from dogear.say import say_text
 from dogear.unknown_words import WordsRequest, find_unknown_words
 from dogear.voice import find_voice, prepare_kokoro
-from dogear.voice.catalog import kokoro_voices
+from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
 
-KIND_NAMES = {"front": "front matter", "body": "main text", "back": "back matter"}
-_GRADE_ORDER = "ABCDF"
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
@@ -97,6 +97,11 @@ def _parser() -> argparse.ArgumentParser:
         description="List a book's title, authors, and sections with word counts and print pages.",
     )
     outline.add_argument("book", type=Path, help=BOOK_HELP)
+    outline.add_argument(
+        "--json",
+        action="store_true",
+        help="print the same facts as JSON, for other programs to read",
+    )
     outline.set_defaults(run=_outline)
 
     text = commands.add_parser(
@@ -218,34 +223,24 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _outline(args: argparse.Namespace, config: Config) -> int:
-    book = extract_book(args.book, config)
-    print(f"Title: {book.metadata.title}")
-    if book.metadata.authors:
-        print(f"By: {', '.join(book.metadata.authors)}")
-    if book.metadata.language:
-        print(f"Language: {book.metadata.language}")
+    summary = summarize(extract_book(args.book, config))
+    if args.json:
+        # ASCII only, so any program can read it whatever the console's encoding.
+        print(json.dumps(summary_to_json(summary), indent=2))
+        return 0
+    print(f"Title: {summary.title}")
+    if summary.authors:
+        print(f"By: {', '.join(summary.authors)}")
+    if summary.language:
+        print(f"Language: {summary.language}")
     print(
-        f"{book.source_format.upper()} file, {_count(len(book.sections), 'section')}, "
-        f"{_count(book.word_count(), 'word')}."
+        f"{summary.source_format.upper()} file, {count(len(summary.sections), 'section')}, "
+        f"{count(summary.words, 'word')}."
     )
     print()
-    for number, section in enumerate(book.sections, start=1):
-        print(f"{number}. {_describe(section)}")
+    for section in summary.sections:
+        print(f"{section.number}. {describe_section(section)}")
     return 0
-
-
-def _describe(section: Section) -> str:
-    parts = [f"{section.title}: {KIND_NAMES[section.kind]}", _count(section.word_count(), "word")]
-    pages = section.page_labels()
-    if len(pages) == 1:
-        parts.append(f"print page {pages[0]}")
-    elif pages:
-        parts.append(f"print pages {pages[0]} to {pages[-1]}")
-    for kind, name in [(Image, "image"), (Footnote, "note"), (Table, "table")]:
-        count = sum(isinstance(b, kind) for b in section.blocks)
-        if count:
-            parts.append(_count(count, name))
-    return ", ".join(parts) + "."
 
 
 def _text(args: argparse.Namespace, config: Config) -> int:
@@ -347,12 +342,12 @@ def _words(args: argparse.Namespace, config: Config) -> int:
         print(f"The voice knows every word in {where}.")
         return 0
     print(
-        f"{_count(len(unknown), 'word')} in {where} the voice doesn't know, most frequent "
+        f"{count(len(unknown), 'word')} in {where} the voice doesn't know, most frequent "
         "first. It guesses how to say them."
     )
     print()
     for number, word in enumerate(unknown, start=1):
-        print(f"{number}. {word.word}, {_count(word.count, 'time')}.")
+        print(f"{number}. {word.word}, {count(word.count, 'time')}.")
     print()
     print(
         'To hear one, run: dogear say "the word in a sentence" -o test.wav. To fix one, add '
@@ -382,23 +377,15 @@ def _use_word_files(args: argparse.Namespace, config: Config) -> None:
 
 def _voices(args: argparse.Namespace, config: Config) -> int:
     default = config["voice"]["voice"]
-    ranked = sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
-    print(f"{_count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
+    ranked = kokoro_voices_best_first()
+    print(f"{count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
     print()
     for number, voice in enumerate(ranked, start=1):
         note = " This is the one Dogear uses now." if voice.name == default else ""
-        print(
-            f"{number}. {voice.name}: {voice.accent} English, {voice.gender}, "
-            f"grade {voice.grade}.{note}"
-        )
+        print(f"{number}. {describe_voice(voice)}.{note}")
     print()
     print("To use another, add --voice NAME to `dogear make`, or set voice in your config.")
     return 0
-
-
-def _grade_rank(grade: str) -> tuple[int, int]:
-    """Sort key for grades such as "A", "B-", or "C+": best first."""
-    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
 
 
 def _download(args: argparse.Namespace, config: Config) -> int:
@@ -436,9 +423,5 @@ def _ocr(args: argparse.Namespace, config: Config) -> int:
             print(f"OCR: page {done} of {total} done.", file=sys.stderr)
 
     pages = ocr_pdf(args.pdf, output, config, progress)
-    print(f"Saved {_count(pages, 'page')} with a text layer to {output}")
+    print(f"Saved {count(pages, 'page')} with a text layer to {output}")
     return 0
-
-
-def _count(n: int, noun: str) -> str:
-    return f"{n:,} {noun}{'' if n == 1 else 's'}"

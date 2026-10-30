@@ -11,6 +11,8 @@ from typing import Any
 
 from dogear.voice.downloads import RemoteFile
 
+_GRADE_ORDER = "ABCDF"
+
 
 @dataclass(frozen=True)
 class VoiceInfo:
@@ -35,6 +37,20 @@ def kokoro_voices() -> list[VoiceInfo]:
         VoiceInfo(name, v["accent"], v["gender"], v["grade"])
         for name, v in catalog()["kokoro"]["voices"].items()
     ]
+
+
+def kokoro_voices_best_first() -> list[VoiceInfo]:
+    return sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
+
+
+def _grade_rank(grade: str) -> tuple[int, int]:
+    """Sort key for grades such as "A", "B-", or "C+": best first."""
+    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
+
+
+def describe_voice(voice: VoiceInfo) -> str:
+    """'af_heart: American English, female, grade A'"""
+    return f"{voice.name}: {voice.accent} English, {voice.gender}, grade {voice.grade}"
 
 
 def kokoro_file(kind: str, name: str, models_dir: Path) -> RemoteFile:
