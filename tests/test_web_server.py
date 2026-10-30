@@ -11,7 +11,7 @@ from web_samples import BASE, sample_app, sample_config, visitor
 from dogear import cli, paths
 from dogear.errors import ConfigError, DogearError
 from dogear.web import server
-from dogear.web.server import ServeOptions, bind, serve
+from dogear.web.server import ServeOptions, bind, lock_web_folder, serve
 from dogear.web.settings import web_settings
 
 
@@ -85,8 +85,25 @@ def test_a_port_in_use_is_a_plain_error(tmp_path):
         taken.listen()
         port = taken.getsockname()[1]
         settings = web_settings(sample_config(tmp_path), port=port)
-        with pytest.raises(DogearError, match=f"Port {port} is in use already"):
+        with pytest.raises(DogearError, match=f"Port {port} is in use already") as raised:
             bind(settings)
+    assert raised.value.hint.startswith("If it is, use the link that window shows.")
+
+
+def test_a_second_server_on_the_same_folder_is_refused(tmp_path, no_server):
+    config = sample_config(tmp_path)
+    config["web"]["port"] = free_port()
+    with lock_web_folder(tmp_path):
+        with pytest.raises(DogearError) as raised:
+            serve(ServeOptions(open_browser=False), config, lambda line: None)
+        assert raised.value.message == f"Dogear is already running with the web folder {tmp_path}."
+        assert raised.value.hint.startswith("Use the link shown in the window where it's running.")
+        assert no_server.runs == []  # refused before listening or touching the books
+    serve(ServeOptions(open_browser=False), config, lambda line: None)
+    assert len(no_server.runs) == 1
+    # The lock is let go when the server stops, so it can start again.
+    serve(ServeOptions(open_browser=False), config, lambda line: None)
+    assert len(no_server.runs) == 2
 
 
 def test_the_port_setting_changes_the_port_and_the_host_check(tmp_path):

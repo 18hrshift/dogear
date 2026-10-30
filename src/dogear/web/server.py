@@ -20,11 +20,14 @@ import uvicorn
 
 from dogear.config import Config
 from dogear.errors import DogearError
+from dogear.file_lock import FileLock
 from dogear.web.access_key import AccessKey, load_or_make_key
 from dogear.web.app import create_app
 from dogear.web.settings import LOCAL_HOST, WebSettings, web_settings
 
 GRACEFUL_SECONDS = 5  # for open connections to finish when stopping
+# In the web folder, locked while a server uses the folder.
+LOCK_FILE = "serve.lock"
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,13 @@ def serve(options: ServeOptions, config: Config, say: Callable[[str], None] = pr
     settings = web_settings(
         config, port=options.port, lan=options.lan, config_file=options.config_file
     )
+    with lock_web_folder(settings.dir):
+        return _serve(settings, options, config, say)
+
+
+def _serve(
+    settings: WebSettings, options: ServeOptions, config: Config, say: Callable[[str], None]
+) -> int:
     key = load_or_make_key(settings.dir)
     listener = bind(settings)
     app = create_app(settings, config, key)
@@ -80,6 +90,21 @@ def serve(options: ServeOptions, config: Config, say: Callable[[str], None] = pr
     return 0
 
 
+def lock_web_folder(folder: Path) -> FileLock:
+    """Keep the web folder to this server while it runs. A second server on the same
+    folder would clear the first one's uploads and change its books under it."""
+    folder.mkdir(parents=True, exist_ok=True)
+    lock = FileLock.try_acquire(folder / LOCK_FILE)
+    if lock is None:
+        raise DogearError(
+            f"Dogear is already running with the web folder {folder}.",
+            hint="Use the link shown in the window where it's running. To run a second "
+            "Dogear at the same time, give it its own folder with web.dir in a settings "
+            "file.",
+        )
+    return lock
+
+
 def bind(settings: WebSettings) -> socket.socket:
     """The listening socket, so a port that's taken is a plain error before anything else."""
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -95,7 +120,8 @@ def bind(settings: WebSettings) -> socket.socket:
         if e.errno in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", -1)):
             raise DogearError(
                 f"Port {settings.port} is in use already. Dogear may be running in another window.",
-                hint=f"Use the link that window shows, or start with --port {settings.port + 1}.",
+                hint="If it is, use the link that window shows. If not, start Dogear with "
+                f"--port {settings.port + 1}.",
             ) from None
         raise DogearError(
             f"Dogear couldn't listen on port {settings.port}: {e.strerror or e}.",

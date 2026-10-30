@@ -25,6 +25,7 @@ from typing import Any, Literal
 from dogear.book_summary import BookSummary, summary_from_json, summary_to_json
 from dogear.extract import EXTRACTORS
 from dogear.make import FORMATS
+from dogear.web.atomic import remove_leftovers, write_atomically
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +116,8 @@ class BookStore:
         with self._lock:
             for folder in sorted(self.dir.iterdir()):
                 record = _read_record(folder)
+                if record is not None:
+                    remove_leftovers(folder, RECORD)
                 if record is None:
                     continue
                 if record.state in ("waiting", "making"):
@@ -197,10 +200,8 @@ class BookStore:
         return self.dir / book_id
 
     def _save(self, record: BookRecord) -> None:
-        path = self.folder(record.id) / RECORD
-        temporary = path.with_name(RECORD + ".partial")
-        temporary.write_text(json.dumps(_to_json(record), indent=1), encoding="utf-8")
-        os.replace(temporary, path)
+        data = json.dumps(_to_json(record), indent=1).encode("utf-8")
+        write_atomically(self.folder(record.id) / RECORD, data)
 
 
 def _to_json(record: BookRecord) -> dict[str, Any]:
