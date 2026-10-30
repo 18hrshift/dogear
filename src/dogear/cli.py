@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from dogear.say import say_text
 from dogear.unknown_words import WordsRequest, find_unknown_words
 from dogear.voice import find_voice, prepare_kokoro
 from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
+from dogear.web.child import UTF8_OUTPUT_ENV
 
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
@@ -45,6 +47,7 @@ SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 
 
 def main(argv: list[str] | None = None) -> int:
+    _utf8_output_when_asked()
     args = _parser().parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
@@ -67,6 +70,19 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
         return 130
+
+
+def _utf8_output_when_asked() -> None:
+    """Write UTF-8 when `dogear serve` runs this as a child process and reads its output.
+
+    It asks through an environment variable of its own because a frozen (installer)
+    build ignores PYTHONIOENCODING, and Windows would otherwise write its ANSI code page.
+    """
+    if os.environ.get(UTF8_OUTPUT_ENV) != "1":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -219,6 +235,25 @@ def _parser() -> argparse.ArgumentParser:
     ocr.add_argument("--language", help="Tesseract language, such as eng or eng+fra")
     ocr.add_argument("--dpi", type=int, help="scan resolution to read pages at")
     ocr.set_defaults(run=_ocr)
+
+    serve = commands.add_parser(
+        "serve",
+        parents=[common],
+        help="make books from a web browser",
+        description=(
+            "Start Dogear's web page, for making books in a web browser on this computer, "
+            "or with --lan from a phone or another computer on the same network. Keep the "
+            "window open while you use it, and press Ctrl+C to stop."
+        ),
+    )
+    serve.add_argument("--port", type=int, help="the port to use (default: web.port in config)")
+    serve.add_argument(
+        "--lan",
+        action="store_true",
+        help="let phones and other computers on the same network use it, with the link",
+    )
+    serve.add_argument("--no-browser", action="store_true", help="don't open a web browser")
+    serve.set_defaults(run=_serve)
     return parser
 
 
@@ -425,3 +460,16 @@ def _ocr(args: argparse.Namespace, config: Config) -> int:
     pages = ocr_pdf(args.pdf, output, config, progress)
     print(f"Saved {count(pages, 'page')} with a text layer to {output}")
     return 0
+
+
+def _serve(args: argparse.Namespace, config: Config) -> int:
+    # Imported here so the other commands don't load the web server.
+    from dogear.web.server import ServeOptions, serve
+
+    options = ServeOptions(
+        port=args.port,
+        lan=args.lan,
+        open_browser=not args.no_browser,
+        config_file=args.config,
+    )
+    return serve(options, config)
