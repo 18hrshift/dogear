@@ -98,6 +98,7 @@ def run_tool(
             errors="replace",
             timeout=timeout,
             input=input,
+            env=bundle.program_environment(),
         )
     except subprocess.TimeoutExpired:
         raise ToolFailedError(

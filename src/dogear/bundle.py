@@ -55,6 +55,26 @@ def espeak_data(espeak: str) -> Path | None:
     return bundled.parent
 
 
+def program_environment() -> dict[str, str] | None:
+    """The environment to run another program in: None (Dogear's own) in a normal install.
+
+    A standalone build on Linux starts with LD_LIBRARY_PATH pointing into its own folder,
+    so its Python finds the libraries it carries; PyInstaller keeps the value from before
+    in LD_LIBRARY_PATH_ORIG. A program inheriting that, such as Tesseract or Calibre,
+    would load Dogear's older copies of libraries like libstdc++ in place of its own, so
+    it gets the value from before back, or none.
+    """
+    if folder() is None:
+        return None
+    env = dict(os.environ)
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original is None:
+        env.pop("LD_LIBRARY_PATH", None)
+    else:
+        env["LD_LIBRARY_PATH"] = original
+    return env
+
+
 def model(relative: str, sha256: str) -> Path | None:
     """The bundled voice file or unpacked model folder at `relative` (a path inside the
     models folder, with / between parts), if it is the one whose SHA-256 is `sha256`.

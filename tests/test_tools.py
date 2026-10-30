@@ -52,6 +52,15 @@ def test_a_normal_install_never_looks_in_a_bundled_folder(config, tmp_path, monk
     assert find_tool("ffmpeg", config) == "/usr/bin/ffmpeg"
 
 
+def test_programs_run_from_a_standalone_build_get_the_original_library_path(
+    standalone_build, monkeypatch
+):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/dogear/_internal")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    script = "import os; print(os.environ.get('LD_LIBRARY_PATH', 'unset'))"
+    assert run_tool([sys.executable, "-c", script]).stdout.strip() == "unset"
+
+
 def test_run_tool_failure_includes_output():
     with pytest.raises(ToolFailedError, match="boom"):
         run_tool([sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"])

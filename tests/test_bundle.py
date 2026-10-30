@@ -1,5 +1,6 @@
 """What a standalone build carries: its folder, programs, espeak-ng data, and voice files."""
 
+import os
 from types import SimpleNamespace
 
 from dogear import bundle
@@ -65,6 +66,28 @@ def test_models_missing_from_the_manifest_or_the_disk_are_not_used(standalone_bu
 def test_bundled_model_folders_are_found_by_their_downloads_checksum(standalone_build):
     folder = standalone_build.add_model_folder("spacy/en_core_web_sm-3.8.0", SHA)
     assert bundle.model("spacy/en_core_web_sm-3.8.0", SHA) == folder
+
+
+def test_a_normal_install_runs_programs_in_its_own_environment():
+    assert bundle.program_environment() is None
+
+
+def test_programs_get_the_library_path_from_before_the_build_changed_it(
+    standalone_build, monkeypatch
+):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/dogear/_internal:/usr/local/lib")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
+    env = bundle.program_environment()
+    assert env["LD_LIBRARY_PATH"] == "/usr/local/lib"
+    assert "LD_LIBRARY_PATH_ORIG" not in env
+
+
+def test_programs_get_no_library_path_if_there_was_none(standalone_build, monkeypatch):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/dogear/_internal")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    env = bundle.program_environment()
+    assert "LD_LIBRARY_PATH" not in env
+    assert env["PATH"] == os.environ["PATH"]
 
 
 def test_a_build_without_a_manifest_bundles_no_models(standalone_build):
