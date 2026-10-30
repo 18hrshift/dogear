@@ -10,11 +10,14 @@ import hashlib
 import json
 import logging
 import re
+import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 
+from dogear.errors import PronunciationError
+from dogear.pronunciations import PronunciationDictionary
 from dogear.voice.engine import SpeechPlan
 
 log = logging.getLogger(__name__)
@@ -23,6 +26,13 @@ _STYLE_WIDTH = 256
 _PAD = 0  # token id that starts and ends every input
 # Where to split an overlong phoneme string: after punctuation first, then at a space.
 _PUNCTUATION_BREAK = re.compile(r"[.!?;:,—…]\s*")
+# Keyboard characters people type for a symbol Kokoro writes another way.
+_LOOKALIKES = {
+    "g": "the g sound is written ɡ, the script g (U+0261), not the keyboard g",
+    "'": "stress is written ˈ (U+02C8) before the stressed syllable, or ˌ (U+02CC) for "
+    "a lighter stress, not with an apostrophe",
+}
+PHONEMES_GUIDE = "https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md"
 
 
 class KokoroEngine:
@@ -84,6 +94,36 @@ def load_vocab(tokenizer: Path) -> dict[str, int]:
     """Phoneme to token id, from the model's tokenizer.json."""
     data = json.loads(tokenizer.read_text(encoding="utf-8"))
     return {symbol: int(i) for symbol, i in data["model"]["vocab"].items()}
+
+
+def check_phonemes(dictionary: PronunciationDictionary, vocab: dict[str, int]) -> None:
+    """Stop on a phoneme entry using a symbol Kokoro has no sound for.
+
+    `plan` leaves such symbols out, which suits stray symbols from misaki or espeak-ng,
+    but a symbol someone typed into an entry is a mistake to show them.
+    """
+    for entry in dictionary.entries:
+        missing = list(dict.fromkeys(c for c in entry.phonemes or "" if c not in vocab))
+        if not missing:
+            continue
+        named = [_describe_symbol(c) for c in missing]
+        named = ", ".join(named[:-1]) + " and " + named[-1] if len(named) > 1 else named[0]
+        tips = [_LOOKALIKES[c] for c in missing if c in _LOOKALIKES]
+        raise PronunciationError(
+            f"The phonemes for {entry.where()} use {named}, which the voice has no sound for.",
+            hint=" ".join(
+                [
+                    *(tip[0].upper() + tip[1:] + "." for tip in tips),
+                    f"The symbols are listed at {PHONEMES_GUIDE}. To start from what the voice "
+                    'says now, run: dogear say "the word" -o test.wav --phonemes',
+                ]
+            ),
+        )
+
+
+def _describe_symbol(c: str) -> str:
+    """A symbol by its look and its Unicode name, which a screen reader can say clearly."""
+    return f"'{c}' ({unicodedata.name(c, f'U+{ord(c):04X}').lower()})"
 
 
 def split_phonemes(phonemes: str, limit: int) -> list[str]:

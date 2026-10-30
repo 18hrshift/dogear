@@ -7,8 +7,8 @@ import zipfile
 import pytest
 from kokoro_fakes import use_fake_session, write_tokenizer, write_voice
 
-from dogear.errors import ToolNotFoundError, VoiceError
-from dogear.voice import _check_engine, find_voice, make_engine, prepare_kokoro
+from dogear.errors import PronunciationError, ToolNotFoundError, VoiceError
+from dogear.voice import _check_engine, find_voice, make_engine, prepare_kokoro, prepare_spacy
 from dogear.voice import downloads as downloads_module
 from dogear.voice.catalog import (
     catalog,
@@ -260,3 +260,58 @@ def test_make_engine_keys_differ_by_voice(config, ready_engine):
     config["voice"]["voice"] = "bf_emma"
     emma = make_engine(config, print).plan("Good morning.")
     assert heart.key != emma.key
+
+
+# The user's pronunciation files.
+
+
+def use_words(config, tmp_path, text, name="words.toml"):
+    path = tmp_path / name
+    path.write_text("[words]\n" + text, encoding="utf-8")
+    config["pronunciation"]["files"] = [str(path)]
+    return path
+
+
+# spaCy's blank pipeline stands in for the model here. It tags nothing, so misaki would
+# send a period right after a pinned word to espeak-ng; these sentences avoid that.
+
+
+def test_make_engine_pins_phoneme_entries(config, ready_engine, tmp_path):
+    use_words(config, tmp_path, 'Lanyon = { phonemes = "lˈænjən" }\n')
+    assert make_engine(config, print).plan("Hello Lanyon").payload == "həlˈO lˈænjən"
+
+
+def test_changing_a_phoneme_entry_changes_only_its_sentences_keys(config, ready_engine, tmp_path):
+    use_words(config, tmp_path, 'Lanyon = { phonemes = "lˈænjən" }\n')
+    first = make_engine(config, print)
+    use_words(config, tmp_path, 'Lanyon = { phonemes = "lˈɑnjən" }\n')
+    second = make_engine(config, print)
+    assert first.plan("Lanyon said hello.").key != second.plan("Lanyon said hello.").key
+    assert first.plan("Good morning.").key == second.plan("Good morning.").key
+
+
+def test_a_bad_pronunciation_file_stops_before_any_download(
+    config, models, fake_downloads, tmp_path
+):
+    config["tools"]["espeak_ng"] = sys.executable
+    config["pronunciation"]["files"] = [str(tmp_path / "missing.toml")]
+    with pytest.raises(PronunciationError, match="Pronunciation file not found"):
+        make_engine(config, print)
+    assert fake_downloads == []
+
+
+def test_a_phoneme_the_voice_lacks_stops_the_engine(config, ready_engine, tmp_path):
+    path = use_words(config, tmp_path, 'Gale = { phonemes = "gˈAl" }\n')  # keyboard g, not ɡ
+    with pytest.raises(PronunciationError, match="'g' \\(latin small letter g\\)") as err:
+        make_engine(config, print)
+    assert f"'Gale' in {path}" in err.value.message
+    assert ready_engine.instances == []  # stopped before loading the model
+
+
+def test_prepare_spacy_downloads_only_the_spacy_model(config, models, fake_downloads):
+    folder = prepare_spacy(config, print)
+    assert folder == spacy_model_dir(models)
+    assert (folder / "config.cfg").is_file()
+    assert fake_downloads == [["en_core_web_sm-3.8.0-py3-none-any.whl"]]
+    assert prepare_spacy(config, print) == folder
+    assert fake_downloads[1] == []  # nothing more to fetch

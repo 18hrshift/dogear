@@ -28,9 +28,12 @@ from dogear.document import (
 )
 from dogear.errors import DogearError
 from dogear.extract import extract_book
-from dogear.make import FORMATS, MakeRequest, make_audiobook, parse_sections
+from dogear.make import MakeRequest, make_audiobook, parse_formats, parse_sections
 from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
+from dogear.pronunciations import dictionary_from_config
+from dogear.say import say_text
+from dogear.unknown_words import WordsRequest, find_unknown_words
 from dogear.voice import find_voice, prepare_kokoro
 from dogear.voice.catalog import kokoro_voices
 
@@ -38,6 +41,7 @@ KIND_NAMES = {"front": "front matter", "body": "main text", "back": "back matter
 _GRADE_ORDER = "ABCDF"
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
+SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,6 +73,14 @@ def _parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", type=Path, help="settings file (TOML) to use")
     common.add_argument("-v", "--verbose", action="store_true", help="explain each step")
+    word_files = argparse.ArgumentParser(add_help=False)
+    word_files.add_argument(
+        "--words",
+        action="append",
+        type=Path,
+        metavar="FILE",
+        help="a pronunciation file to use as well as any in your settings; repeat for more",
+    )
 
     # --config and -v live on each command only: an argparse parent shared with the main
     # parser would reset them to None after the command name.
@@ -89,7 +101,7 @@ def _parser() -> argparse.ArgumentParser:
 
     text = commands.add_parser(
         "text",
-        parents=[common],
+        parents=[common, word_files],
         help="show the text Dogear found",
         description="Show the text Dogear extracted, to check it before making audio.",
     )
@@ -104,12 +116,13 @@ def _parser() -> argparse.ArgumentParser:
 
     make = commands.add_parser(
         "make",
-        parents=[common],
+        parents=[common, word_files],
         help="make an audiobook",
         description=(
-            "Read a book aloud and save it as an M4B audiobook, a folder of MP3 files, or "
-            "both. The first run downloads the voice (about 340 MB). Stopping part way is "
-            "safe: run the same command again and it continues where it left off."
+            "Read a book aloud and save it as an M4B audiobook, a folder of MP3 files, an "
+            "EPUB or DAISY talking book, or several of these. The first run downloads the "
+            "voice (about 340 MB). Stopping part way is safe: run the same command again "
+            "and it continues where it left off."
         ),
     )
     make.add_argument("book", type=Path, help=BOOK_HELP)
@@ -118,16 +131,57 @@ def _parser() -> argparse.ArgumentParser:
     )
     make.add_argument(
         "--format",
-        choices=[*FORMATS, "both"],
-        help="m4b: one audiobook file; mp3: a folder of MP3 files; both (default: from config)",
+        metavar="LIST",
+        help="what to make, separated by commas: m4b (one audiobook file), mp3 (a folder of "
+        "MP3 files), epub (EPUB 3 talking book), daisy (DAISY 2.02 talking book), or all "
+        "(default: from config)",
     )
     make.add_argument("--voice", help="voice name, from `dogear voices`")
     make.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
-    make.add_argument(
-        "--sections", metavar="LIST", help="only these sections from outline, such as 3 or 1-3,7"
-    )
+    make.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
     make.add_argument("--language", help="the book's language, if its own label is wrong")
     make.set_defaults(run=_make)
+
+    words = commands.add_parser(
+        "words",
+        parents=[common, word_files],
+        help="list the words the voice doesn't know",
+        description=(
+            "List the words in a book that the voice doesn't know and has to guess, most "
+            "frequent first: usually names. Listen to them with `dogear say`, and fix any "
+            "that sound wrong in a pronunciation file. Words your pronunciation files "
+            "already cover aren't listed. The first run downloads a small language model "
+            "(about 13 MB), not the whole voice."
+        ),
+    )
+    words.add_argument("book", type=Path, help=BOOK_HELP)
+    words.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
+    words.add_argument("--language", help="the book's language, if its own label is wrong")
+    words.add_argument("--voice", help="voice name, from `dogear voices` (accents differ)")
+    words.set_defaults(run=_words)
+
+    say = commands.add_parser(
+        "say",
+        parents=[common, word_files],
+        help="say a few words into a WAV file",
+        description=(
+            "Say a short text with the voice, speed, and pronunciation files `dogear make` "
+            "would use, and save it as a WAV file. Use it to hear how a word comes out "
+            "before and after adding it to a pronunciation file."
+        ),
+    )
+    say.add_argument("text", help="what to say, in quotes")
+    say.add_argument(
+        "-o", "--output", type=Path, required=True, help="the WAV file to save, such as test.wav"
+    )
+    say.add_argument("--voice", help="voice name, from `dogear voices`")
+    say.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
+    say.add_argument(
+        "--phonemes",
+        action="store_true",
+        help="also show the phonemes the voice read, for writing phoneme entries",
+    )
+    say.set_defaults(run=_say)
 
     voices = commands.add_parser(
         "voices",
@@ -195,6 +249,8 @@ def _describe(section: Section) -> str:
 
 
 def _text(args: argparse.Namespace, config: Config) -> int:
+    if args.spoken or args.words:
+        _use_word_files(args, config)
     book = extract_book(args.book, config)
     sections = _chosen_sections(book, args.section)
     if args.spoken:
@@ -262,8 +318,9 @@ def _block_lines(block) -> list[str]:
 
 def _make(args: argparse.Namespace, config: Config) -> int:
     _apply_voice_options(args, config)
+    _use_word_files(args, config)
     if args.format:
-        config["output"]["formats"] = list(FORMATS) if args.format == "both" else [args.format]
+        config["output"]["formats"] = parse_formats(args.format)
     request = MakeRequest(
         book=args.book,
         output_dir=args.output_dir or args.book.resolve().parent,
@@ -274,6 +331,53 @@ def _make(args: argparse.Namespace, config: Config) -> int:
     for path in saved:
         print(f"Saved: {path}")
     return 0
+
+
+def _words(args: argparse.Namespace, config: Config) -> int:
+    _apply_voice_options(args, config)
+    _use_word_files(args, config)
+    request = WordsRequest(
+        book=args.book,
+        sections=parse_sections(args.sections) if args.sections else None,
+        language=args.language,
+    )
+    unknown = find_unknown_words(request, config, _report)
+    where = "these sections" if args.sections else "this book"
+    if not unknown:
+        print(f"The voice knows every word in {where}.")
+        return 0
+    print(
+        f"{_count(len(unknown), 'word')} in {where} the voice doesn't know, most frequent "
+        "first. It guesses how to say them."
+    )
+    print()
+    for number, word in enumerate(unknown, start=1):
+        print(f"{number}. {word.word}, {_count(word.count, 'time')}.")
+    print()
+    print(
+        'To hear one, run: dogear say "the word in a sentence" -o test.wav. To fix one, add '
+        "it to a pronunciation file (the README shows how) and pass the file with --words."
+    )
+    return 0
+
+
+def _say(args: argparse.Namespace, config: Config) -> int:
+    _apply_voice_options(args, config)
+    _use_word_files(args, config)
+    for said in say_text(args.text, args.output, config, _report):
+        print(f"Said: {said.spoken}")
+        if args.phonemes:
+            print(f"Phonemes: {said.voice_input}")
+    print(f"Saved: {args.output}")
+    return 0
+
+
+def _use_word_files(args: argparse.Namespace, config: Config) -> None:
+    """Add the --words files after the configured ones, so their entries win, and read
+    every file now, so a mistake in one is reported before anything slow."""
+    added = [str(path) for path in args.words or []]
+    config["pronunciation"]["files"] = [*config["pronunciation"]["files"], *added]
+    dictionary_from_config(config)
 
 
 def _voices(args: argparse.Namespace, config: Config) -> int:

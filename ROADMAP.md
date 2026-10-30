@@ -25,9 +25,14 @@ and documented.
 | Network | Offline by default | Cloud voices are opt-in and warn that the book text leaves the machine. |
 | Pronunciation | misaki dictionaries, then the eSpeak NG program | misaki (Apache-2.0) is what Kokoro was trained with. Its packaged English setup loads espeak-ng as a GPL library, so Dogear runs the espeak-ng program instead, only for words misaki doesn't know. |
 | Pace and level | Speed 0.9, -20 LUFS | Kokoro at 1.0 read about 190 words a minute; narrators average about 155. Its peaks are high for its loudness, so -20 LUFS (inside ACX's range) needs about 5 dB of limiting where -18 needed 7. |
+| DAISY | DAISY 2.02, written by Dogear itself; DAISY Pipeline 2 (1.15.5) only validates it | Every player surveyed in October 2026 that reads DAISY 3 also reads 2.02, so DAISY 3 isn't needed now (it would matter for a library that requires it). Dogear already has exact timings, and writing the files itself keeps installs Python-only. Pipeline 2 is a Java server, and in a test its own EPUB to DAISY conversion left out metadata and failed its own validator. |
+
+| Talking-book audio | Constant-bitrate mono MP3 at 44.1 kHz, 64 kbps | The one sample rate DAISY 2.02 players, DAISY 3 players, and EPUB's core MP3 type all accept. The voice makes 24 kHz; resampling doesn't move the sync times. |
+| Title track | On by default, unless the book opens with its own title page | DAISY 2.02 requires the book's title first. Every format gets the same opening, and a book whose title page already says it doesn't say it twice. |
+| Accessibility claims | Say what the book has; claim no WCAG conformance | A conformance claim means a person evaluated the book. Dogear can't do that for any book it is given, so its EPUBs describe their features and say no one has checked them. |
 
 **Open question:** who is the first real listener, and what device do they use? That decides
-which output Phase 1 polishes first.
+which output Phase 2 polishes first.
 
 ## Phase 0: Foundation
 
@@ -81,14 +86,19 @@ Goal: one command turns an EPUB or PDF into a good-sounding M4B on a laptop with
 
 Goal: output a listener can navigate without sight.
 
-- [ ] EPUB 3 with Media Overlays. Sentence-level rendering already gives exact timings for
+- [x] EPUB 3 with Media Overlays. Sentence-level rendering already gives exact timings for
       every sentence, which is what the SMIL sync files need.
-- [ ] DAISY output (2.02 for the widest player support; DAISY 3 to evaluate). Evaluate
-      generating it ourselves versus handing EPUB 3 to DAISY Pipeline 2.
-- [ ] Navigation by heading level and by print page.
-- [ ] User-editable pronunciation dictionary (names, places, jargon).
-- [ ] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY validators
-      for DAISY.
+- [x] DAISY 2.02 output with full text and full audio: headings at every level, print
+      pages, and each sentence tied to its audio. Dogear writes it itself; DAISY Pipeline
+      2 only validates it (`scripts/check-daisy.sh`). DAISY 3 isn't needed now (see the
+      decisions above).
+- [x] Navigation by heading level and by print page: every heading in the EPUB contents
+      and the DAISY NCC, at levels settled across the book so none is skipped, and print
+      pages in the EPUB page list and the NCC.
+- [x] User-editable pronunciation dictionary (names, places, jargon).
+- [x] Every output validated in CI: EPUBCheck and Ace by DAISY for EPUB 3, DAISY Pipeline
+      2's validator for DAISY (the Talking books job, on the fixture with the real voice and
+      on sample books that use every kind of block).
 - [ ] Tested by at least one blind or low-vision listener on Thorium Reader and one hardware
       or app player.
 

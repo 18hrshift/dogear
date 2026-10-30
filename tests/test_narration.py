@@ -18,7 +18,7 @@ from dogear.document import (
     Section,
     Table,
 )
-from dogear.narration import Utterance, narrate_book
+from dogear.narration import Utterance, narrate_book, narrate_title
 
 
 def book(*sections: Section, lang: str | None = None) -> Book:
@@ -507,3 +507,137 @@ def test_word_settings_change_the_words(config, narration):
     ]
     narration["tables"] = "skip"
     assert spoken(narrate(config, Heading(1, "H"), table))[1:] == ["Grid.", "Grid left out."]
+
+
+# Passages: where each block sits among the utterances, for read-along text.
+
+
+def section_narration(config, *blocks, title="The Storm", **section):
+    [narration] = narrate_book(book(Section(title, blocks=list(blocks), **section)), config)
+    return narration
+
+
+def shown(narration, part: range) -> list[str]:
+    return [narration.utterances[i].text for i in part]
+
+
+def test_each_block_gets_a_passage_in_reading_order(config):
+    note = Footnote("n1", "Written in 1886.")
+    blocks = (
+        Heading(1, "One"),
+        PageMarker("7"),
+        Paragraph("It rained. It poured.", note_refs=("n1",)),
+        ListBlock(("Milk.", "Eggs. Then bread."), ordered=True),
+        SceneBreak(),
+        TABLE,
+        Image(alt="A map.", caption="The town."),
+        note,
+    )
+    narration = section_narration(config, *blocks)
+    passages = narration.passages
+    # The note is read after its paragraph, so its passage is there, not where it's printed.
+    assert [p.block for p in passages] == [*blocks[:3], note, *blocks[3:7]]
+    heading, page, paragraph, read_note, items, scene, table, image = passages
+    assert shown(narration, heading.parts[0]) == ["One"]
+    assert page.parts == (range(2, 2),)  # silent: a position only
+    assert shown(narration, paragraph.parts[0]) == ["It rained.", "It poured."]
+    assert shown(narration, read_note.parts[0]) == ["Note: Written in 1886."]
+    assert [shown(narration, p) for p in items.parts] == [["Milk."], ["Eggs.", "Then bread."]]
+    assert scene.parts == ()
+    assert [shown(narration, p) for p in table.parts] == [
+        ["Table: Ages."],
+        ["Row 1: Name: Ann; Age: 30."],
+        ["Row 2: Name: Bob."],
+    ]
+    assert [shown(narration, p) for p in image.parts] == [["Image: A map."], ["The town."]]
+
+
+def test_ordered_list_numbers_are_said_but_not_shown(config):
+    narration = section_narration(config, ListBlock(("Buy milk.", "Get eggs."), ordered=True))
+    item = narration.passages[-1]
+    first = narration.utterances[item.parts[0][0]]
+    assert (first.text, first.spoken) == ("Buy milk.", "one: Buy milk.")
+
+
+def test_every_spoken_utterance_belongs_to_a_passage(config, narration):
+    narration["announce_pages"] = True
+    narration["footnotes"] = "end_of_section"
+    result = section_narration(
+        config, PageMarker("1"), Paragraph("Text.", note_refs=("n1",)), NOTE, title="Untitled"
+    )
+    covered = {i for p in result.passages for part in p.parts for i in part}
+    spoken_indexes = {i for i, u in enumerate(result.utterances) if u.spoken}
+    assert spoken_indexes == covered
+
+
+def test_added_headings_are_passages_too(config, narration):
+    narration["footnotes"] = "end_of_section"
+    result = section_narration(config, Paragraph("Text."), NOTE, title="Untitled")
+    headings = [p.block for p in result.passages if isinstance(p.block, Heading)]
+    assert headings == [Heading(1, "Untitled"), Heading(2, "Notes")]
+
+
+def test_an_added_title_takes_the_level_most_sections_open_with(config):
+    sections = [
+        Section("One", blocks=[Heading(2, "One"), Paragraph("x.")]),
+        Section("Two", blocks=[Heading(2, "Two"), Paragraph("y.")]),
+        Section("Plates", blocks=[Paragraph("z.")]),
+    ]
+    narrations = narrate_book(book(*sections), config)
+    assert narrations[2].passages[0].block == Heading(2, "Plates")
+
+
+def test_skipped_tables_and_silent_images(config, narration):
+    narration["tables"] = "skip"
+    result = section_narration(config, Heading(1, "H"), TABLE, Image(alt=""))
+    table = result.passages[-1]
+    assert table.block == TABLE
+    assert [shown(result, p) for p in table.parts] == [["Table: Ages.", "Table not read."]]
+    assert len(result.passages) == 2  # the decorative image adds nothing to show
+
+
+# The title track.
+
+
+def test_the_title_track_says_the_title_and_authors(config, pause):
+    title_book = Book(
+        Metadata("Dr. Jekyll", authors=["Ann Smith", "Bob Jones", "Cy Young"]),
+        [],
+        Path("book.epub"),
+        "epub",
+    )
+    track = narrate_title(title_book, config)
+    assert track.number == 0
+    assert track.section.title == "Dr. Jekyll"
+    assert spoken(track.utterances) == [
+        "Doctor Jekyll.",
+        "By Ann Smith, Bob Jones and Cy Young.",
+    ]
+    assert [type(p.block) for p in track.passages] == [Heading, Paragraph]
+    assert track.utterances[-1].pause_ms == pause["section_end_ms"]
+
+
+def test_the_title_track_without_authors_is_just_the_title(config):
+    track = narrate_title(book(), config)
+    assert spoken(track.utterances) == ["A Book."]
+
+
+def test_title_track_words_come_from_config(config, narration):
+    narration["words"]["by"] = "Written by"
+    narration["words"]["and"] = "&"
+    title_book = Book(Metadata("T", authors=["A", "B"]), [], Path("b.epub"), "epub")
+    assert spoken(narrate_title(title_book, config).utterances)[1] == "Written by A & B."
+
+
+def test_page_markers_before_the_opening_heading_follow_it(config, narration):
+    narration["announce_pages"] = True
+    result = section_narration(config, PageMarker("5"), Heading(1, "Two"), Paragraph("Text."))
+    assert spoken(result.utterances) == ["Two.", "Page five.", "Text."]
+    assert [type(p.block) for p in result.passages] == [Heading, PageMarker, Paragraph]
+
+
+def test_page_markers_before_other_text_stay_where_they_are(config, narration):
+    narration["announce_pages"] = True
+    result = section_narration(config, PageMarker("5"), Paragraph("Text."), title="Two")
+    # The title Dogear adds still comes first; the page is announced where it was printed.
+    assert spoken(result.utterances) == ["Two.", "Page five.", "Text."]

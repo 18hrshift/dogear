@@ -1,0 +1,71 @@
+/* Dogear talking book. Reading apps let a reader choose fonts, sizes, and colors, so
+   these rules set none of those for the text itself: they only mark structure. Lines
+   and borders use the text's own color, so they show in light and dark themes alike. */
+
+/* The words being read aloud: black on yellow (about 19 to 1 contrast) and underlined,
+   so the place is clear without relying on color. */
+.-epub-media-overlay-active {
+  background-color: #ffff00;
+  color: #000000;
+  text-decoration: underline;
+  text-decoration-thickness: 0.15em;
+  text-underline-offset: 0.2em;
+}
+
+/* Where a print page begins, with its number, set apart on its own line. */
+.pagebreak {
+  display: block;
+  margin: 1em 0;
+  border-top: 1px solid;
+  text-align: right;
+  font-size: 0.85em;
+}
+
+hr.scene-break {
+  margin: 2em auto;
+  width: 30%;
+  border: 0;
+  border-top: 1px solid;
+}
+
+.note {
+  margin: 1em 0;
+  padding-left: 0.75em;
+  border-left: 0.25em solid;
+}
+
+.note-label {
+  font-weight: bold;
+}
+
+figure.image {
+  margin: 1em 0;
+  padding: 0.5em 0.75em;
+  border: 1px dashed;
+}
+
+figure.image p {
+  margin: 0;
+}
+
+table {
+  margin: 1em 0;
+  border-collapse: collapse;
+}
+
+caption {
+  text-align: left;
+  font-weight: bold;
+}
+
+th,
+td {
+  padding: 0.25em 0.5em;
+  border: 1px solid;
+  text-align: left;
+  vertical-align: top;
+}
+
+.titlepage {
+  text-align: center;
+}

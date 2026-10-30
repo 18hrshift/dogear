@@ -12,3 +12,8 @@ class ChapterAudio:
 
     title: str
     path: Path
+    # Where each utterance of the section's narration starts, in samples from the start
+    # of the file, then the file's length: what talking-book output syncs text to.
+    # Empty when unknown, such as for audio Dogear didn't speak.
+    marks: tuple[int, ...] = ()
+    sample_rate: int = 0  # of `marks`

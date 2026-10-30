@@ -47,7 +47,7 @@ def unit_word(pair: Pair, amount: str) -> str:
 def keep_final_period(match: re.Match[str], words: str) -> str:
     """`words` to put in place of `match`, with one period where the sentence ends.
 
-    "fruits, etc." ends its sentence, so "etcetera" keeps the period. "3 pm." must not
+    "fruits, etc." ends its sentence, so "et cetera" keeps the period. "3 pm." must not
     become "three p.m.." when the spoken suffix brings its own period.
     """
     after = match.string[match.end() :]

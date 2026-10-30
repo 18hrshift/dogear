@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 from kokoro_fakes import STYLE_WIDTH, use_fake_session, write_tokenizer, write_voice
 
-from dogear.voice.kokoro import KokoroEngine, load_vocab, split_phonemes
+from dogear.errors import PronunciationError
+from dogear.pronunciations import load_dictionary
+from dogear.voice.kokoro import KokoroEngine, check_phonemes, load_vocab, split_phonemes
 
 # split_phonemes
 
@@ -215,3 +217,41 @@ def test_nothing_to_say_is_empty_audio(make, session):
     assert audio.dtype == np.float32
     assert len(audio) == 0
     assert session.instances[0].feeds == []
+
+
+# check_phonemes: symbols in the user's phoneme entries.
+
+VOCAB = {c: i for i, c in enumerate(" abcdelnjæəˈˌɡ", start=1)}
+
+
+def dictionary(tmp_path, text):
+    path = tmp_path / "words.toml"
+    path.write_text("[words]\n" + text, encoding="utf-8")
+    return load_dictionary([path]), path
+
+
+def test_symbols_the_voice_has_pass(tmp_path):
+    words, _ = dictionary(tmp_path, 'Lanyon = { phonemes = "lˈænjən" }\nX = "anything ✓"\n')
+    check_phonemes(words, VOCAB)
+
+
+def test_a_symbol_the_voice_lacks_names_the_symbol_and_the_entry(tmp_path):
+    words, path = dictionary(
+        tmp_path, 'Lanyon = { phonemes = "lˈænjən" }\nGale = { phonemes = "gˈAl" }\n'
+    )
+    with pytest.raises(PronunciationError) as err:
+        check_phonemes(words, VOCAB)
+    assert err.value.message == (
+        f"The phonemes for 'Gale' in {path} use 'g' (latin small letter g) and 'A' (latin "
+        "capital letter a), which the voice has no sound for."
+    )
+    assert "ɡ, the script g (U+0261)" in err.value.hint
+    assert "EN_PHONES.md" in err.value.hint
+    assert "--phonemes" in err.value.hint
+
+
+def test_an_apostrophe_for_stress_gets_a_tip(tmp_path):
+    words, _ = dictionary(tmp_path, 'Lanyon = { phonemes = "l\'ænjən" }\n')
+    with pytest.raises(PronunciationError, match="'\\'' \\(apostrophe\\)") as err:
+        check_phonemes(words, VOCAB)
+    assert "Stress is written ˈ (U+02C8)" in err.value.hint

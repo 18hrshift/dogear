@@ -31,7 +31,7 @@ def test_word_tables_merge_instead_of_replacing(tmp_path):
     table = config["speech"]["abbreviations"]
     assert table["approx."] == "about"
     assert table["w/"] == "with"
-    assert table["etc."] == "etcetera"
+    assert table["etc."] == "et cetera"
 
 
 def test_pair_tables_merge_instead_of_replacing(tmp_path):
@@ -90,3 +90,22 @@ def test_defaults_are_not_shared_between_loads(tmp_path):
     first = load_config(None)
     first["pdf"]["page_split_size"] = 999
     assert load_config(None)["pdf"]["page_split_size"] != 999
+
+
+def test_pronunciation_files_are_a_list_of_paths(tmp_path):
+    config = load_config(write(tmp_path, "[pronunciation]\nfiles = ['~/a.toml', 'b.toml']\n"))
+    assert config["pronunciation"]["files"] == ["~/a.toml", "b.toml"]
+    assert default_config()["pronunciation"]["files"] == []
+
+
+@pytest.mark.parametrize(
+    ("toml", "message"),
+    [
+        ("[pronunciation]\nfiles = 'words.toml'\n", "must be list"),
+        ("[pronunciation]\nfiles = [1]\n", "Every item in 'pronunciation.files' must be str"),
+        ("[pronunciation]\nfile = []\n", "Unknown setting 'pronunciation.file'"),
+    ],
+)
+def test_bad_pronunciation_settings_fail_at_the_door(tmp_path, toml, message):
+    with pytest.raises(ConfigError, match=message):
+        load_config(write(tmp_path, toml))

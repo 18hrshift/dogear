@@ -32,7 +32,7 @@ def say_with(config, change):
     ("text", "expected"),
     [
         ("Dr. Smith", "Doctor Smith"),
-        ("fruits, vegetables, etc.", "etcetera"),
+        ("fruits, vegetables, etc.", "et cetera"),
         ("cats vs. dogs", "versus"),
         ("There were 42 apples.", "forty-two"),
         ("He finished 1st in the race.", "first"),
@@ -44,7 +44,7 @@ def test_ported_expansions(say, text, expected):
 
 def test_ported_full_pipeline(say):
     result = say("Dr. Johnson published 3 papers in 1999, etc.")
-    assert result == "Doctor Johnson published three papers in nineteen ninety-nine, etcetera."
+    assert result == "Doctor Johnson published three papers in nineteen ninety-nine, et cetera."
 
 
 # Bugs in the old preprocessor, fixed here.
@@ -116,8 +116,8 @@ def test_markup_characters_removed(say):
 
 
 def test_abbreviation_period_kept_only_at_sentence_end(say):
-    assert say("apples, etc. and pears") == "apples, etcetera and pears"
-    assert say("apples, etc.") == "apples, etcetera."
+    assert say("apples, etc. and pears") == "apples, et cetera and pears"
+    assert say("apples, etc.") == "apples, et cetera."
 
 
 # Config is the source of truth.
@@ -506,3 +506,75 @@ def test_split_then_normalize(config, say):
         "Then we left at ten a.m.",
         "Bring one dollar and fifty cents.",
     ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It was published in 1886 by\nRobert Louis Stevenson.",
+        "It was published in 1886 by \n Robert Louis Stevenson.",
+        "It was published in 1886  by\r\n\tRobert   Louis Stevenson.",
+    ],
+)
+def test_line_breaks_and_runs_of_spaces_are_one_space(say, text):
+    assert say(text) == "It was published in eighteen eighty-six by Robert Louis Stevenson."
+
+
+# The user's pronunciation files, set in config.
+
+
+@pytest.fixture
+def with_words(config, tmp_path):
+    """Normalize with a pronunciation file holding `text`; returns (say, heading)."""
+
+    def build(text):
+        path = tmp_path / "words.toml"
+        path.write_text(text, encoding="utf-8")
+        custom = copy.deepcopy(config)
+        custom["pronunciation"]["files"] = [str(path)]
+        rules = SpeechRules.from_config(custom)
+        return (
+            lambda t: normalize_for_speech(t, rules, "en"),
+            lambda t: normalize_heading(t, rules, "en"),
+        )
+
+    return build
+
+
+def test_pronunciation_files_change_what_is_said(say, with_words):
+    assert say("Utterson came.") == "Utterson came."
+    said, _ = with_words('[words]\nUtterson = "utter son"\n')
+    assert said("Utterson came.") == "Utter son came."
+
+
+def test_sounds_like_comes_before_dogears_own_rewrites(say, with_words):
+    said, _ = with_words('[words]\n"St. John" = "sin jun"\n"No. 5" = "number five, please"\n')
+    assert said("St. John and St. Paul.") == "Sin jun and Saint Paul."
+    assert said("Try No. 5 today.") == "Try Number five, please today."
+    assert say("St. John.") == "Saint John."
+
+
+def test_a_name_keeps_its_title_after_a_sounds_like_entry(with_words):
+    # "Mr." becomes "Mister" only before a capitalized word.
+    said, _ = with_words('[words]\nUtterson = "utter son"\n')
+    assert said("Mr. Utterson's friend.") == "Mister Utter son's friend."
+
+
+def test_the_spelling_is_normalized_like_any_text(with_words):
+    said, _ = with_words('[words]\nR2D2 = "R 2 D 2"\n')
+    assert said("R2D2 beeped.") == "R two D two beeped."
+
+
+def test_phoneme_entries_are_left_for_the_voice(with_words):
+    said, _ = with_words('[words]\nLanyon = { phonemes = "lˈænjən" }\n')
+    assert said("Dr. Lanyon's house.") == "Doctor Lanyon's house."
+
+
+def test_headings_use_pronunciation_files_too(with_words):
+    _, heading = with_words('[words]\nUtterson = "utter son"\n')
+    assert heading("CHAPTER IV: UTTERSON") == "CHAPTER four: Utter son"
+
+
+def test_curly_apostrophes_in_the_book_match(with_words):
+    said, _ = with_words('[words]\n"O\'Brien" = "oh bryan"\n')
+    assert said("O’Brien’s cat.") == "Oh bryan's cat."

@@ -88,7 +88,7 @@ roman_numeral_keywords = [
 
 # Always expanded.
 [speech.abbreviations]
-"etc." = "etcetera"
+"etc." = "et cetera"  # two words: the voice's dictionary has no "etcetera"
 "vs." = "versus"
 "e.g." = "for example"
 "i.e." = "that is"
@@ -208,9 +208,21 @@ roman_numeral_keywords = [
 "km/h" = ["kilometer per hour", "kilometers per hour"]
 "kph" = ["kilometer per hour", "kilometers per hour"]
 
+[pronunciation]
+# Your own pronunciation files, for names, places, and other words the voice says wrong.
+# Each file lists words and how to say them; the README explains how to write one. Give
+# each file's full path in quotes, such as "~/books/words.toml" (~ is your home folder)
+# or "C:/Users/me/words.toml". List as many as you like, separated by commas. When two
+# files list the same word, the one later in the list wins. To add a file for one run
+# only, use --words FILE with `dogear make`, `text`, `words`, or `say`.
+files = []
+
 [audio]
 mp3_quality = 4      # libmp3lame VBR quality: 0 is best, 9 is smallest
 m4b_bitrate = "128k"
+# Talking books (EPUB and DAISY) use constant-bitrate mono MP3, which every DAISY player
+# can play. 64k keeps a voice clear at about 29 MB an hour; 48k is smaller.
+talking_book_bitrate = "64k"
 # Each chapter is turned up or down by one fixed amount (linear gain, so nothing pumps)
 # to land at this integrated loudness. -20 LUFS sits inside the -18 to -23 dB RMS range
 # ACX (Audible) asks of audiobooks. Kokoro's peaks are high for its loudness: its
@@ -276,6 +288,10 @@ tables = "read"
 announce_undescribed_images = false
 # Say "Page 42" where each print page begins, for listeners following a print copy.
 announce_pages = false
+# Start with a short track that says the book's title and who wrote it, unless the book
+# opens with its own title page. Talking books (EPUB and DAISY) open on it too, as their
+# players expect.
+announce_title = true
 
 # Silence, in milliseconds. Longer pauses mark bigger breaks, so a listener hears the
 # structure.
@@ -297,6 +313,8 @@ table = "Table"
 row = "Row"
 page = "Page"
 table_skipped = "Table not read."
+by = "By"  # the title track: "By Robert Louis Stevenson."
+and = "and"  # "By Ann Smith and Bob Jones."
 
 [render]
 # Where rendered sentences are kept so later runs reuse them. Empty means the usual
@@ -311,6 +329,8 @@ edge_silence_db = -50.0
 edge_silence_keep_ms = 60
 
 [output]
-# What `dogear make` produces: "m4b" (one audiobook file with chapters) and/or "mp3"
-# (a folder of numbered MP3 files with a playlist).
+# What `dogear make` produces, one or more of: "m4b" (one audiobook file with chapters),
+# "mp3" (a folder of numbered MP3 files with a playlist), "epub" (an EPUB 3 talking book:
+# the text and the audio in step, for reading apps such as Thorium Reader), and "daisy"
+# (a DAISY 2.02 talking book, for DAISY players and apps).
 formats = ["m4b"]
