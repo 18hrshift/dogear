@@ -38,6 +38,11 @@ OutputBaseFilename={#OutputBaseName}
 Name: addtopath; Description: "Add the dogear command to PATH, to use it in Command Prompt or PowerShell"; Flags: unchecked
 Name: desktopicon; Description: "Add Dogear to the desktop"; Flags: unchecked
 
+[InstallDelete]
+; An upgrade replaces the frozen Python folder whole: files an older version had and this
+; one doesn't (such as an older package's metadata) must not linger beside the new ones.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

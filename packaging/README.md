@@ -65,9 +65,12 @@ At run time, `src/dogear/bundle.py` answers "is this a standalone build, and whe
 programs and voice files". `tools.find_tool` uses the program set in config first, then the
 bundled one, then PATH, then known install folders. The catalog uses a bundled voice file
 when the manifest's SHA-256 is the one it expects, so nothing is hashed at startup; other
-voices download to the per-user folder as usual. The bundled espeak-ng gets its data folder
-with `--path`. eSpeak NG is built with a larger path buffer (`N_PATH_HOME=1024`), since by
-default it can't read data from a folder path longer than 160 characters.
+voices download to the per-user folder as usual. The bundled espeak-ng runs in its own
+folder and is told `--path=.`, so the install folder's name never goes on its command line,
+which Windows hands it in the system code page (a user name in another script wouldn't
+survive). It's also built with a larger path buffer (`N_PATH_HOME=1024`): by default it
+can't use a data folder whose path is longer than 160 characters, and its own build reads
+the data it compiles from the build folder, which can be that deep.
 
 A frozen Dogear on Linux runs with `LD_LIBRARY_PATH` pointing into its own folder (set by
 PyInstaller's bootloader). `tools.run_tool` gives every program it runs the value from

@@ -8,7 +8,7 @@ import subprocess
 import tarfile
 
 import pytest
-from dogear_build import linux, macos
+from dogear_build import BuildError, linux, macos
 from dogear_build.pins import load
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="sh scripts for Linux and macOS")
@@ -172,3 +172,30 @@ def test_the_mac_read_me_names_the_minimum_macos():
     major = load().platform("macos-arm64")["minimum_os"].split(".")[0]
     text = (macos.FILES / macos.README).read_text(encoding="utf-8")
     assert f"macOS {major} " in text
+
+
+def test_a_busy_hdiutil_is_tried_again(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(command, check):
+        calls.append(command)
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(16, command)  # "Resource busy"
+
+    monkeypatch.setattr(macos.subprocess, "run", fake_run)
+    monkeypatch.setattr(macos.time, "sleep", lambda seconds: None)
+    frozen = fake_bundle(tmp_path / "frozen")
+    output = macos.make_dmg(frozen, tmp_path, tmp_path / "work", "Dogear-1.0", "1.0", "14.0", print)
+    assert output == tmp_path / "Dogear-1.0.dmg"
+    assert len(calls) == 2 and calls[0][:2] == ["hdiutil", "create"]
+
+
+def test_hdiutil_failing_every_time_stops_the_build(tmp_path, monkeypatch):
+    def fake_run(command, check):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(macos.subprocess, "run", fake_run)
+    monkeypatch.setattr(macos.time, "sleep", lambda seconds: None)
+    frozen = fake_bundle(tmp_path / "frozen")
+    with pytest.raises(BuildError, match="couldn't make the disk image"):
+        macos.make_dmg(frozen, tmp_path, tmp_path / "work", "Dogear-1.0", "1.0", "14.0", print)

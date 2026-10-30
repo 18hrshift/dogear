@@ -14,6 +14,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from dogear_build import BuildError
@@ -24,6 +25,7 @@ APP = "Dogear.app"
 EXECUTABLE = "Dogear"
 BUNDLE_ID = "io.github.18hrshift.dogear"
 README = "Read me first.txt"
+HDIUTIL_TRIES = 3
 
 
 def make_app(frozen: Path, folder: Path, version: str, minimum_os: str) -> Path:
@@ -70,8 +72,17 @@ def make_dmg(
     report(f"Writing {output.name}.")
     command = ["hdiutil", "create", "-volname", "Dogear", "-srcfolder", str(staging)]
     command += ["-fs", "HFS+", "-format", "UDZO", "-ov", str(output)]
-    try:
-        subprocess.run(command, check=True)
-    except (OSError, subprocess.CalledProcessError) as e:
-        raise BuildError(f"hdiutil couldn't make the disk image: {e}") from None
-    return output
+    # hdiutil sometimes fails with "Resource busy" while the system still holds the
+    # staging folder, notably on CI machines; a later try usually works.
+    for attempt in range(1, HDIUTIL_TRIES + 1):
+        try:
+            subprocess.run(command, check=True)
+            return output
+        except subprocess.CalledProcessError as e:
+            if attempt == HDIUTIL_TRIES:
+                raise BuildError(f"hdiutil couldn't make the disk image: {e}") from None
+            report(f"hdiutil failed (exit code {e.returncode}); trying again.")
+            time.sleep(5)
+        except OSError as e:
+            raise BuildError(f"hdiutil couldn't be run: {e}") from None
+    raise AssertionError("unreachable")

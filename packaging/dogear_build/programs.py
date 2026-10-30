@@ -64,7 +64,7 @@ def _fingerprint(pins: Pins, settings: dict[str, Any]) -> str:
 def _bash() -> list[str]:
     if os.name != "nt":
         return ["bash"]
-    root = Path(os.environ.get("DOGEAR_MSYS2", MSYS2_DEFAULT))
+    root = Path(os.environ.get("DOGEAR_MSYS2") or MSYS2_DEFAULT)
     bash = root / "usr" / "bin" / "bash.exe"
     if not bash.is_file():
         raise BuildError(

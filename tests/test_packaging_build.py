@@ -44,10 +44,12 @@ def test_the_macos_minimum_comes_from_the_pins():
 
 
 def test_windows_needs_msys2(monkeypatch, tmp_path):
-    monkeypatch.setattr(programs, "os", SimpleNamespace(name="nt", environ={}))
+    # An empty DOGEAR_MSYS2 (an unset CI output, say) means the usual folder.
+    monkeypatch.setattr(programs, "os", SimpleNamespace(name="nt", environ={"DOGEAR_MSYS2": ""}))
     monkeypatch.setattr(programs, "MSYS2_DEFAULT", str(tmp_path / "no-msys64"))
-    with pytest.raises(BuildError, match="MSYS2 wasn't found"):
+    with pytest.raises(BuildError, match="MSYS2 wasn't found") as err:
         programs._bash()
+    assert str(tmp_path / "no-msys64") in str(err.value)
 
 
 # Freezing.

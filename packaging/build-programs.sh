@@ -86,9 +86,9 @@ unpack "$espeak_archive" espeak-ng
 # pinned archive instead, and built without it (USE_LIBSONIC=OFF), as Dogear only asks
 # espeak-ng for phonemes. The same goes for audio output, MBROLA, and the other synthesizers.
 # eSpeak NG keeps its data folder's path in a fixed buffer, 160 bytes by default outside
-# Windows. An installed app's path can be longer (macOS runs a downloaded app from a long
-# temporary path until it's moved), so the buffer is made bigger with the setting it has
-# for that, N_PATH_HOME.
+# Windows. Its build compiles the data in the build folder, whose path can be longer, and
+# so can the folder a user points it at; the buffer is made bigger with the setting it has
+# for that, N_PATH_HOME. (Dogear itself runs it in its folder with --path=.)
 # (The odd expansion keeps macOS's bash 3.2 from calling an empty array unset.)
 cmake -S "$work/src/espeak-ng" -B "$work/espeak-ng-build" \
   ${cmake_generator[@]+"${cmake_generator[@]}"} \
