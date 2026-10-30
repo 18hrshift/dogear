@@ -47,8 +47,8 @@ def child_command(args: list[str], config_file: Path | None) -> list[str]:
 
 def popen_options() -> dict:
     """What every child is started with: UTF-8 text, its own process tree, a stdin the
-    server never writes to (its end says the server has gone), and no console window on
-    Windows."""
+    server never writes to (its end says the server has gone), files only this user can
+    read (private.py) on Linux and macOS, and no console window on Windows."""
     options: dict = {
         "env": {
             **os.environ,
@@ -61,6 +61,8 @@ def popen_options() -> dict:
     }
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NO_WINDOW
+    else:
+        options["umask"] = 0o077
     return options
 
 

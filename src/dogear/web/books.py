@@ -28,6 +28,7 @@ from dogear.book_summary import BookSummary, summary_from_json, summary_to_json
 from dogear.extract import EXTRACTORS
 from dogear.make import FORMATS
 from dogear.web.atomic import remove_leftovers, write_atomically
+from dogear.web.private import PRIVATE_FOLDER, private_folder
 from dogear.web.progress import LINES_FILE, Progress, ProgressLog
 
 log = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class BookStore:
     def load(self) -> list[str]:
         """Read every saved record. Returns the ids of books that were still being read,
         which need reading again; books that were waiting or being made become stopped."""
-        self.dir.mkdir(parents=True, exist_ok=True)
+        private_folder(self.dir)
         unread = []
         with self._lock:
             for folder in sorted(self.dir.iterdir()):
@@ -157,7 +158,7 @@ class BookStore:
             )
             folder = self.folder(book_id)
             try:
-                folder.mkdir(parents=True)
+                folder.mkdir(mode=PRIVATE_FOLDER)
                 os.replace(upload, folder / record.source_name)
                 self._save(record)
             except OSError:

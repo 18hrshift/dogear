@@ -3,6 +3,10 @@
 The key is in the link `dogear serve` prints. Opening the link swaps it for a cookie, so
 it isn't seen again in the address bar, a page, or a log. The cookie holds a value
 derived from the key, not the key itself.
+
+The browser `dogear serve` opens gets a start token instead of the key: the command
+that opens a browser, link and all, can be seen by other people using the computer (in
+`ps`, say). A token lets one browser in, once, for a short time after Dogear starts.
 """
 
 from __future__ import annotations
@@ -13,11 +17,13 @@ import hmac
 import os
 import re
 import secrets
+import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
 
 from dogear.errors import DogearError
+from dogear.web.private import private_folder
 
 KEY_FILE = "access-key.txt"
 # Letters and digits that can't be mistaken for each other when read aloud or typed on
@@ -27,6 +33,7 @@ KEY_LENGTH = 25
 GROUP = 5  # shown as five groups of five, joined by hyphens
 _KEY_PATTERN = re.compile(f"[{ALPHABET}]{{{KEY_LENGTH}}}")
 COOKIE_MAX_AGE = 400 * 24 * 60 * 60  # the longest browsers keep a cookie
+START_TOKEN_SECONDS = 120  # long enough for a slow computer to open its browser
 
 
 class AccessKey:
@@ -68,7 +75,7 @@ def cookie_name(port: int) -> str:
 def load_or_make_key(folder: Path) -> AccessKey:
     """The key kept in `folder`, made there (readable by this user only) on first run."""
     path = folder / KEY_FILE
-    folder.mkdir(parents=True, exist_ok=True)
+    private_folder(folder, tighten=False)
     try:
         return _read_key(path)
     except FileNotFoundError:
@@ -92,6 +99,34 @@ def _read_key(path: Path) -> AccessKey:
             f"The access key file {path} doesn't hold a key Dogear made.",
             hint="Delete the file and start Dogear again. It makes a new key and a new link.",
         ) from None
+
+
+class StartTokens:
+    """Start tokens: each lets a browser in once, within START_TOKEN_SECONDS."""
+
+    def __init__(self, clock=time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._expiry: dict[str, float] = {}
+
+    def issue(self) -> str:
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            self._expiry[token] = self._clock() + START_TOKEN_SECONDS
+        return token
+
+    def redeem(self, candidate: str) -> bool:
+        """Whether `candidate` is a token that is still good. It is used up if so."""
+        given = candidate.encode("utf-8", "replace")
+        with self._lock:
+            now = self._clock()
+            for token, expiry in list(self._expiry.items()):
+                if expiry <= now:
+                    del self._expiry[token]
+                elif hmac.compare_digest(given, token.encode("ascii")):
+                    del self._expiry[token]
+                    return True
+        return False
 
 
 class WrongKeyDelay:

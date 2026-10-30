@@ -113,8 +113,35 @@ def test_serve_says_where_to_go_and_stops_cleanly(tmp_path, no_server):
     assert said[0] == f"Dogear is running. Open this link in a web browser: {link}"
     assert said[-2] == "Keep this window open while you use Dogear. Press Ctrl+C to stop."
     assert said[-1] == "Stopped."
-    assert no_server.opened == [link]
+    [opened] = no_server.opened
+    assert opened.startswith(f"http://127.0.0.1:{port}/start?token=")
+    assert key not in opened  # the command opening a browser is seen by other users
     assert no_server.runs == [[("127.0.0.1", port)]]
+
+
+def test_the_browser_is_opened_with_a_link_that_works_once(tmp_path, no_server, monkeypatch):
+    apps = []
+
+    def keep(*args):
+        apps.append(server_create_app(*args))
+        return apps[-1]
+
+    server_create_app = server.create_app
+    monkeypatch.setattr(server, "create_app", keep)
+    config = sample_config(tmp_path)
+    serve(ServeOptions(), config, lambda line: None)
+    [opened] = no_server.opened
+    start = opened.removeprefix(BASE)
+    browser = visitor(apps[0], signed_in=False)
+    response = browser.get(start, follow_redirects=False)
+    assert response.status_code == 303
+    assert browser.get("/").status_code == 200
+    assert browser.get(start, follow_redirects=False).headers["location"] == "/"  # let in
+    stranger = visitor(apps[0], signed_in=False)
+    response = stranger.get(start)
+    assert response.status_code == 403
+    assert "That link worked only once" in response.text
+    assert stranger.get("/").status_code == 403
 
 
 def test_no_browser_opens_none(tmp_path, no_server):

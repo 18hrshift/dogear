@@ -8,7 +8,50 @@ import pytest
 from web_samples import BASE, CHOSEN, KEY, PORT, add_book, sample_app, sample_summary, visitor
 
 from dogear.errors import DogearError
-from dogear.web.access_key import KEY_FILE, AccessKey, WrongKeyDelay, load_or_make_key
+from dogear.web.access_key import (
+    KEY_FILE,
+    START_TOKEN_SECONDS,
+    AccessKey,
+    StartTokens,
+    WrongKeyDelay,
+    load_or_make_key,
+)
+
+
+def test_a_start_token_works_once_and_only_for_a_while():
+    now = [0.0]
+    tokens = StartTokens(clock=lambda: now[0])
+    first, second = tokens.issue(), tokens.issue()
+    assert first != second
+    assert tokens.redeem(first)
+    assert not tokens.redeem(first)  # used
+    assert not tokens.redeem("")
+    assert not tokens.redeem(KEY)
+    now[0] += START_TOKEN_SECONDS
+    assert not tokens.redeem(second)  # too late
+
+
+def test_a_wrong_start_token_is_slowed_down_like_a_wrong_key(tmp_path, monkeypatch):
+    app = sample_app(tmp_path)
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(app.state.wrong_keys, "_sleep", sleep)
+    client = visitor(app, signed_in=False)
+    for _ in range(3):
+        response = client.get("/start?token=guess")
+        assert response.status_code == 403
+    assert waits == [0.5, 1.0]
+    assert "set-cookie" not in response.headers
+
+
+def test_a_browser_let_in_already_goes_home_from_any_start_link(tmp_path):
+    client = visitor(sample_app(tmp_path))
+    for link in ("/start?key=wrong", "/start?token=used", "/start"):
+        response = client.get(link, follow_redirects=False)
+        assert (response.status_code, response.headers["location"]) == (303, "/")
 
 
 @pytest.fixture

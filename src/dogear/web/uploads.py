@@ -21,6 +21,7 @@ from python_multipart.multipart import parse_options_header
 from starlette.requests import ClientDisconnect, Request
 
 from dogear.extract import EXTRACTORS
+from dogear.web.private import private_folder
 
 FIELD = "book"
 # Room for the form's own boundaries and headers on top of the file.
@@ -203,7 +204,7 @@ class _BookPart:
             self._extension = check_name(self._name)
         except UploadError as e:
             raise _PartError(e.message) from None
-        self._incoming.mkdir(parents=True, exist_ok=True)
+        private_folder(self._incoming)
         self._path = self._incoming / f"{secrets.token_hex(8)}.partial"
         self._file = _open_new(self._path)
         self._writing = True

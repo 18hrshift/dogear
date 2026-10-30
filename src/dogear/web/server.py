@@ -1,7 +1,9 @@
 """`dogear serve`: start the web page, say where to open it, and stop cleanly on Ctrl+C.
 
 Output is plain sentences on stdout. The access key appears only in the links printed
-here; the server's own request log is off, so it is never written anywhere else.
+here; the server's own request log is off, so it is never written anywhere else. The
+browser is opened with a one-time start token instead (access_key.py), because the
+command that opens it can be seen by other people using the computer.
 """
 
 from __future__ import annotations
@@ -21,8 +23,9 @@ import uvicorn
 from dogear.config import Config
 from dogear.errors import DogearError
 from dogear.file_lock import FileLock
-from dogear.web.access_key import AccessKey, load_or_make_key
+from dogear.web.access_key import AccessKey, StartTokens, load_or_make_key
 from dogear.web.app import create_app
+from dogear.web.private import private_folder
 from dogear.web.settings import LOCAL_HOST, WebSettings, web_settings
 
 GRACEFUL_SECONDS = 5  # for open connections to finish when stopping
@@ -68,7 +71,8 @@ def _serve(
     say("Keep this window open while you use Dogear. Press Ctrl+C to stop.")
     sys.stdout.flush()
     if options.open_browser:
-        webbrowser.open(local)
+        tokens: StartTokens = app.state.start_tokens
+        webbrowser.open(f"http://{LOCAL_HOST}:{settings.port}/start?token={tokens.issue()}")
     server = uvicorn.Server(
         uvicorn.Config(
             app,
@@ -93,7 +97,7 @@ def _serve(
 def lock_web_folder(folder: Path) -> FileLock:
     """Keep the web folder to this server while it runs. A second server on the same
     folder would clear the first one's uploads and change its books under it."""
-    folder.mkdir(parents=True, exist_ok=True)
+    private_folder(folder, tighten=False)  # made owner-only if it's new
     lock = FileLock.try_acquire(folder / LOCK_FILE)
     if lock is None:
         raise DogearError(
