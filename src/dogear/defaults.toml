@@ -272,6 +272,7 @@ threads = 0
 
 [models]
 # Where downloaded voice files are kept. Empty means the usual per-user data folder.
+# Dogear's installers carry the default voice inside the app, so it isn't downloaded.
 dir = ""
 download_timeout_seconds = 60
 
