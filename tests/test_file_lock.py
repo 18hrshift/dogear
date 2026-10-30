@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -54,6 +55,21 @@ def acquire_soon(path, seconds: float = 10):
     while (lock := FileLock.try_acquire(path)) is None and time.monotonic() < deadline:
         time.sleep(0.05)
     return lock
+
+
+def test_wait_for_waits_until_the_holder_lets_go(tmp_path):
+    path = tmp_path / "x.lock"
+    calls = []
+    with FileLock.wait_for(path, lambda: calls.append("waiting")):
+        pass
+    assert calls == []  # no one else had it: no wait
+    holder = FileLock.try_acquire(path)
+    threading.Timer(0.5, holder.release).start()
+    started = time.monotonic()
+    lock = FileLock.wait_for(path, lambda: calls.append("waiting"), poll_seconds=0.05)
+    assert time.monotonic() - started >= 0.4
+    assert calls == ["waiting"]  # said once, however long the wait
+    lock.release()
 
 
 def test_without_create_a_missing_file_is_not_made(tmp_path):

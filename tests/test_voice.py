@@ -192,7 +192,10 @@ def test_first_run_downloads_every_file_and_unpacks_spacy(config, models, fake_d
 
 
 def test_unpacked_spacy_model_is_not_downloaded_again(config, models, fake_downloads):
+    setup = prepare_kokoro(config, print)
     prepare_kokoro(config, print)
+    assert len(fake_downloads) == 1  # everything is there: nothing asked for
+    setup.model.path.unlink()
     prepare_kokoro(config, print)
     assert fake_downloads[1] == ["model.onnx", "tokenizer.json", "af_heart.bin"]
 
@@ -413,4 +416,4 @@ def test_prepare_spacy_downloads_only_the_spacy_model(config, models, fake_downl
     assert (folder / "config.cfg").is_file()
     assert fake_downloads == [["en_core_web_sm-3.8.0-py3-none-any.whl"]]
     assert prepare_spacy(config, print) == folder
-    assert fake_downloads[1] == []  # nothing more to fetch
+    assert len(fake_downloads) == 1  # nothing more to fetch
