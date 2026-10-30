@@ -40,6 +40,7 @@ from dogear.unknown_words import WordsRequest, find_unknown_words
 from dogear.voice import find_voice, prepare_kokoro
 from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
 from dogear.web.child import UTF8_OUTPUT_ENV
+from dogear.web.server_watch import stop_with_server_when_asked
 
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
@@ -48,6 +49,7 @@ SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 
 def main(argv: list[str] | None = None) -> int:
     _utf8_output_when_asked()
+    stop_with_server_when_asked()
     args = _parser().parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,

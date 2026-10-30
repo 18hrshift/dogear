@@ -1,17 +1,17 @@
 """Making a book: `dogear make` in a child process, with its progress lines kept as they
-come. Its `Saved:` lines say what it made; `Error:` and `What to do:` say why it failed."""
+come (progress.py). Its `Saved:` lines say what it made; `Error:` and `What to do:` say
+why it failed."""
 
 from __future__ import annotations
 
+import secrets
 import shutil
 from pathlib import Path
 
 from dogear.web.books import MADE, ZIPS, BookRecord, BookStore, Output
-from dogear.web.child import Stopper, child_command, read_lines, start_lines
+from dogear.web.child import Stopper, child_command, interrupted, read_lines, start_lines
 from dogear.web.reading import problem_from_output
 from dogear.web.settings import WebSettings
-
-INTERRUPTED = 130  # `dogear` stopped by Ctrl+C, or by the server asking it to stop
 
 
 def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: Stopper) -> None:
@@ -20,11 +20,17 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
     if record is None or record.choices is None:
         return
     folder = store.folder(book_id)
-    shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make are stale
-    store.update(book_id, state="making", lines=[], lines_dropped=0, error="", hint="", outputs=[])
+    with store.made_lock(book_id):
+        # Not while a zip of the last make's outputs is being made: they're about to be
+        # made again. And no zip is made from now until this make is done (Library.zip).
+        store.clear_lines(book_id)
+        store.update(
+            book_id, state="making", run=secrets.token_hex(8), error="", hint="", outputs=()
+        )
+        shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make
     command = child_command(make_args(record, folder), settings.config_file)
     try:
-        process = start_lines(command)
+        child = start_lines(command)
     except OSError as e:
         store.update(
             book_id,
@@ -33,23 +39,39 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             hint="Check that Dogear is installed properly, then choose Start again.",
         )
         return
-    stopper.attach(process)
+    stopper.attach(child)
+    process = child.process
+    assert process.stdout is not None
     saved: list[str] = []
     problem: list[str] = []
     try:
-        assert process.stdout is not None
         for line in read_lines(process.stdout):
+            if stopper.requested.is_set():
+                # The server asked it to stop, so what's left is `dogear`'s goodbye,
+                # written for a terminal ("Run the same command again to continue").
+                # The page says what stopping means in its own words. It's read to the
+                # end all the same, so the child never waits on a full pipe.
+                continue
             if line.startswith("Saved: "):
                 saved.append(line.removeprefix("Saved: "))
             elif line.startswith(("Error: ", "What to do: ")):
                 problem.append(line)
-            elif line.strip() and not stopper.requested.is_set():
-                # After a stop, what's left is `dogear`'s goodbye, written for a terminal.
-                store.add_line(book_id, line)
+            elif line.strip():
+                store.add_line(book_id, line)  # a full disk is logged, and the book goes on
         returncode = process.wait()
+    except BaseException:
+        # A bug here. The child mustn't run on unwatched: Stop couldn't reach it, and
+        # Start again would start a second one. It is stopped, and this job ends only
+        # once it has ended. (Closing its output first means it can't hang writing.)
+        process.stdout.close()
+        child.end()
+        raise
     finally:
         stopper.detach()
-    if stopper.requested.is_set() or returncode == INTERRUPTED:
+        child.close()
+        process.stdout.close()
+        store.save_lines(book_id)
+    if stopper.requested.is_set() or interrupted(returncode):
         store.update(book_id, state="stopped", error="", hint="")
     elif returncode != 0:
         found = problem_from_output("\n".join(problem))

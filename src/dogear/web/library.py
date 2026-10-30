@@ -12,7 +12,9 @@ from pathlib import Path
 from dogear.errors import DogearError
 from dogear.web.books import BookRecord, BookStore, Choices
 from dogear.web.child import STOP_GRACE_SECONDS, Stopper
+from dogear.web.downloads import NotAvailable, zip_folder
 from dogear.web.making import make_book
+from dogear.web.progress import Progress
 from dogear.web.reading import read_book
 from dogear.web.settings import WebSettings
 from dogear.web.worker import Worker
@@ -23,7 +25,10 @@ JobFunction = Callable[[BookStore, WebSettings, str, Stopper], None]
 CAN_CHOOSE = ("ready", "done", "failed", "stopped")
 CAN_START_AGAIN = ("failed", "stopped")
 UNEXPECTED = "Dogear stopped because of a problem it didn't expect."
-UNEXPECTED_HINT = "Choose Start again. If it happens again, please report it."
+UNEXPECTED_HINTS = {
+    "unreadable": "Choose Read again. If it happens again, please report it.",
+    "failed": "Choose Start again. If it happens again, please report it.",
+}
 
 
 class Library:
@@ -78,6 +83,15 @@ class Library:
         self.store.update(book_id, state="waiting", error="", hint="")
         self.maker.add(book_id)
 
+    def read_again(self, book_id: str) -> None:
+        """Read a book Dogear couldn't read, as after something has been fixed, such as
+        installing Calibre for a Kindle book, or after reading it was interrupted."""
+        record = self._existing(book_id)
+        if record.state != "unreadable":
+            raise DogearError("This book can't be read again now.")
+        self.store.update(book_id, state="reading", error="", hint="")
+        self.reader.add(book_id)
+
     def stop(self, book_id: str) -> None:
         record = self._existing(book_id)
         if record.state == "waiting" and self.maker.stop(book_id):
@@ -86,18 +100,35 @@ class Library:
             self.maker.stop(book_id)  # the job marks it stopped when the child ends
 
     def delete(self, book_id: str) -> None:
-        """Stop anything working on the book, then remove its folder."""
+        """Stop anything working on the book, then remove its folder. If that fails,
+        nothing is deleted and the book stays listed."""
         self._existing(book_id)
         for worker in (self.reader, self.maker):
             if worker.stop(book_id):
                 worker.wait_until_not_running(book_id, STOP_GRACE_SECONDS + 5)
         try:
-            self.store.delete(book_id)
+            with self.store.made_lock(book_id):  # not while it's being zipped
+                self.store.delete(book_id)
         except OSError as e:
             raise DogearError(
-                f"Dogear couldn't delete everything in the book's folder: {e}.",
-                hint="Try again in a moment. If a file is open in another program, close it.",
+                f"Dogear couldn't delete the book's folder ({e.strerror or e}), so nothing "
+                "was deleted.",
+                hint="If a file from this book is open in another program, such as a player, "
+                "close that program. Then try again.",
             ) from None
+
+    def zip(self, book_id: str, output: Path) -> Path:
+        """A zip of an output folder of a finished book. Raises NotAvailable if the book
+        isn't finished, which is checked holding the made lock, so a make that started
+        meanwhile is never zipped half-way."""
+        with self.store.made_lock(book_id):
+            record = self.store.get(book_id)
+            if record is None or record.state != "done":
+                raise NotAvailable(str(output))
+            return zip_folder(output, self.folder(book_id), record.run)
+
+    def progress(self, book_id: str) -> Progress:
+        return self.store.progress(book_id)
 
     def ahead(self, book_id: str) -> int | None:
         return self.maker.ahead(book_id)
@@ -118,7 +149,10 @@ class Library:
             except Exception:
                 # A bug. The book says so, and the worker logs the traceback.
                 self.store.update(
-                    book_id, state=failed_state, error=UNEXPECTED, hint=UNEXPECTED_HINT
+                    book_id,
+                    state=failed_state,
+                    error=UNEXPECTED,
+                    hint=UNEXPECTED_HINTS[failed_state],
                 )
                 raise
 

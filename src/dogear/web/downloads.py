@@ -2,13 +2,14 @@
 
 Every path is checked to be inside the book's `made` folder before it is read or sent.
 Folders (MP3 and DAISY) are zipped on first request without compression (their audio
-is compressed already) and the zip is kept for later downloads.
+is compressed already) and the zip is kept for later downloads, in a folder named for
+the make it came from, so a zip of an earlier make is never sent for a later one.
 """
 
 from __future__ import annotations
 
 import os
-import threading
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,6 @@ from dogear.web.books import MADE, ZIPS, BookRecord, Output
 from dogear.web.choices import FORMAT_INFO
 
 MEDIA_TYPES = {".m4b": "audio/mp4", ".epub": "application/epub+zip", ".zip": "application/zip"}
-_zip_lock = threading.Lock()
 
 
 class NotAvailable(Exception):
@@ -68,27 +68,32 @@ def output_path(output: Output, book_folder: Path) -> Path:
     return path
 
 
-def zip_folder(folder: Path, book_folder: Path) -> Path:
-    """A zip of `folder` (an output folder), made once and kept in the book's `zips`."""
-    zips = book_folder / ZIPS
-    target = zips / f"{folder.name}.zip"
-    with _zip_lock:
-        if target.is_file():
-            return target
-        zips.mkdir(exist_ok=True)
-        partial = target.with_suffix(".partial")
-        made = folder.resolve()
-        with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_STORED) as archive:
-            for path in sorted(folder.rglob("*")):
-                # Only real files inside the folder: links are left out, and so is
-                # Dogear's own record of the folder (output/folder_record.py).
-                if path.is_symlink() or not path.is_file() or path.name == RECORD_NAME:
-                    continue
-                if not path.resolve().is_relative_to(made):
-                    continue
-                archive.write(path, Path(folder.name) / path.relative_to(folder))
-        os.replace(partial, target)
+def zip_folder(folder: Path, book_folder: Path, run: str) -> Path:
+    """A zip of `folder` (an output folder of the make `run`), made once and kept in the
+    book's `zips`. The caller holds the book's made lock (books.BookStore.made_lock) and
+    has checked, holding it, that the book is done."""
+    target = book_folder / ZIPS / run / f"{folder.name}.zip"
+    if target.is_file():
         return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, partial = tempfile.mkstemp(dir=target.parent, suffix=".partial")
+    made = folder.resolve()
+    try:
+        with os.fdopen(descriptor, "wb") as file:
+            with zipfile.ZipFile(file, "w", compression=zipfile.ZIP_STORED) as archive:
+                for path in sorted(folder.rglob("*")):
+                    # Only real files inside the folder: links are left out, and so is
+                    # Dogear's own record of the folder (output/folder_record.py).
+                    if path.is_symlink() or not path.is_file() or path.name == RECORD_NAME:
+                        continue
+                    if not path.resolve().is_relative_to(made):
+                        continue
+                    archive.write(path, Path(folder.name) / path.relative_to(folder))
+        os.replace(partial, target)
+    except BaseException:
+        Path(partial).unlink(missing_ok=True)
+        raise
+    return target
 
 
 def describe_size(size: int) -> str:

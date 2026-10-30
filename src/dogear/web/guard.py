@@ -7,6 +7,11 @@
    Origin header, or failing that its Referer, must match the address it was sent to.
 3. Every page but the access pages, help, and the stylesheet and script needs the
    access cookie. Without it, the page asks for the access link.
+
+The cookie is SameSite=Lax, so the access link and Dogear's pages open straight from a
+link in web mail or another site. That is safe because no GET changes anything (apart
+from /start, which needs the key): everything that does is a form, and a form needs the
+same-origin check above, besides Lax keeping the cookie off forms from other sites.
 """
 
 from __future__ import annotations
@@ -95,9 +100,6 @@ def same_origin(request: Request) -> bool:
 def access_page(
     request: Request, *, status_code: int, errors: dict[str, str] | None = None, typed: str = ""
 ) -> Response:
-    # A cookie set by the access link isn't sent when the link was opened from another
-    # site (SameSite=Strict), though the browser has it. A link from this page sends it.
-    from_elsewhere = request.headers.get("sec-fetch-site") == "cross-site"
     return render(
         request,
         "access.html",
@@ -105,5 +107,4 @@ def access_page(
         status_code=status_code,
         errors=errors,
         typed=typed,
-        offer_continue=from_elsewhere and request.method == "GET",
     )

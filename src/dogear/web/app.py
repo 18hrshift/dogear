@@ -15,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 
 from dogear.config import Config
 from dogear.web import access_pages, book_pages, site_pages
-from dogear.web.access_key import AccessKey, WrongKeyDelay
+from dogear.web.access_key import AccessKey, StartTokens, WrongKeyDelay
 from dogear.web.guard import Guard
 from dogear.web.headers import SecurityHeaders
 from dogear.web.library import Library
@@ -51,6 +51,7 @@ def create_app(
         Route(BOOK + "/choose", book_pages.choose_submit, methods=["POST"]),
         Route(BOOK + "/stop", book_pages.stop, methods=["POST"]),
         Route(BOOK + "/again", book_pages.start_again, methods=["POST"]),
+        Route(BOOK + "/read", book_pages.read_again, methods=["POST"]),
         Route(BOOK + "/delete", book_pages.delete_page),
         Route(BOOK + "/delete", book_pages.delete_submit, methods=["POST"]),
         Route(BOOK + "/files/{number:int}", book_pages.download),
@@ -78,4 +79,5 @@ def create_app(
     app.state.library = library
     app.state.templates = make_templates()
     app.state.wrong_keys = WrongKeyDelay()
+    app.state.start_tokens = StartTokens()
     return app

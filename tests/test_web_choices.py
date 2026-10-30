@@ -3,7 +3,8 @@ checked."""
 
 from dataclasses import replace
 
-from web_samples import CHOSEN, sample_summary
+import pytest
+from web_samples import CHOSEN, add_book, sample_app, sample_summary, visitor
 
 from dogear.make import FORMATS
 from dogear.web import choices
@@ -90,3 +91,33 @@ def test_a_book_in_another_language_must_be_read_as_english(config):
 def test_read_as_english_is_only_kept_when_asked(config):
     _, chosen, _ = choices.check(fields(english=["yes"]), sample_summary(), config)
     assert not chosen.as_english
+
+
+@pytest.mark.parametrize("value", ["²", "٣", "9" * 5000, "1.0", "-1", " 1", "", "0", "99999"])
+def test_a_section_that_is_not_one_of_the_books_is_a_form_error(config, value):
+    picked, chosen, errors = choices.check(fields(section=["1", value]), sample_summary(), config)
+    assert chosen is None
+    assert errors == {"section": "Choose sections from the list."}
+    assert picked.sections == {1}
+
+
+def test_section_numbers_are_ascii_digits_only():
+    assert choices.section_number("12") == 12
+    assert choices.section_number("007") == 7
+    assert choices.section_number("²") is None
+    assert choices.section_number("١٢") is None
+    assert choices.section_number("123456") is None
+    assert choices.section_number("+1") is None
+
+
+def test_odd_section_values_get_the_form_back_not_a_crash(tmp_path):
+    app = sample_app(tmp_path)
+    book_id = add_book(app.state.library, tmp_path, state="ready", summary=sample_summary())
+    client = visitor(app)
+    for value in ("²", "9" * 5000):
+        response = client.post(
+            f"/books/{book_id}/choose",
+            data={"format": "m4b", "voice": "af_heart", "speed": "0.9", "section": value},
+        )
+        assert response.status_code == 400
+        assert "Choose sections from the list." in response.text

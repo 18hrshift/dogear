@@ -1,24 +1,90 @@
 """`dogear serve` and its `[web]` settings: each setting changes what the server does."""
 
+import json
+import os
+import signal
 import socket
 import subprocess
 import sys
+import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from web_samples import BASE, sample_app, sample_config, visitor
 
 from dogear import cli, paths
 from dogear.errors import ConfigError, DogearError
-from dogear.web import server
-from dogear.web.server import ServeOptions, bind, serve
+from dogear.web import child, server
+from dogear.web.server import ServeOptions, bind, lock_web_folder, serve
 from dogear.web.settings import web_settings
+
+FAKE = Path(__file__).parent / "fake_dogear.py"
+# `dogear serve`, with the stand-in `dogear` (tests/fake_dogear.py) for its children.
+SERVER = """
+import sys
+from dogear.web import child
+child.dogear_command = lambda: [sys.executable, sys.argv[1]]
+from dogear.config import default_config
+from dogear.web.server import ServeOptions, serve
+config = default_config()
+config["web"]["dir"] = sys.argv[2]
+sys.exit(serve(ServeOptions(port=int(sys.argv[3]), open_browser=False), config))
+"""
 
 
 def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
+
+
+def eventually(check, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while not check():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.05)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Ctrl+C reaches a process group on Linux and macOS")
+def test_ctrl_c_in_the_terminal_leaves_a_book_being_read_to_be_read_again(tmp_path, monkeypatch):
+    web, port, pids = tmp_path / "web", free_port(), tmp_path / "pids"
+    # In a session of its own, like a terminal's foreground job: Ctrl+C there goes to
+    # every process in the job's process group.
+    server_process = subprocess.Popen(
+        [sys.executable, "-c", SERVER, str(FAKE), str(web), str(port)],
+        stdout=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "DOGEAR_FAKE_PIDS": str(pids)},
+        start_new_session=True,
+    )
+    try:
+        link = server_process.stdout.readline().split("link in a web browser: ")[1].strip()
+        base = f"http://127.0.0.1:{port}"
+        with httpx.Client(base_url=base, headers={"Origin": base}) as client:
+            client.get(link)
+            response = client.post("/books", files={"book": ("b.epub", b"slowread", "")})
+            book_id = response.headers["location"].rsplit("/", 1)[1]
+        eventually(lambda: pids.exists() and pids.read_text().strip())
+        reader = int(pids.read_text())
+        os.killpg(server_process.pid, signal.SIGINT)  # Ctrl+C in the server's terminal
+        assert server_process.wait(timeout=60) == 0
+    finally:
+        if server_process.poll() is None:
+            server_process.kill()
+            server_process.wait()
+        server_process.stdout.close()
+    with pytest.raises(ProcessLookupError):
+        os.kill(reader, 0)  # the server stopped it before it stopped itself
+    record = json.loads((web / "books" / book_id / "book.json").read_text())
+    assert (record["state"], record["error"]) == ("reading", "")
+
+    monkeypatch.setattr(child, "dogear_command", lambda: [sys.executable, str(FAKE)])
+    (web / "books" / book_id / "book.epub").write_text("ok")
+    app = sample_app(web)
+    with visitor(app):
+        eventually(lambda: app.state.library.get(book_id).state == "ready")
 
 
 @pytest.fixture
@@ -47,8 +113,35 @@ def test_serve_says_where_to_go_and_stops_cleanly(tmp_path, no_server):
     assert said[0] == f"Dogear is running. Open this link in a web browser: {link}"
     assert said[-2] == "Keep this window open while you use Dogear. Press Ctrl+C to stop."
     assert said[-1] == "Stopped."
-    assert no_server.opened == [link]
+    [opened] = no_server.opened
+    assert opened.startswith(f"http://127.0.0.1:{port}/start?token=")
+    assert key not in opened  # the command opening a browser is seen by other users
     assert no_server.runs == [[("127.0.0.1", port)]]
+
+
+def test_the_browser_is_opened_with_a_link_that_works_once(tmp_path, no_server, monkeypatch):
+    apps = []
+
+    def keep(*args):
+        apps.append(server_create_app(*args))
+        return apps[-1]
+
+    server_create_app = server.create_app
+    monkeypatch.setattr(server, "create_app", keep)
+    config = sample_config(tmp_path)
+    serve(ServeOptions(), config, lambda line: None)
+    [opened] = no_server.opened
+    start = opened.removeprefix(BASE)
+    browser = visitor(apps[0], signed_in=False)
+    response = browser.get(start, follow_redirects=False)
+    assert response.status_code == 303
+    assert browser.get("/").status_code == 200
+    assert browser.get(start, follow_redirects=False).headers["location"] == "/"  # let in
+    stranger = visitor(apps[0], signed_in=False)
+    response = stranger.get(start)
+    assert response.status_code == 403
+    assert "That link worked only once" in response.text
+    assert stranger.get("/").status_code == 403
 
 
 def test_no_browser_opens_none(tmp_path, no_server):
@@ -85,8 +178,25 @@ def test_a_port_in_use_is_a_plain_error(tmp_path):
         taken.listen()
         port = taken.getsockname()[1]
         settings = web_settings(sample_config(tmp_path), port=port)
-        with pytest.raises(DogearError, match=f"Port {port} is in use already"):
+        with pytest.raises(DogearError, match=f"Port {port} is in use already") as raised:
             bind(settings)
+    assert raised.value.hint.startswith("If it is, use the link that window shows.")
+
+
+def test_a_second_server_on_the_same_folder_is_refused(tmp_path, no_server):
+    config = sample_config(tmp_path)
+    config["web"]["port"] = free_port()
+    with lock_web_folder(tmp_path):
+        with pytest.raises(DogearError) as raised:
+            serve(ServeOptions(open_browser=False), config, lambda line: None)
+        assert raised.value.message == f"Dogear is already running with the web folder {tmp_path}."
+        assert raised.value.hint.startswith("Use the link shown in the window where it's running.")
+        assert no_server.runs == []  # refused before listening or touching the books
+    serve(ServeOptions(open_browser=False), config, lambda line: None)
+    assert len(no_server.runs) == 1
+    # The lock is let go when the server stops, so it can start again.
+    serve(ServeOptions(open_browser=False), config, lambda line: None)
+    assert len(no_server.runs) == 2
 
 
 def test_the_port_setting_changes_the_port_and_the_host_check(tmp_path):

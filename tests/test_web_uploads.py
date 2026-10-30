@@ -1,10 +1,14 @@
 """Uploading a book: what is accepted, the size limit as the file streams in, and where
 the file ends up."""
 
+import errno
+import os
+
 import pytest
 from web_samples import sample_app, sample_config, visitor
 
-from dogear.web.books import RECORD
+from dogear.web import uploads
+from dogear.web.books import RECORD, BookStore
 
 
 @pytest.fixture
@@ -133,3 +137,75 @@ def test_the_upload_form_names_the_kinds_and_the_limit(app):
     assert 'accept=".azw,.azw3,.epub,.mobi,.pdf"' in page
     assert "up to 1 MB" in page
     assert '<label for="book-file">Book file (required)</label>' in page
+
+
+class FailingFile:
+    """A file being written that fails the way a full disk does."""
+
+    def __init__(self, real, fail_after: int, error: int, on_close: bool) -> None:
+        self.real = real
+        self.room = fail_after
+        self.error = error
+        self.on_close = on_close
+
+    def write(self, data: bytes) -> int:
+        if not self.on_close and len(data) > self.room:
+            raise OSError(self.error, os.strerror(self.error))
+        self.room -= len(data)
+        return self.real.write(data)
+
+    def close(self) -> None:
+        self.real.close()
+        if self.on_close:
+            raise OSError(self.error, os.strerror(self.error))
+
+
+@pytest.mark.parametrize("on_close", [False, True])
+def test_a_full_disk_says_so_and_keeps_nothing(app, monkeypatch, on_close):
+    real_open = uploads._open_new
+    monkeypatch.setattr(
+        uploads,
+        "_open_new",
+        lambda path: FailingFile(real_open(path), 1000, errno.ENOSPC, on_close),
+    )
+    response = visitor(app).post("/books", files={"book": ("big.epub", b"x" * 300_000, "")})
+    assert response.status_code == 507
+    assert "<title>Error: Your books - Dogear</title>" in response.text
+    assert "has no room left on its disk" in response.text
+    assert "Free some space on that computer, then upload the book again." in response.text
+    assert 'aria-describedby="book-file-hint book-file-error"' in response.text
+    assert books(app) == []
+    assert incoming(app) == []
+
+
+def test_a_folder_dogear_cannot_write_to_says_so(app, monkeypatch):
+    def refuse(path):
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(uploads, "_open_new", refuse)
+    response = visitor(app).post("/books", files={"book": ("a.epub", b"ok", "")})
+    assert response.status_code == 500
+    assert "Dogear isn&#39;t allowed to save files in its web folder" in response.text
+    assert books(app) == []
+
+
+def test_a_record_that_cannot_be_saved_leaves_no_book_behind(app, monkeypatch):
+    def full(self, record):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(BookStore, "_save", full)
+    response = visitor(app).post("/books", files={"book": ("a.epub", b"ok", "")})
+    assert response.status_code == 507
+    assert "has no room left on its disk" in response.text
+    assert books(app) == []
+    assert incoming(app) == []
+    assert list(app.state.settings.books_dir.iterdir()) == []
+
+
+def test_other_disk_errors_name_the_cause():
+    error = uploads.disk_problem(OSError(errno.EIO, "Input/output error"))
+    assert error.status_code == 500
+    assert error.message.startswith(
+        "Dogear couldn't save the book on the computer it runs on (Input/output error)."
+    )
+    assert uploads.disk_problem(OSError(errno.EFBIG, "File too large")).status_code == 507

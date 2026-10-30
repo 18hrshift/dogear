@@ -1,20 +1,26 @@
 """Reading and making books in child processes, one at a time, with a stand-in `dogear`
 (tests/fake_dogear.py): the queue, stopping, starting again, failures, restarts."""
 
+import errno
 import io
 import json
+import logging
+import os
+import signal
 import sys
 import time
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from web_samples import CHOSEN, add_book, sample_app, sample_config, sample_summary, visitor
 
-from dogear.web import child
+from dogear.web import child, making, progress
 from dogear.web.books import CLOSED_ERROR, BookRecord, Choices
-from dogear.web.library import Library
+from dogear.web.library import UNEXPECTED, Library
 from dogear.web.making import make_args, saved_outputs, section_spec
+from dogear.web.reading import INTERRUPTED_ERROR
 from dogear.web.settings import web_settings
 
 FAKE = Path(__file__).parent / "fake_dogear.py"
@@ -31,6 +37,27 @@ def commands(monkeypatch, tmp_path):
 
 def logged(log: Path) -> list[list[str]]:
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+@pytest.fixture
+def pids(monkeypatch, tmp_path):
+    """Returns a function that waits for the stand-in's next run and gives its process id."""
+    path = tmp_path / "pids"
+    monkeypatch.setenv("DOGEAR_FAKE_PIDS", str(path))
+    seen = 0
+
+    def next_pid(timeout: float = 30) -> int:
+        nonlocal seen
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            found = path.read_text().split() if path.exists() else []
+            if len(found) > seen:
+                seen += 1
+                return int(found[seen - 1])
+            time.sleep(0.05)
+        raise AssertionError("the child didn't start")
+
+    return next_pid
 
 
 @pytest.fixture
@@ -83,7 +110,7 @@ def test_a_book_is_read_chosen_made_and_downloaded(running, commands):
     choose(client, book_id, format=["m4b", "mp3"], speed="1.0", section=["2", "3"])
     record = wait_for(app, book_id, "done")
     assert [o.format for o in record.outputs] == ["m4b", "mp3"]
-    assert record.lines[-1] == "Section 3 of 3 done: Two."
+    assert app.state.library.progress(book_id).lines[-1].text == "Section 3 of 3 done: Two."
 
     page = client.get(f"/books/{book_id}").text
     assert "<title>Ready: Fake Book - Dogear</title>" in page
@@ -130,6 +157,110 @@ def test_a_book_dogear_cannot_read_says_why(running):
     assert "<strong>What to do:</strong> Use a copy without DRM." in page
 
 
+def test_a_book_dogear_could_not_read_can_be_read_again(running):
+    app, client = running
+    book_id = upload(client, "unreadable")
+    wait_for(app, book_id, "unreadable")
+    page = client.get(f"/books/{book_id}").text
+    assert f'<form method="post" action="/books/{book_id}/read">' in page
+    assert "Read again</button>" in page
+    set_behaviour(app, book_id, "ok")  # say, Calibre was installed in the meantime
+    response = client.post(f"/books/{book_id}/read", follow_redirects=False)
+    assert response.headers["location"] == f"/books/{book_id}"
+    record = wait_for(app, book_id, "ready")
+    assert (record.error, record.hint) == ("", "")
+    assert record.summary.title == "Fake Book"
+
+
+def test_only_a_book_dogear_could_not_read_is_read_again(running, commands):
+    app, client = running
+    book_id = upload(client, "ok")
+    wait_for(app, book_id, "ready")
+    assert "Read again" not in client.get(f"/books/{book_id}/choose").text
+    client.post(f"/books/{book_id}/read")
+    time.sleep(0.3)
+    assert app.state.library.get(book_id).state == "ready"
+    assert [c[0] for c in logged(commands)] == ["outline"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signals are for Linux and macOS")
+def test_a_read_stopped_by_something_else_is_no_bug_and_can_be_read_again(running, pids):
+    """Something other than the server ends the child (a person, the system running out
+    of memory): the book wasn't the problem, so it can simply be read again."""
+    app, client = running
+    book_id = upload(client, "slowread")
+    os.kill(pids(), signal.SIGKILL)
+    record = wait_for(app, book_id, "unreadable")
+    assert (record.error, record.hint) == (INTERRUPTED_ERROR, "Choose Read again.")
+    assert "This is a bug" not in client.get(f"/books/{book_id}").text
+    set_behaviour(app, book_id, "ok")
+    client.post(f"/books/{book_id}/read")
+    wait_for(app, book_id, "ready")
+
+
+def test_a_book_being_read_when_the_server_stops_is_read_again_when_it_starts(
+    tmp_path, commands, pids
+):
+    app = sample_app(tmp_path / "web")
+    with visitor(app) as client:
+        book_id = upload(client, "slowread")
+        pids()  # being read
+    # Closing stopped the child; the book isn't unreadable, and no bug is reported.
+    assert app.state.library.get(book_id).state == "reading"
+    restarted = sample_app(tmp_path / "web")
+    set_behaviour(restarted, book_id, "ok")
+    with visitor(restarted):
+        wait_for(restarted, book_id, "ready")
+
+
+def test_a_full_disk_for_progress_lines_does_not_stop_the_book(running, monkeypatch, caplog):
+    app, client = running
+    book_id = upload(client, "ok")
+    wait_for(app, book_id, "ready")
+
+    def full(path, data):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(progress, "write_atomically", full)
+    with caplog.at_level(logging.WARNING, logger="dogear.web.progress"):
+        choose(client, book_id)
+        wait_for(app, book_id, "done")
+    warnings = [r.getMessage() for r in caplog.records if r.name == "dogear.web.progress"]
+    folder = app.state.library.folder(book_id)
+    assert warnings == [
+        f"Couldn't save the progress lines in {folder}: [Errno 28] No space left on device"
+    ]
+    assert app.state.library.progress(book_id).lines[-1].text == "Section 3 of 3 done: Two."
+
+
+def test_a_bug_while_making_ends_the_child_before_the_job_ends(running, monkeypatch, pids):
+    """Otherwise the child would run on with nothing watching it: Stop couldn't reach it,
+    and Start again would start a second child for the same book."""
+    app, client = running
+    book_id = upload(client, "slow")
+    pids()  # reading it
+    wait_for(app, book_id, "ready")
+
+    def broken(stream):
+        yield next(child.read_lines(stream))  # the child is under way
+        raise RuntimeError("a bug in the server")
+
+    monkeypatch.setattr(making, "read_lines", broken)
+    choose(client, book_id)
+    maker = pids()
+    record = wait_for(app, book_id, "failed")
+    assert record.error == UNEXPECTED
+    assert app.state.library.maker.running() is None
+    if os.name != "nt":
+        with pytest.raises(ProcessLookupError):
+            os.kill(maker, 0)  # ended, and waited for
+
+    monkeypatch.setattr(making, "read_lines", child.read_lines)
+    set_behaviour(app, book_id, "ok")
+    client.post(f"/books/{book_id}/again")
+    wait_for(app, book_id, "done")
+
+
 def test_a_failed_make_says_why_and_start_again_runs_it_again(running, commands):
     app, client = running
     book_id = upload(client, "fail")
@@ -159,7 +290,8 @@ def test_a_crash_is_a_problem_dogear_did_not_expect(running):
     choose(client, book_id)
     record = wait_for(app, book_id, "failed")
     assert record.error == "Dogear stopped because of a problem it didn't expect."
-    assert any(line.startswith("RuntimeError: a bug") for line in record.lines)
+    lines = app.state.library.progress(book_id).lines
+    assert any(line.text.startswith("RuntimeError: a bug") for line in lines)
 
 
 def status(client, book_id):
@@ -223,6 +355,34 @@ def test_stop_then_start_again(running):
     client.post(f"/books/{book_id}/again")
     record = wait_for(app, book_id, "done")
     assert record.choices == Choices(("m4b",), "af_heart", 0.9, (1, 2, 3))
+
+
+@pytest.mark.parametrize("how", ["stop", "server closing"])
+def test_once_stopped_the_childs_goodbye_for_a_terminal_is_not_shown(tmp_path, commands, how):
+    """`dogear make` says "Run the same command again to continue" when stopped. The page
+    has its own words for that (Start again), so nothing the child says after the server
+    asked it to stop is kept."""
+    app = sample_app(tmp_path / "web")
+    with visitor(app) as client:
+        book_id = upload(client, "slow")
+        wait_for(app, book_id, "ready")
+        choose(client, book_id)
+        deadline = time.monotonic() + 30
+        while not status(client, book_id)["lines"]:  # the child is under way
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        if how == "stop":
+            client.post(f"/books/{book_id}/stop")
+            wait_for(app, book_id, "stopped")
+    restarted = sample_app(tmp_path / "web") if how == "server closing" else app
+    client = visitor(restarted)
+    assert status(client, book_id)["lines"] == [
+        "Making an audiobook of Fake Book: 3 sections, about 300 words."
+    ]
+    page = client.get(f"/books/{book_id}").text
+    assert "Stopped.</li>" not in page
+    assert "Run the same command again" not in page
+    assert "Choose Start again to carry on." in page
 
 
 def test_the_status_says_what_the_page_needs(running):
@@ -336,7 +496,9 @@ def test_make_args_and_section_lists(tmp_path):
         "--sections",
         "1-2,4",
     ]
-    record.choices = Choices(("m4b",), "af_heart", 0.9, (1, 2, 3, 4), as_english=True)
+    record = replace(
+        record, choices=Choices(("m4b",), "af_heart", 0.9, (1, 2, 3, 4), as_english=True)
+    )
     assert make_args(record, tmp_path)[-2:] == ["--language", "en"]
     assert "--sections" not in make_args(record, tmp_path)
     assert section_spec((7, 1, 2, 3, 5, 6, 10)) == "1-3,5-7,10"

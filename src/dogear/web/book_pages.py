@@ -13,15 +13,17 @@ from dogear.config import Config
 from dogear.errors import DogearError
 from dogear.web import choices
 from dogear.web.books import ID_PATTERN, MADE, BookRecord
-from dogear.web.downloads import NotAvailable, downloads, media_type, output_path, zip_folder
+from dogear.web.downloads import NotAvailable, downloads, media_type, output_path
 from dogear.web.forms import FormTooBig, read_form
 from dogear.web.library import CAN_CHOOSE, Library
+from dogear.web.progress import LEFT_OUT_MANY, LEFT_OUT_ONE, MAX_KEPT, left_out_sentence
 from dogear.web.settings import WebSettings
-from dogear.web.status import describe
+from dogear.web.status import Status, describe
 from dogear.web.templating import message, render
-from dogear.web.uploads import ACCEPT, UploadError, receive_book
+from dogear.web.uploads import ACCEPT, UploadError, disk_problem, receive_book
 
 DELETED = "The book was deleted."
+STATUS_LINES = 20  # the latest progress lines sent with each status update
 # Pages for these states keep checking for news (with JavaScript) while the book stays
 # in one of the states listed.
 WATCH = {"reading": "reading", "waiting": "waiting making", "making": "waiting making"}
@@ -50,7 +52,7 @@ def _home(
     library = _library(request)
     settings: WebSettings = request.app.state.settings
     books = [
-        {"id": r.id, "title": r.title, "status": describe(r, library.ahead(r.id)).sentence}
+        {"id": r.id, "title": r.title, "status": _describe(library, r).sentence}
         for r in library.books()
     ]
     return render(
@@ -71,11 +73,15 @@ async def upload(request: Request) -> Response:
     settings: WebSettings = request.app.state.settings
     try:
         received = await receive_book(request, settings.incoming_dir, settings.max_upload_bytes)
+        try:
+            record = await run_in_threadpool(
+                _library(request).add, received.original_name, received.extension, received.path
+            )
+        except OSError as e:
+            received.path.unlink(missing_ok=True)
+            raise disk_problem(e) from None
     except UploadError as e:
         return _home(request, errors={"book": e.message}, status_code=e.status_code)
-    record = await run_in_threadpool(
-        _library(request).add, received.original_name, received.extension, received.path
-    )
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 
@@ -84,7 +90,8 @@ async def book_page(request: Request) -> Response:
     if record.state == "ready":
         return RedirectResponse(f"/books/{record.id}/choose", status_code=303)
     library = _library(request)
-    status = describe(record, library.ahead(record.id))
+    status = _describe(library, record)
+    progress = library.progress(record.id)
     found = downloads(record, library.folder(record.id)) if record.state == "done" else []
     return render(
         request,
@@ -92,6 +99,11 @@ async def book_page(request: Request) -> Response:
         f"{status.title}: {record.title}",
         book=record,
         status=status,
+        progress=progress,
+        left_out=left_out_sentence(progress.left_out),
+        left_out_one=LEFT_OUT_ONE,
+        left_out_many=LEFT_OUT_MANY,
+        max_lines=MAX_KEPT,
         show_title=record.state not in ("reading", "unreadable"),
         watching=record.state in WATCH,
         continues=WATCH.get(record.state, ""),
@@ -103,16 +115,22 @@ async def book_page(request: Request) -> Response:
 async def book_status(request: Request) -> Response:
     """The book's status as JSON, for the page's progress updates."""
     record = _book(request)
-    status = describe(record, _library(request).ahead(record.id))
+    library = _library(request)
+    status = _describe(library, record)
+    recent = library.progress(record.id).last(STATUS_LINES)
     return JSONResponse(
         {
             "state": record.state,
             "title": f"{status.title}: {record.title} - Dogear",
             "sentence": status.sentence,
-            "first": record.lines_dropped,
-            "lines": record.lines,
+            "first": recent.left_out,
+            "lines": [line.shown for line in recent.lines],
         }
     )
+
+
+def _describe(library: Library, record: BookRecord) -> Status:
+    return describe(record, library.ahead(record.id), library.progress(record.id).latest)
 
 
 async def choose_page(request: Request) -> Response:
@@ -179,6 +197,15 @@ async def stop(request: Request) -> Response:
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 
+async def read_again(request: Request) -> Response:
+    record = _book(request)
+    try:
+        _library(request).read_again(record.id)
+    except DogearError:
+        pass  # being read again already; the book's page says how it's going
+    return RedirectResponse(f"/books/{record.id}", status_code=303)
+
+
 async def start_again(request: Request) -> Response:
     record = _book(request)
     try:
@@ -219,5 +246,8 @@ async def download(request: Request) -> Response:
     except NotAvailable:
         raise HTTPException(404) from None
     if path.is_dir():
-        path = await run_in_threadpool(zip_folder, path, folder)
+        try:
+            path = await run_in_threadpool(_library(request).zip, record.id, path)
+        except NotAvailable:  # it's being made again
+            raise HTTPException(404) from None
     return FileResponse(path, media_type=media_type(path), filename=path.name)

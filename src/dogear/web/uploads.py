@@ -7,10 +7,13 @@ complete and allowed. Content-Length isn't trusted: bytes are counted as they co
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import os
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 import python_multipart
 from python_multipart.exceptions import FormParserError
@@ -18,12 +21,18 @@ from python_multipart.multipart import parse_options_header
 from starlette.requests import ClientDisconnect, Request
 
 from dogear.extract import EXTRACTORS
+from dogear.web.private import private_folder
 
 FIELD = "book"
 # Room for the form's own boundaries and headers on top of the file.
 FORM_OVERHEAD_BYTES = 64 * 1024
 NOT_A_FORM = "The upload wasn't a form Dogear understands. Try again."
 ACCEPT = ",".join(sorted(EXTRACTORS))  # ".azw,.azw3,.epub,.mobi,.pdf", for <input accept>
+
+
+# Status codes for a book that couldn't be written to disk.
+DISK_FULL_STATUS = 507  # Insufficient Storage
+CANT_WRITE_STATUS = 500
 
 
 class UploadError(Exception):
@@ -46,11 +55,10 @@ async def receive_book(request: Request, incoming: Path, max_bytes: int) -> Uplo
     content_type, params = parse_options_header(request.headers.get("content-type", ""))
     if content_type != b"multipart/form-data" or b"boundary" not in params:
         raise UploadError("Choose a book file, then choose Upload the book.")
-    incoming.mkdir(parents=True, exist_ok=True)
     reader = _BookPart(incoming, max_bytes)
     parser = python_multipart.MultipartParser(params[b"boundary"], reader.callbacks())
     received = 0
-    problem = ""
+    problem: UploadError | None = None
     try:
         async for chunk in request.stream():
             received += len(chunk)
@@ -63,20 +71,53 @@ async def receive_book(request: Request, incoming: Path, max_bytes: int) -> Uplo
             try:
                 parser.write(chunk)
             except (FormParserError, _PartError) as e:
-                problem = str(e) if isinstance(e, _PartError) else NOT_A_FORM
+                problem = UploadError(str(e) if isinstance(e, _PartError) else NOT_A_FORM)
+            except OSError as e:
+                problem = disk_problem(e)
         if not problem and not reader.too_big:
             try:
                 parser.finalize()
+                reader.close()  # the last of the file is written now, so a full disk can show
             except FormParserError:
-                problem = NOT_A_FORM
+                problem = UploadError(NOT_A_FORM)
+            except OSError as e:
+                problem = disk_problem(e)
     except ClientDisconnect:
-        problem = "The upload stopped before the whole file arrived. Try again."
-    finally:
-        reader.close()
+        problem = UploadError("The upload stopped before the whole file arrived. Try again.")
+    except BaseException:  # a bug, or the server stopping: nothing half-written is kept
+        reader.discard()
+        raise
     if problem or reader.too_big:
         reader.discard()
-        raise UploadError(problem, 400) if problem else UploadError(_too_big(max_bytes), 413)
+        raise problem or UploadError(_too_big(max_bytes), 413)
     return reader.result()
+
+
+def disk_problem(e: OSError) -> UploadError:
+    """What to say when the book couldn't be written to disk, in words that fit the cause."""
+    if e.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)):
+        return UploadError(
+            "The computer running Dogear has no room left on its disk, so the book wasn't "
+            "saved. Free some space on that computer, then upload the book again.",
+            DISK_FULL_STATUS,
+        )
+    if e.errno == errno.EFBIG:
+        return UploadError(
+            "The book file is bigger than the disk of the computer running Dogear can hold "
+            "in one file, so it wasn't saved. Make it with the dogear make command instead.",
+            DISK_FULL_STATUS,
+        )
+    if e.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+        return UploadError(
+            "Dogear isn't allowed to save files in its web folder, so the book wasn't saved. "
+            "Check that the folder named in Dogear's window can be written to, then try again.",
+            CANT_WRITE_STATUS,
+        )
+    return UploadError(
+        f"Dogear couldn't save the book on the computer it runs on ({e.strerror or e}). "
+        "Upload the book again. If it happens again, Dogear's window may say more.",
+        CANT_WRITE_STATUS,
+    )
 
 
 def check_name(name: str) -> str:
@@ -163,8 +204,9 @@ class _BookPart:
             self._extension = check_name(self._name)
         except UploadError as e:
             raise _PartError(e.message) from None
+        private_folder(self._incoming)
         self._path = self._incoming / f"{secrets.token_hex(8)}.partial"
-        self._file = open(self._path, "xb")  # noqa: SIM115 (closed in close())
+        self._file = _open_new(self._path)
         self._writing = True
 
     def _part_data(self, data: bytes, start: int, end: int) -> None:
@@ -183,12 +225,14 @@ class _BookPart:
         self._writing = False
 
     def close(self) -> None:
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+        """Finish writing the file. Raises OSError if the last of it can't be written."""
+        file, self._file = self._file, None
+        if file is not None:
+            file.close()
 
     def discard(self) -> None:
-        self.close()
+        with contextlib.suppress(OSError):  # it's being thrown away
+            self.close()
         if self._path is not None:
             self._path.unlink(missing_ok=True)
 
@@ -200,6 +244,12 @@ class _BookPart:
             self.discard()
             raise UploadError(f"{self._name} is empty. Choose another file.")
         return Upload(original_name=self._name, extension=self._extension, path=self._path)
+
+
+def _open_new(path: Path) -> BinaryIO:
+    """A new file for writing, readable by this user only (on Linux and macOS)."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    return os.fdopen(os.open(path, flags, 0o600), "wb")
 
 
 def _too_big(max_bytes: int) -> str:
