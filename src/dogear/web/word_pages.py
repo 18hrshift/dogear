@@ -9,8 +9,6 @@ list. Save writes the page's own pronunciation file (page_words.py).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -27,8 +25,8 @@ from dogear.web.page_words import EntryError, PageWords
 from dogear.web.settings import WebSettings
 from dogear.web.spelling_forms import (
     SentWord,
+    WordItem,
     field_for,
-    say_field,
     sent_words,
     spellings_to_save,
 )
@@ -38,20 +36,6 @@ from dogear.web.word_check import WORDS_SHOWN, WordCheck, check_for
 
 SAVED = "Saved. Choose Listen to hear a word the new way."
 HEADING = "Check how words are said"
-
-
-@dataclass(frozen=True)
-class WordItem:
-    """A word on the page, as its group shows it."""
-
-    number: int
-    word: str
-    about: str  # such as "In the book 131 times."
-    value: str  # in "Say it like"
-
-    @property
-    def field(self) -> str:
-        return say_field(self.number)
 
 
 def describe_check(check: WordCheck | None, ahead: int | None) -> Status:

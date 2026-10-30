@@ -14,7 +14,14 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from dogear.config import Config
-from dogear.web import access_pages, book_pages, listen_pages, site_pages, word_pages
+from dogear.web import (
+    access_pages,
+    book_pages,
+    listen_pages,
+    pronunciation_pages,
+    site_pages,
+    word_pages,
+)
 from dogear.web.access_key import AccessKey, StartTokens, WrongKeyDelay
 from dogear.web.child import STOP_GRACE_SECONDS
 from dogear.web.guard import Guard
@@ -71,6 +78,10 @@ def create_app(
         Route(BOOK + "/words", word_pages.save_words, methods=["POST"]),
         Route(BOOK + "/words/check", word_pages.start_check, methods=["POST"]),
         Route(BOOK + "/words/status", word_pages.words_status),
+        Route("/pronunciations", pronunciation_pages.pronunciations_page),
+        Route("/pronunciations", pronunciation_pages.save, methods=["POST"]),
+        Route("/pronunciations/add", pronunciation_pages.add, methods=["POST"]),
+        Route("/pronunciations/try", pronunciation_pages.try_saying, methods=["POST"]),
         Route("/listen", listen_pages.listen, methods=["POST"]),
         Route(LISTEN, listen_pages.listen_page),
         Route(LISTEN + "/status", listen_pages.listen_status),

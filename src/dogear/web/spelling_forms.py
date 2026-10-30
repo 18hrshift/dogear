@@ -28,9 +28,30 @@ class SentWord:
         return say_field(self.number)
 
 
+@dataclass(frozen=True)
+class WordItem:
+    """A word on one of these forms, as its group shows it (_macros.html's word_group)."""
+
+    number: int
+    word: str
+    about: str  # such as "In the book 131 times.", or ""
+    value: str  # in "Say it like"
+
+    @property
+    def field(self) -> str:
+        return say_field(self.number)
+
+
 def say_field(number: int) -> str:
     """The name, and the id, of a word's "Say it like" field."""
     return f"say-{number}"
+
+
+def form_limits(limits: WordLimits) -> tuple[int, int]:
+    """The most bytes and fields a form listing every saved word can send: each word and
+    spelling at their longest, every character percent-encoded (up to 9 bytes each)."""
+    per_word = 9 * (limits.word_chars + limits.spelling_chars) + 2 * len("&word-12345=")
+    return limits.entries * per_word + 4096, 2 * limits.entries + 16
 
 
 def sent_words(fields: list[tuple[str, str]], most: int) -> list[SentWord]:
