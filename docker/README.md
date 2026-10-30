@@ -46,7 +46,8 @@ again button that carries on where it stopped.
 
 Everything is on the `/data` volume (`dogear-data` above):
 
-- `/data/web`: uploaded books, everything made from them, and the access key.
+- `/data/web`: uploaded books, everything made from them, and the access key. Only
+  the user Dogear runs as (1000) can open them.
 - `/data/cache`: every sentence spoken so far, so a stopped book carries on where it
   stopped. Safe to delete.
 

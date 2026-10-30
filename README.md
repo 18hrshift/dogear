@@ -40,8 +40,9 @@ If you'd rather not type commands, Dogear has a web page. Start it with:
 dogear serve
 ```
 
-Dogear opens your web browser at its page. If it doesn't, open the link Dogear shows in
-its window. The link looks like `http://127.0.0.1:8765/start?key=abcde-fghjk-mnpqr-stuvw-xyz23`.
+Dogear opens your web browser at its page, with a link that works only once. If it
+doesn't, open the link Dogear shows in its window. That link looks like
+`http://127.0.0.1:8765/start?key=abcde-fghjk-mnpqr-stuvw-xyz23`.
 
 On the page:
 
@@ -49,11 +50,16 @@ On the page:
    its chapters.
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
-3. Choose Start making. The book's page says how far it has got. Dogear makes one book
-   at a time, and others wait their turn. You can close the page and come back later.
+3. Choose Start making. The book's page says how far it has got, with its latest
+   progress lines. A warning repeated many times in a row is one line that says how many
+   times. Dogear makes one book at a time, and others wait their turn. You can close the
+   page and come back later.
 4. When the book is ready, download what Dogear made. Folders (MP3 and DAISY) download
    as a zip file. The page also shows the folder on the computer where everything is
    saved.
+
+If Dogear can't read a book, its page says why and what to do. Once that's done (for a
+Kindle book, say, installing Calibre), choose Read again on the book's page.
 
 The page works without a mouse and without JavaScript, and it is built to work with
 screen readers. If something on it is hard to use, please tell us.
@@ -61,7 +67,14 @@ screen readers. If something on it is hard to use, please tell us.
 **Keep Dogear running.** The page only works while Dogear runs. Keep the window where
 you started it open. To stop Dogear, press Ctrl+C in that window. A book being made
 stops too. Its page then has a Start again button, which carries on where it stopped:
-every sentence already spoken is kept.
+every sentence already spoken is kept. A book that was still being read is read again
+when Dogear next starts. Closing the window stops Dogear and its books as well.
+
+Dogear runs once for each web folder. Starting it again while it runs says so: use the
+link in the window where it's running.
+
+On Linux and macOS, only the user who runs Dogear can open its web folder's books and
+what's made from them.
 
 **The access link.** The part after `key=` is a password, made the first time Dogear's
 page starts and kept for later. Opening the link lets this browser in, so you need it
@@ -80,8 +93,8 @@ Dogear shows a second link, with the computer's address on the network. Open it 
 phone. Anyone on the network who has the link can use Dogear, and the connection isn't
 encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
 
-Other options: `--port 8766` uses another port (if 8765 is taken), and `--no-browser`
-doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
+Other options: `--port 8766` uses another port (if another program has 8765), and
+`--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
 the page accepts (200 MB at first), how long reading a book may take, and the folder
 where books are kept.
 
