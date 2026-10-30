@@ -7,14 +7,18 @@ the ones in the user's settings, so the page's entries win.
 
 The page adds, changes, and removes sounds-like entries. Phoneme entries, which only
 someone editing the file by hand can add, are kept as they are. Every word and spelling
-is checked here before it is saved, with the bounds in [web]. The file is written whole
-or not at all, owner-only like the rest of the web folder, and read back through
-pronunciations.py before it replaces the old one, so a file `dogear` can't read is never
-left in place.
+is checked here before it is added or changed, with the bounds in [web]; any entry can
+be removed. A save can say what the page showed for each word; then, if one of them was
+changed since (in another window, say), it saves nothing rather than undo that change.
+
+The file is written whole or not at all, owner-only like the rest of the web folder, and
+read back through pronunciations.py before it replaces the old one, so a file `dogear`
+can't read is never left in place.
 """
 
 from __future__ import annotations
 
+import errno
 import threading
 import unicodedata
 from collections.abc import Mapping
@@ -23,7 +27,7 @@ from pathlib import Path
 from dogear.errors import DogearError, PronunciationError
 from dogear.pronunciation_writer import pronunciation_file_text
 from dogear.pronunciations import Pronunciation, read_pronunciation_file, word_key
-from dogear.web.atomic import write_atomically
+from dogear.web.atomic import FileInUse, write_atomically
 from dogear.web.private import private_folder
 from dogear.web.settings import WordLimits
 
@@ -32,6 +36,8 @@ HEADER = (
     "Saving on the page writes it again. Phoneme entries written here by hand are kept."
 )
 BUG_HINT = "This is a bug in Dogear. Please report it."
+# What writing to a full disk, or past a disk quota, fails with.
+DISK_FULL = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
 
 
 class EntryError(Exception):
@@ -44,6 +50,15 @@ class EntryError(Exception):
         self.word = word
 
 
+class ChangedElsewhere(Exception):
+    """Words whose spelling was changed since the page that sends them was shown.
+    `words` has each word as sent, with its spelling now ("" if it has none)."""
+
+    def __init__(self, words: dict[str, str]) -> None:
+        super().__init__(", ".join(words))
+        self.words = words
+
+
 def words_option(path: Path) -> list[str]:
     """--words with the page's file (WebSettings.words_file), for a child command that
     takes it; nothing until the page has saved a word."""
@@ -54,7 +69,7 @@ def clean_word(text: str, limits: WordLimits) -> str:
     """A word as the book writes it, with its spacing tidied the way pronunciations.py
     tidies it. Raises EntryError if it can't be saved."""
     _one_line(text, "The word")
-    word = " ".join(text.split())
+    word = tidy(text)
     if not word:
         raise EntryError("Type the word as the book writes it.")
     if len(word) > limits.word_chars:
@@ -68,13 +83,18 @@ def clean_spelling(text: str, word: str, limits: WordLimits) -> str:
     """How to say `word`, tidied: "" when it's empty. Raises EntryError if it can't be
     saved."""
     _one_line(text, f"How to say {word}")
-    spelling = " ".join(text.split())
+    spelling = tidy(text)
     if len(spelling) > limits.spelling_chars:
         raise EntryError(
             f"How to say {word} can be at most {limits.spelling_chars} characters long.",
             word,
         )
     return spelling
+
+
+def tidy(text: str) -> str:
+    """`text` with its spacing tidied, as pronunciations.py tidies words and spellings."""
+    return " ".join(text.split())
 
 
 def _one_line(text: str, what: str) -> None:
@@ -99,15 +119,23 @@ class PageWords:
             return []
         return sorted(read_pronunciation_file(self.path), key=lambda e: word_key(e.word))
 
-    def save(self, spellings: Mapping[str, str]) -> None:
+    def save(self, spellings: Mapping[str, str], shown: Mapping[str, str] | None = None) -> None:
         """Give each word its spelling, or remove the word's entry if its spelling is "".
-        The words and spellings have been through clean_word and clean_spelling. Words
-        match as in any pronunciation file, whatever their capitals. Raises EntryError for
-        a word with a phoneme entry, or a new word when the file is full."""
+        A word given a spelling has been through clean_word and clean_spelling; a word
+        being removed is matched to whichever entry it is. Words match as in any
+        pronunciation file, whatever their capitals.
+
+        `shown` has, for some of the words, the spelling the page showed when it was
+        opened ("" for none). If one of them has another spelling now, and not the one
+        asked for, someone changed it since: nothing is saved, and ChangedElsewhere names
+        each such word. Raises EntryError for a word with a phoneme entry, or a new word
+        when the file is full. Saves all or nothing."""
+        shown = shown or {}
         with self._lock:
             before = {word_key(e.word): e for e in self.entries()}
             after = dict(before)
             added = ""
+            changed: dict[str, str] = {}
             for word, spelling in spellings.items():
                 key = word_key(word)
                 existing = before.get(key)
@@ -119,12 +147,18 @@ class PageWords:
                         "there by hand. The page doesn't change those.",
                         word,
                     )
+                now = (existing.sounds_like or "") if existing is not None else ""
+                if word in shown and now not in (shown[word], spelling):
+                    changed[word] = now
+                    continue
                 if spelling:
                     after[key] = Pronunciation(word, spelling, None, self.path)
                     if key not in before:
                         added = added or word
                 else:
                     after.pop(key, None)
+            if changed:
+                raise ChangedElsewhere(changed)
             if len(after) > self.limits.entries and len(after) > len(before):
                 raise EntryError(
                     f"Dogear's word list is full: it holds at most {self.limits.entries} "
@@ -161,10 +195,19 @@ class PageWords:
         try:
             private_folder(self.path.parent, tighten=False)
             write_atomically(self.path, data, check=read_back)
+        except FileInUse:
+            raise DogearError(
+                f"Dogear couldn't save its word list: another program had the pronunciation "
+                f"file open ({self.path}).",
+                hint="Try saving again in a moment.",
+            ) from None
         except OSError as e:
+            full = e.errno in DISK_FULL
             raise DogearError(
                 f"Dogear couldn't save its word list in {self.path.parent}: {e.strerror or e}.",
-                hint="Check that the disk isn't full, then try again.",
+                hint="Check that the disk isn't full, then try again."
+                if full
+                else "Check that Dogear can still write to that folder, then try again.",
             ) from None
 
 

@@ -4,7 +4,8 @@ a Listen button and a "Say it like" field, and one Save for them all.
 The page shows the book's latest check (word_check.py) in whatever state it's in: not
 checked yet, with a button that starts it (no GET changes anything); waiting or
 checking, with a status that progress.js keeps up to date; failed; or done, with the
-list. Save writes the page's own pronunciation file (page_words.py).
+list. Save writes the words changed on the page into the page's own pronunciation file
+(page_words.py, through spelling_forms.py).
 """
 
 from __future__ import annotations
@@ -21,14 +22,15 @@ from dogear.web.books import BookRecord
 from dogear.web.choices import asks_about_language
 from dogear.web.forms import FormTooBig, first, read_form
 from dogear.web.library import Library
-from dogear.web.page_words import EntryError, PageWords
+from dogear.web.page_words import PageWords
 from dogear.web.settings import WebSettings
 from dogear.web.spelling_forms import (
     SentWord,
     WordItem,
-    field_for,
+    save_sent,
+    saved_spellings,
     sent_words,
-    spellings_to_save,
+    shown_again,
 )
 from dogear.web.status import Status
 from dogear.web.templating import message, render
@@ -137,7 +139,8 @@ async def start_check(request: Request) -> Response:
 
 
 async def save_words(request: Request) -> Response:
-    """Save every "Say it like" on the page; an empty one removes that word's entry."""
+    """Save each "Say it like" changed on the page; an empty one removes that word's
+    entry."""
     record = requested_book(request)
     if record.summary is None:
         return RedirectResponse(f"/books/{record.id}", status_code=303)
@@ -146,16 +149,12 @@ async def save_words(request: Request) -> Response:
     except FormTooBig:
         return message(request, 413, "Form too big", "That form was too big", "Try again.")
     settings: WebSettings = request.app.state.settings
+    page_words: PageWords = request.app.state.page_words
     sent = sent_words(fields, WORDS_SHOWN)
-    spellings, errors = spellings_to_save(sent, settings.word_limits)
-    if not errors:
-        page_words: PageWords = request.app.state.page_words
-        try:
-            await run_in_threadpool(page_words.save, spellings)
-        except EntryError as e:
-            errors[field_for(sent, e.word)] = e.message
-        except DogearError as e:
-            return word_file_problem(request, "Dogear couldn't save the words", e)
+    try:
+        sent, errors = await run_in_threadpool(save_sent, page_words, sent, settings.word_limits)
+    except DogearError as e:
+        return word_file_problem(request, "Dogear couldn't save the words", e)
     if errors:
         return await _page(request, record, sent=sent, errors=errors, status_code=400)
     return RedirectResponse(f"/books/{record.id}/words?saved=1", status_code=303)
@@ -231,9 +230,10 @@ def _items(
         return f"{where} {count(times, 'time')}." if times else ""
 
     if sent is not None:
-        return [WordItem(s.number, s.word, about(s.word), s.typed) for s in sent]
-    spellings = {word_key(e.word): e.sounds_like or "" for e in saved}
-    return [
-        WordItem(n, w.word, about(w.word), spellings.get(word_key(w.word), ""))
-        for n, w in enumerate(found, start=1)
-    ]
+        return shown_again(sent, saved, about)
+    spellings = saved_spellings(saved)
+    items = []
+    for n, w in enumerate(found, start=1):
+        spelling = spellings.get(word_key(w.word), "")
+        items.append(WordItem(n, w.word, about(w.word), spelling, spelling))
+    return items

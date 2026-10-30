@@ -1,9 +1,10 @@
 """An exclusive lock on a file, held for as long as this process keeps it.
 
 Keeps two Dogear processes off one folder: a second `dogear serve` off a web folder in
-use, and `dogear make` off a work folder another run is using. The operating system
-releases the lock when the file is closed or the process ends, however it ends, so a
-crash never leaves a folder locked.
+use, `dogear make` off a work folder another run is using, and a second download into
+the models folder until the first is done. The operating system releases the lock when
+the file is closed or the process ends, however it ends, so a crash never leaves a
+folder locked.
 
 On Linux and macOS it is flock(2), which also holds between two opens of the file in one
 process. On Windows it is a lock on the file's first byte (msvcrt.locking).
@@ -13,6 +14,8 @@ from __future__ import annotations
 
 import errno
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 
@@ -54,6 +57,19 @@ class FileLock:
                 return None
             raise
         return cls(path, descriptor)
+
+    @classmethod
+    def wait_for(
+        cls, path: Path, waiting: Callable[[], None], poll_seconds: float = 0.25
+    ) -> FileLock:
+        """The lock on `path`, waiting for as long as another holder keeps it. `waiting`
+        is called once, before the wait, if there is one."""
+        lock = cls.try_acquire(path)
+        if lock is None:
+            waiting()
+            while (lock := cls.try_acquire(path)) is None:
+                time.sleep(poll_seconds)
+        return lock
 
     def is_current(self) -> bool:
         """Whether `path` is still the file this lock is on: not deleted or replaced."""

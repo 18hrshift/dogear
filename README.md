@@ -99,10 +99,12 @@ On the page:
 3. To fix names the voice says wrong, follow "check how words are said" on that page
    (or on a finished book's page). Dogear lists the words the voice doesn't know, most
    frequent first, each with a Listen button and a "Say it like" field. Write "utter son"
-   for Utterson, say, choose Save, and Listen again. The Pronunciations page lists every
-   word you have fixed, and can say any short text. The page keeps these words in
-   `words.toml` in its web folder and uses them for every book it makes, after any
-   pronunciation files in your settings, so the page's spellings win.
+   for Utterson, say, choose Save, and Listen again. Save changes only the words you
+   changed, so a page left open in another tab never undoes a change made since; if one
+   of your words was also changed there, Dogear saves nothing and says so beside it. The
+   Pronunciations page lists every word you have fixed, and can say any short text. The
+   page keeps these words in `words.toml` in its web folder and uses them for every book
+   it makes, after any pronunciation files in your settings, so the page's spellings win.
 4. Choose Start making. The book's page says how far it has got, with its latest
    progress lines. A warning repeated many times in a row is one line that says how many
    times. Dogear makes one book at a time, and others wait their turn. You can close the

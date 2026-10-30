@@ -3,14 +3,23 @@
 //
 // A Listen form names its status region (role="status") in data-listen. This sends the
 // form asking for JSON, asks how it's going until the recording is ready, then plays it
-// in a player put just before the region. The region says "Getting it ready", then
-// "Playing" or what went wrong, and changes only when the words are different, so a
-// screen reader never hears the same news twice. Nothing plays until Listen is pressed.
+// in a player put just before the region, named "Recording of" the text. The region
+// says "Getting it ready" when Listen is pressed, and what went wrong if something does.
+// It changes only when the words are different, so a screen reader never hears the same
+// news twice. Nothing plays until Listen is pressed.
+//
+// Nothing is announced as the recording starts or ends. A recording is often a single
+// word, about a second long: anything said as it starts would be spoken over it, and
+// anything said as it ends would only follow what the listener has just heard. So the
+// region is emptied as playing starts (emptying it isn't announced), which also keeps
+// "Getting it ready" from staying on screen while it plays.
 (function () {
   "use strict";
 
   var EVERY_MS = 700;
   var NO_ANSWER = "Dogear didn't answer. Check that it's still running, then choose Listen again.";
+  var PRESS_PLAY = "Ready. Use the player's Play button to hear it.";
+  var CANT_PLAY = "This browser couldn't play the recording.";
 
   if (!window.fetch || !window.FormData || !window.URLSearchParams) {
     return;
@@ -38,6 +47,12 @@
       audio.id = id;
       audio.controls = true;
       audio.preload = "auto";
+      audio.addEventListener("playing", function () {
+        say(region, "");
+      });
+      audio.addEventListener("error", function () {
+        say(region, CANT_PLAY);
+      });
       region.parentNode.insertBefore(audio, region);
     }
     return audio;
@@ -45,13 +60,16 @@
 
   function play(region, status) {
     var audio = player(region);
+    audio.setAttribute("aria-label", "Recording of " + status.text);
     audio.src = status.audio_url;
-    say(region, "Playing.");
     var started = audio.play();
     if (started && started.catch) {
-      started.catch(function () {
-        // The browser wants a press on the player itself.
-        say(region, "Ready. Use the player's Play button to hear it.");
+      started.catch(function (error) {
+        if (error && error.name === "NotAllowedError") {
+          // The browser wants a press on the player itself.
+          say(region, PRESS_PLAY);
+        }
+        // Any other failure to play fires the player's error event, which says so.
       });
     }
   }

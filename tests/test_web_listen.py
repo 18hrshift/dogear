@@ -63,7 +63,10 @@ def test_listen_without_javascript_shows_a_player_and_what_was_said(running, com
     assert page.status_code == 200
     listen_id = page_url.rsplit("/", 1)[1]
     assert "<title>Listen: Utterson met him. - Dogear</title>" in page.text
-    assert f'<audio controls preload="metadata" src="/listen/{listen_id}/audio">' in page.text
+    assert (
+        f'<audio controls preload="metadata" src="/listen/{listen_id}/audio" '
+        'aria-label="Recording of Utterson met him.">'
+    ) in page.text
     assert "autoplay" not in page.text
     assert "<p>Said: Utterson met him.</p>" in page.text
     assert f'<a href="/listen/{listen_id}/audio" download="Utterson met him.wav">' in page.text
@@ -116,6 +119,7 @@ def test_listen_with_javascript_answers_in_json(running):
     assert status["state"] == "done"
     assert status["audio_url"] == f"/listen/{listen_id}/audio"
     assert status["said"] == ["Lanyon"]
+    assert status["text"] == "Lanyon"  # listen.js names the player with it
     assert status["sentence"] == "Ready to play."
     assert client.get(status["audio_url"]).headers["content-type"] == "audio/wav"
 

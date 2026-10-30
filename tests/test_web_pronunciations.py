@@ -2,14 +2,15 @@
 trying any text with Listen, and the errors and limits."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import lxml.html
 import pytest
-from web_samples import sample_app, sample_config, visitor
+from web_samples import changed_elsewhere, sample_app, sample_config, save_form, visitor
 
-from dogear.web import child
+from dogear.web import atomic, child
 from dogear.web.settings import WordLimits
 from dogear.web.spelling_forms import form_limits
 
@@ -95,6 +96,109 @@ def test_add_change_and_remove_words(running):
     assert texts(tree_of(client.get("/pronunciations?done=saved")), "//p[@class='notice']") == [
         "Saved."
     ]
+
+
+def typed(form, word, spelling):
+    """`form` with `spelling` typed in the "Say it like" field of `word`."""
+    [number] = [k[len("word-") :] for k, v in form.items() if k.startswith("word-") and v == word]
+    return {**form, f"say-{number}": spelling}
+
+
+def test_a_page_opened_earlier_saves_only_what_it_changed(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    add(client, "Lanyon", "lan yon")
+    earlier = save_form(client, "/pronunciations")  # another tab, or Back
+    assert earlier == {
+        "word-1": "Lanyon",
+        "was-1": "lan yon",
+        "say-1": "lan yon",
+        "word-2": "Utterson",
+        "was-2": "utter son",
+        "say-2": "utter son",
+    }
+    client.post(
+        "/pronunciations", data=typed(save_form(client, "/pronunciations"), "Utterson", "utter sun")
+    )
+    response = client.post(
+        "/pronunciations", data=typed(earlier, "Lanyon", "lanny on"), follow_redirects=False
+    )
+    assert response.headers["location"] == "/pronunciations?done=saved"
+    assert saved(app) == [("Lanyon", "lanny on", None), ("Utterson", "utter sun", None)]
+    # Nor does it bring back a word removed since.
+    client.post("/pronunciations", data=typed(save_form(client, "/pronunciations"), "Lanyon", ""))
+    client.post("/pronunciations", data=earlier)
+    assert saved(app) == [("Utterson", "utter sun", None)]
+
+
+def test_a_word_changed_in_another_window_is_not_overwritten(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    add(client, "Poole", "pool")
+    page = changed_elsewhere(
+        client,
+        "/pronunciations",
+        "Utterson",
+        "otter son",
+        lambda: app.state.page_words.save({"Utterson": "utter sun"}),
+    )
+    tree = lxml.html.fromstring(page)
+    message = (
+        "Utterson was changed in another window since this page was opened. "
+        "It now says: utter sun. Check it and save again."
+    )
+    links = tree.xpath("//*[@role='alert']//a")
+    assert [(a.get("href"), a.text_content()) for a in links] == [("#say-2", message)]
+    assert texts(tree, "//p[@id='say-2-error']") == [f"Error: {message}"]
+    assert tree.xpath("//input[@id='say-2']/@aria-describedby") == ["say-2-error"]
+    assert saved(app) == [("Poole", "pool", None), ("Utterson", "utter sun", None)]
+    # What was typed is kept, and saving again saves it.
+    [form] = tree.xpath("//form[@action='/pronunciations']")
+    again = dict(form.form_values())
+    assert (again["say-2"], again["was-2"]) == ("otter son", "utter sun")
+    response = client.post("/pronunciations", data=again, follow_redirects=False)
+    assert response.headers["location"] == "/pronunciations?done=saved"
+    assert saved(app) == [("Poole", "pool", None), ("Utterson", "otter son", None)]
+
+
+def test_a_word_removed_in_another_window_says_so(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    page = changed_elsewhere(
+        client,
+        "/pronunciations",
+        "Utterson",
+        "otter son",
+        lambda: app.state.page_words.save({"Utterson": ""}),
+    )
+    assert (
+        "Utterson was changed in another window since this page was opened. It now has no "
+        "spelling. Check it and save again." in page
+    )
+    assert saved(app) == []
+
+
+def test_an_entry_outside_the_limits_can_be_removed(tmp_path, commands):
+    config = sample_config(tmp_path / "web")
+    config["web"]["max_word_chars"] = 8
+    app = sample_app(tmp_path / "web", config)
+    long = "Dr. Henry Jekyll"  # saved by hand, or before the limit was lowered
+    app.state.settings.words_file.write_text(
+        f'[words]\n"{long}" = "doctor jekyll"\n"Mr. Edward Hyde" = "mister hyde"\nPoole = "pool"\n',
+        encoding="utf-8",
+    )
+    with visitor(app) as client:
+        form = typed(save_form(client, "/pronunciations"), long, "")
+        form = typed(form, "Poole", "pooh")  # the other long word is left as it is
+        response = client.post("/pronunciations", data=form, follow_redirects=False)
+        assert response.headers["location"] == "/pronunciations?done=saved"
+        assert saved(app) == [("Mr. Edward Hyde", "mister hyde", None), ("Poole", "pooh", None)]
+        # Changing one is checked as a new word is, and says why it can't be saved.
+        form = typed(save_form(client, "/pronunciations"), "Mr. Edward Hyde", "mister hide")
+        response = client.post("/pronunciations", data=form, follow_redirects=False)
+    assert response.status_code == 400
+    assert "Mr. Edward Hyde can&#39;t be saved: A word can be at most 8" in response.text
+    assert saved(app) == [("Mr. Edward Hyde", "mister hyde", None), ("Poole", "pooh", None)]
 
 
 def test_adding_needs_a_word_and_a_spelling_and_keeps_what_was_typed(running):
@@ -204,11 +308,37 @@ def test_a_word_file_broken_by_hand_is_reported_not_overwritten(running):
     assert words_file.read_text(encoding="utf-8") == "[words]\nUtterson = utter son\n"
 
 
+def test_a_word_file_another_program_has_open_is_reported(running, monkeypatch):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    words_file = app.state.settings.words_file
+    monkeypatch.setattr(atomic.time, "sleep", lambda seconds: None)
+    real_replace = os.replace
+
+    def in_use(source, target):
+        if os.fspath(target) == os.fspath(words_file):
+            raise PermissionError(13, "The process cannot access the file")
+        real_replace(source, target)
+
+    monkeypatch.setattr(atomic.os, "replace", in_use)
+    response = client.post(
+        "/pronunciations", data=typed(save_form(client, "/pronunciations"), "Utterson", "utter sun")
+    )
+    assert response.status_code == 500
+    tree = tree_of(response)
+    assert texts(tree, "//h1") == ["Dogear couldn't save the words"]
+    page = " ".join(tree.text_content().split())
+    assert "another program had the pronunciation file open" in page
+    assert "Try saving again in a moment." in page
+    assert "disk" not in page
+    assert saved(app) == [("Utterson", "utter son", None)]
+
+
 def test_the_save_form_is_bounded_by_the_word_limits(tmp_path, commands):
     limits = WordLimits(entries=3, word_chars=10, spelling_chars=10)
     most_bytes, most_fields = form_limits(limits)
-    assert most_fields == 22
-    assert most_bytes > 3 * 9 * 20
+    assert most_fields == 25  # word-N, was-N, and say-N for each, and a few more
+    assert most_bytes > 3 * 9 * 30
     config = sample_config(tmp_path / "web")
     config["web"].update(max_pronunciations=3, max_word_chars=10, max_spelling_chars=10)
     app = sample_app(tmp_path / "web", config)

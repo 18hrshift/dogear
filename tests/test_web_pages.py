@@ -16,26 +16,36 @@ ERROR_PAGES = {
     "choose-language-errors",
     "access-error",
     "words-errors",
+    "words-changed",
     "pronunciations-add-errors",
     "pronunciations-errors",
     "pronunciations-try-error",
+    "pronunciations-changed",
 }
 # Pages whose title may repeat: the same page, with different things in it or a notice,
 # or an error in one form or another.
 SAME_PAGE = [
     {"home-empty", "home-books", "home-deleted"},
     {"words-list", "words-saved"},
+    {"words-errors", "words-changed"},
     {"pronunciations-empty", "pronunciations-full", "pronunciations-added"},
-    {"pronunciations-add-errors", "pronunciations-errors", "pronunciations-try-error"},
+    {
+        "pronunciations-add-errors",
+        "pronunciations-errors",
+        "pronunciations-try-error",
+        "pronunciations-changed",
+    },
 ]
 # Pages with words to fix, each in its own group with a Listen button.
 WORD_PAGES = {
     "words-list",
     "words-saved",
     "words-errors",
+    "words-changed",
     "pronunciations-full",
     "pronunciations-added",
     "pronunciations-errors",
+    "pronunciations-changed",
 }
 
 
@@ -87,6 +97,7 @@ def test_every_state_has_a_page(pages):
         "words-saved",
         "words-empty",
         "words-errors",
+        "words-changed",
         "words-failed",
         "listen-waiting",
         "listen-done",
@@ -98,6 +109,7 @@ def test_every_state_has_a_page(pages):
         "pronunciations-add-errors",
         "pronunciations-errors",
         "pronunciations-try-error",
+        "pronunciations-changed",
     }
 
 
@@ -277,6 +289,7 @@ def test_the_recording_page_has_a_player_a_download_and_what_was_said(pages):
     [audio] = page.xpath("//audio")
     assert audio.get("controls") is not None and audio.get("autoplay") is None
     assert audio.get("src").endswith("/audio")
+    assert audio.get("aria-label") == "Recording of Mr. Utterson the lawyer."
     assert page.xpath("//a[@download]/text()") == ["Download the recording"]
     assert "Said: Mister Utter son the lawyer." in page.text_content()
     assert not page.xpath("//script")

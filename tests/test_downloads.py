@@ -6,15 +6,29 @@ network.
 
 import hashlib
 import io
+import os
+import subprocess
+import sys
+import threading
+import time
 import urllib.error
 import zipfile
+from pathlib import Path
 
 import pytest
 
 from dogear.errors import DownloadError
-from dogear.voice import downloads
+from dogear.voice import downloads, spacy_model
 from dogear.voice.catalog import catalog, spacy_model_dir, spacy_wheel
-from dogear.voice.downloads import RemoteFile, download, ensure_files, megabytes
+from dogear.voice.downloads import (
+    LOCK_FILE,
+    WAITING,
+    RemoteFile,
+    download,
+    download_lock,
+    ensure_files,
+    megabytes,
+)
 from dogear.voice.spacy_model import unpack_spacy_model
 
 
@@ -132,6 +146,139 @@ def test_connection_lost_midway_leaves_no_partial_file(tmp_path, monkeypatch):
     with pytest.raises(DownloadError, match="connection reset by peer"):
         download(file, 5, print)
     assert leftovers(file) == []
+
+
+def temporaries(remote_file: RemoteFile) -> list[Path]:
+    return sorted(remote_file.path.parent.glob(f".*{downloads.TEMPORARY_SUFFIX}"))
+
+
+class InterruptedResponse(io.BytesIO):
+    """A response that runs `meanwhile` once, after its first chunk: what another
+    process does while this download is still going."""
+
+    def __init__(self, data: bytes, meanwhile) -> None:
+        super().__init__(data)
+        self.meanwhile = meanwhile
+
+    def read(self, size=-1):
+        if self.tell() and self.meanwhile:
+            meanwhile, self.meanwhile = self.meanwhile, None
+            meanwhile()
+        return super().read(4)
+
+
+def test_two_downloads_of_one_file_at_once_both_succeed(tmp_path, monkeypatch):
+    data = bytes(range(256)) * 4
+    file = remote(tmp_path, data=data)
+    responses = iter(
+        [
+            InterruptedResponse(data, lambda: download(file, 5, print)),  # the first
+            io.BytesIO(data),  # the second, run in the middle of the first
+        ]
+    )
+    monkeypatch.setattr(downloads.urllib.request, "urlopen", lambda url, timeout: next(responses))
+    download(file, 5, print)
+    assert file.path.read_bytes() == data
+    assert leftovers(file) == ["voice.bin"]
+
+
+def test_the_checksum_is_of_the_file_on_disk(tmp_path, monkeypatch):
+    data = b"voice data" * 100
+    file = remote(tmp_path, data=data)
+
+    def spoil():
+        # Something else writes into the file while the right bytes arrive, as a second
+        # download writing into the same file did.
+        [temporary] = temporaries(file)
+        with temporary.open("r+b") as other:
+            other.seek(len(data))
+            other.write(b"more")
+
+    monkeypatch.setattr(
+        downloads.urllib.request, "urlopen", lambda url, timeout: InterruptedResponse(data, spoil)
+    )
+    with pytest.raises(DownloadError, match="checksum"):
+        download(file, 5, print)
+    assert leftovers(file) == []
+
+
+def test_a_download_stopped_midway_leaves_the_finished_file_alone(tmp_path, monkeypatch):
+    data = b"voice data"
+    file = remote(tmp_path, data=data)
+    download(file, 5, print)
+
+    def stop():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        downloads.urllib.request, "urlopen", lambda url, timeout: InterruptedResponse(data, stop)
+    )
+    with pytest.raises(KeyboardInterrupt):
+        download(file, 5, print)
+    assert file.path.read_bytes() == data
+    assert leftovers(file) == ["voice.bin"]
+
+
+def test_ensure_files_removes_only_temporaries_no_download_is_writing(tmp_path, config):
+    file = remote(tmp_path, data=b"voice data")
+    file.path.parent.mkdir(parents=True)
+    stopped = file.path.with_name(".voice.bin.0123456789abcdef.download")
+    running = file.path.with_name(".voice.bin.fedcba9876543210.download")
+    for path, age in ((stopped, downloads.STALE_SECONDS + 60), (running, 5)):
+        path.write_bytes(b"part")
+        then = time.time() - age
+        os.utime(path, (then, then))
+    ensure_files([file], config, lambda line: None)
+    assert file.path.read_bytes() == b"voice data"
+    assert temporaries(file) == [running]
+
+
+LOCK_HOLDER = """
+import sys, time
+from pathlib import Path
+from dogear.file_lock import FileLock
+lock = FileLock.try_acquire(Path(sys.argv[1]))
+print("held" if lock else "busy", flush=True)
+time.sleep(60)
+"""
+
+
+def test_the_download_lock_waits_for_another_dogear_and_says_so_once(tmp_path):
+    folder = tmp_path / "models"
+    folder.mkdir()
+    holder = subprocess.Popen(
+        [sys.executable, "-c", LOCK_HOLDER, str(folder / LOCK_FILE)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    lines, got_it = [], threading.Event()
+
+    def wait_for_the_lock():
+        with download_lock(folder, lines.append):
+            got_it.set()
+
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        waiter = threading.Thread(target=wait_for_the_lock)
+        waiter.start()
+        time.sleep(1)
+        assert not got_it.is_set()
+        assert lines == [WAITING]
+    finally:
+        holder.kill()  # it stops as a crash would: the system lets go of the lock
+        holder.wait()
+        holder.stdout.close()
+    waiter.join(timeout=15)
+    assert got_it.is_set()
+    assert lines == [WAITING]
+
+
+def test_the_download_lock_says_nothing_when_no_one_else_has_it(tmp_path):
+    lines = []
+    with download_lock(tmp_path / "models", lines.append):
+        pass
+    assert lines == []
+    assert (tmp_path / "models" / LOCK_FILE).is_file()
 
 
 def test_timeout_is_passed_to_urlopen(tmp_path, monkeypatch):
@@ -313,11 +460,49 @@ def test_unpack_reuses_an_unpacked_model(tmp_path):
     assert unpack_spacy_model(tmp_path) == target
 
 
-def test_unpack_replaces_a_leftover_staging_folder(tmp_path):
-    staging = spacy_model_dir(tmp_path).with_name("en_core_web_sm-3.8.0.part")
+def staging_folder(models_dir, name: str, age_seconds: float):
+    """A staging folder an unpack left, last changed `age_seconds` ago."""
+    staging = spacy_model_dir(models_dir).with_name(f".en_core_web_sm-3.8.0.{name}.unpacking")
     staging.mkdir(parents=True)
-    (staging / "stale.bin").write_bytes(b"from a crashed run")
+    (staging / "stale.bin").write_bytes(b"from a stopped run")
+    then = time.time() - age_seconds
+    os.utime(staging, (then, then))
+    return staging
+
+
+def test_unpack_removes_only_staging_folders_no_unpack_is_using(tmp_path):
+    stale = staging_folder(tmp_path, "stopped", downloads.STALE_SECONDS + 60)
+    running = staging_folder(tmp_path, "running", 5)  # another Dogear, unpacking now
     model_wheel(tmp_path)
     target = unpack_spacy_model(tmp_path)
     assert "stale.bin" not in files_under(target)
-    assert not staging.exists()
+    assert not stale.exists()
+    assert running.exists()
+    assert sorted(p.name for p in (tmp_path / "spacy").iterdir()) == [
+        running.name,
+        target.name,
+    ]
+
+
+def test_unpack_uses_a_model_another_dogear_put_in_place_first(tmp_path, monkeypatch):
+    wheel = model_wheel(tmp_path)
+    target = spacy_model_dir(tmp_path)
+    real_replace = spacy_model.os.replace
+
+    def first_there(source, destination):
+        # Another Dogear finishes its unpack while this one is still unpacking.
+        Path(destination).mkdir(parents=True)
+        (Path(destination) / "config.cfg").write_text("theirs", encoding="utf-8")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(spacy_model.os, "replace", first_there)
+    assert unpack_spacy_model(tmp_path) == target
+    assert (target / "config.cfg").read_text(encoding="utf-8") == "theirs"
+    assert files_under(tmp_path / "spacy") == ["en_core_web_sm-3.8.0/config.cfg"]
+    assert not wheel.exists()
+
+
+def test_unpack_after_another_dogear_unpacked_and_removed_the_wheel(tmp_path):
+    model_wheel(tmp_path)
+    target = unpack_spacy_model(tmp_path)  # the other Dogear
+    assert unpack_spacy_model(tmp_path) == target  # no wheel now, and none needed

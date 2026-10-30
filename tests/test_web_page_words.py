@@ -9,8 +9,9 @@ import pytest
 from dogear.config import default_config
 from dogear.errors import DogearError, PronunciationError
 from dogear.pronunciations import load_dictionary, read_pronunciation_file
-from dogear.web import page_words
+from dogear.web import atomic, page_words
 from dogear.web.page_words import (
+    ChangedElsewhere,
     EntryError,
     PageWords,
     clean_spelling,
@@ -39,6 +40,37 @@ def test_nothing_is_written_until_a_word_is_saved(words):
     words.save({"Utterson": "utter son"})
     assert words_option(words.path) == ["--words", str(words.path)]
     assert saved(words) == [("Utterson", "utter son", None)]
+
+
+def test_a_save_that_says_what_the_page_showed_keeps_changes_made_since(words):
+    words.save({"Utterson": "utter son", "Lanyon": "lan yon", "Poole": "pool"})
+    # As the page showed them: saved.
+    words.save({"lanyon": "lanny on"}, shown={"lanyon": "lan yon"})
+    assert saved(words)[0] == ("lanyon", "lanny on", None)
+    # Changed since: "utter son" isn't what that page showed. Nothing is saved.
+    with pytest.raises(ChangedElsewhere) as error:
+        words.save(
+            {"Utterson": "otter son", "Poole": "", "Hyde": "hide"},
+            shown={"Utterson": "utter sun", "Poole": "pool", "Hyde": "hidey"},
+        )
+    assert error.value.words == {"Utterson": "utter son", "Hyde": ""}
+    assert saved(words) == [
+        ("lanyon", "lanny on", None),
+        ("Poole", "pool", None),
+        ("Utterson", "utter son", None),
+    ]
+    # Changed since, but to what was asked for: nothing to undo.
+    words.save({"UTTERSON": "utter son"}, shown={"UTTERSON": "utter sun"})
+    words.save({"Hyde": ""}, shown={"Hyde": "hidey"})  # removed since: removed
+    assert [e.word for e in words.entries()] == ["lanyon", "Poole", "UTTERSON"]
+
+
+def test_any_entry_can_be_removed_whatever_the_limits(tmp_path):
+    words = PageWords(tmp_path / "words.toml", LIMITS)
+    long = "Abracadabra-" * 5  # longer than LIMITS.word_chars, written by hand
+    words.path.write_text(f'[words]\n"{long}" = "ay"\nHyde = "hide"\n', encoding="utf-8")
+    words.save({long.upper(): ""}, shown={long.upper(): "ay"})
+    assert saved(words) == [("Hyde", "hide", None)]
 
 
 def test_quotes_backslashes_and_unicode_are_saved_as_typed(words):
@@ -158,3 +190,35 @@ def test_a_full_disk_is_a_plain_error(words, monkeypatch):
     with pytest.raises(DogearError, match="No space left on device") as error:
         words.save({"Hyde": "hide"})
     assert "disk" in error.value.hint
+
+
+def test_a_file_another_program_has_open_says_so(words, monkeypatch):
+    words.save({"Utterson": "utter son"})
+    monkeypatch.setattr(atomic.time, "sleep", lambda seconds: None)
+    real_replace = os.replace
+
+    def in_use(source, target):
+        # As Windows does while a child or a virus checker has the file open.
+        if os.fspath(target) == os.fspath(words.path):
+            raise PermissionError(13, "The process cannot access the file")
+        real_replace(source, target)
+
+    monkeypatch.setattr(atomic.os, "replace", in_use)
+    with pytest.raises(DogearError) as error:
+        words.save({"Hyde": "hide"})
+    assert error.value.message == (
+        "Dogear couldn't save its word list: another program had the pronunciation file "
+        f"open ({words.path})."
+    )
+    assert error.value.hint == "Try saving again in a moment."
+    assert saved(words) == [("Utterson", "utter son", None)]
+
+
+def test_other_write_errors_dont_blame_the_disk(words, monkeypatch):
+    def refused(path, data, check=None):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(page_words, "write_atomically", refused)
+    with pytest.raises(DogearError, match="Read-only file system") as error:
+        words.save({"Hyde": "hide"})
+    assert error.value.hint == "Check that Dogear can still write to that folder, then try again."

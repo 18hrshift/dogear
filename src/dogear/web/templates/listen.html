@@ -18,7 +18,7 @@
 {% for sentence in listen.said %}
 <p>Said: {{ sentence }}</p>
 {% endfor %}
-<p class="player"><audio controls preload="metadata" src="/listen/{{ listen.id }}/audio">This browser can't play it here. Use the download link instead.</audio></p>
+<p class="player"><audio controls preload="metadata" src="/listen/{{ listen.id }}/audio" aria-label="Recording of {{ listen.text }}">This browser can't play it here. Use the download link instead.</audio></p>
 <p><a href="/listen/{{ listen.id }}/audio" download="{{ download_name }}">Download the recording</a> (a WAV file{% if size %}, {{ size }}{% endif %})</p>
 {% elif listen.state == "failed" %}
 <p><strong>Error:</strong> {{ listen.error }}</p>

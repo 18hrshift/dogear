@@ -14,10 +14,11 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 
+import lxml.html
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
@@ -282,6 +283,13 @@ def _word_pages(app: Starlette, client: TestClient, folder: Path) -> dict[str, s
             "say-4": "",
         },
     ).text
+    pages["words-changed"] = changed_elsewhere(
+        client,
+        f"/books/{listed}/words",
+        "Lanyon",
+        "lanny on",
+        lambda: page_words.save({"Lanyon": "lan yun"}),
+    )
     page_words.save({"Lanyon": ""})
     return pages
 
@@ -335,8 +343,38 @@ def _pronunciation_pages(app: Starlette, client: TestClient) -> dict[str, str]:
     pages["pronunciations-try-error"] = client.post(
         "/pronunciations/try", data={"text": "..."}
     ).text
+    pages["pronunciations-changed"] = changed_elsewhere(
+        client,
+        "/pronunciations",
+        "Utterson",
+        "otter son",
+        lambda: app.state.page_words.save({"Utterson": "utter sun"}),
+    )
     words_file.unlink()
     return pages
+
+
+def save_form(client: TestClient, path: str) -> dict[str, str]:
+    """What the Save form on the page at `path` sends as the page comes."""
+    page = lxml.html.fromstring(client.get(path).text)
+    [form] = page.xpath(f"//form[@action='{path}']")
+    return dict(form.form_values())
+
+
+def changed_elsewhere(
+    client: TestClient, path: str, word: str, typed: str, meanwhile: Callable[[], None]
+) -> str:
+    """The page that Save on the page at `path` gives when `typed` was typed for `word`,
+    and `meanwhile` changed words in another window after the page was opened."""
+    form = save_form(client, path)
+    meanwhile()
+    [number] = [
+        key[len("word-") :]
+        for key, value in form.items()
+        if key.startswith("word-") and value == word
+    ]
+    form[f"say-{number}"] = typed
+    return client.post(path, data=form).text
 
 
 def _made_outputs(library: Library, book_id: str) -> None:
