@@ -167,6 +167,15 @@ def test_british_voices_use_british_espeak(espeak):
     assert espeak.calls()[0]["args"][-2:] == ["-v", "en-gb"]
 
 
+def test_a_data_folder_is_passed_with_path(espeak, tmp_path):
+    # A standalone build's espeak-ng is told where its data is; other copies look for it.
+    espeak.answer("Jekyll", "d^ʒˈɛkɪl")
+    data = tmp_path / "tools"
+    EspeakFallback(PROGRAM, british=False, data=data)(token("Jekyll"))
+    [call] = espeak.calls()
+    assert call["args"] == [f"--path={data}", "-q", "--ipa", "--tie=^", "-v", "en-us"]
+
+
 def test_fallback_asks_once_per_word(espeak):
     espeak.answer("Utterson", "ˈʌɾɚsən")
     fallback = EspeakFallback(PROGRAM, british=False)
@@ -245,6 +254,14 @@ def test_unknown_words_go_to_espeak(blank_spacy, tmp_path, espeak):
     g = EnglishG2P(tmp_path, british=True, espeak=PROGRAM)
     assert g("Hello Zorblax") == "həlˈQ zˈɔːblæks"
     assert [(c["args"][-1], c["stdin"]) for c in espeak.calls()] == [("en-gb", "Zorblax\n")]
+
+
+def test_espeak_data_folder_reaches_the_fallback(blank_spacy, tmp_path, espeak):
+    espeak.answer("Zorblax", "zˈɔːblæks")
+    data = tmp_path / "tools"
+    EnglishG2P(tmp_path, british=False, espeak=PROGRAM, espeak_data=data)("Hello Zorblax")
+    [call] = espeak.calls()
+    assert call["args"][0] == f"--path={data}"
 
 
 def test_output_has_no_edge_whitespace(blank_spacy, tmp_path):

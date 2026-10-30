@@ -3,6 +3,7 @@
 import re
 import sys
 import zipfile
+from pathlib import Path
 
 import pytest
 from kokoro_fakes import use_fake_session, write_tokenizer, write_voice
@@ -10,6 +11,7 @@ from kokoro_fakes import use_fake_session, write_tokenizer, write_voice
 from dogear.errors import PronunciationError, ToolNotFoundError, VoiceError
 from dogear.voice import _check_engine, find_voice, make_engine, prepare_kokoro, prepare_spacy
 from dogear.voice import downloads as downloads_module
+from dogear.voice import g2p as g2p_module
 from dogear.voice.catalog import (
     catalog,
     kokoro_file,
@@ -306,6 +308,103 @@ def test_a_phoneme_the_voice_lacks_stops_the_engine(config, ready_engine, tmp_pa
         make_engine(config, print)
     assert f"'Gale' in {path}" in err.value.message
     assert ready_engine.instances == []  # stopped before loading the model
+
+
+# A standalone build, which carries the default voice.
+
+
+def voice_files(voice="af_heart", model_build="full"):
+    """Where packaging/ puts a voice's files in a build, and their SHA-256 sums. Asked
+    before anything is bundled, so the catalog answers with models-folder paths."""
+    base = Path("models")
+    remotes = [
+        kokoro_file("model", model_build, base),
+        kokoro_file("tokenizer", "", base),
+        kokoro_file("voice", voice, base),
+    ]
+    files = {r.path.relative_to(base).as_posix(): r.sha256 for r in remotes}
+    spacy_dir = spacy_model_dir(base).relative_to(base).as_posix()
+    return files, spacy_dir
+
+
+def bundle_voice(build):
+    files, spacy_dir = voice_files()
+    for relative, sha256 in files.items():
+        build.add_model(relative, sha256)
+    build.add_model_folder(spacy_dir, catalog()["spacy"]["sha256"])
+    return files
+
+
+@pytest.fixture
+def downloaded(monkeypatch):
+    """The real ensure_files, choosing what's missing; the download itself is faked."""
+    names = []
+
+    def fake_download(remote, timeout, report):
+        names.append(remote.path.name)
+        remote.path.parent.mkdir(parents=True, exist_ok=True)
+        remote.path.write_bytes(b"stand-in")
+
+    monkeypatch.setattr(downloads_module, "download", fake_download)
+    return names
+
+
+def test_a_standalone_build_speaks_its_voice_without_downloading(
+    config, models, standalone_build, no_network
+):
+    bundle_voice(standalone_build)
+    lines = []
+    setup = prepare_kokoro(config, lines.append)
+    assert lines == []
+    for remote in (setup.model, setup.tokenizer, setup.voice_file):
+        assert remote.path.is_relative_to(standalone_build.folder)
+    assert prepare_spacy(config, print).is_relative_to(standalone_build.folder)
+    assert not models.exists()  # nothing written to the user's folder
+
+
+def test_a_standalone_build_downloads_other_voices_to_the_user_folder(
+    config, models, standalone_build, downloaded
+):
+    bundle_voice(standalone_build)
+    config["voice"]["voice"] = "bf_emma"
+    setup = prepare_kokoro(config, print)
+    assert downloaded == ["bf_emma.bin"]
+    assert setup.voice_file.path == models / "kokoro" / "voices" / "bf_emma.bin"
+    assert setup.model.path.is_relative_to(standalone_build.folder)
+
+
+def test_a_bundled_file_that_isnt_the_pinned_one_is_downloaded_instead(
+    config, models, standalone_build, downloaded
+):
+    files = bundle_voice(standalone_build)
+    [tokenizer] = [relative for relative in files if relative.endswith("tokenizer.json")]
+    standalone_build.add_model(tokenizer, "0" * 64)  # say, from an older catalog
+    setup = prepare_kokoro(config, print)
+    assert downloaded == ["tokenizer.json"]
+    assert setup.tokenizer.path == models / "kokoro" / "tokenizer.json"
+
+
+def test_the_bundled_espeak_ng_is_told_where_its_data_is(
+    config, models, standalone_build, monkeypatch, no_network
+):
+    import spacy
+
+    install_voice(models)
+    espeak = standalone_build.add_program("espeak-ng")
+    monkeypatch.setattr(spacy, "load", lambda path, enable: spacy.blank("en"))
+    use_fake_session(monkeypatch)
+    made = []
+    real_g2p = g2p_module.EnglishG2P
+
+    def recording_g2p(*args, **kwargs):
+        made.append((args, kwargs))
+        return real_g2p(*args, **kwargs)
+
+    monkeypatch.setattr(g2p_module, "EnglishG2P", recording_g2p)
+    make_engine(config, print)
+    [(args, kwargs)] = made
+    assert args[2] == str(espeak)
+    assert kwargs["espeak_data"] == espeak.parent
 
 
 def test_prepare_spacy_downloads_only_the_spacy_model(config, models, fake_downloads):

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from dogear import bundle
 from dogear.config import Config
 from dogear.errors import ToolFailedError, ToolNotFoundError
 
@@ -51,7 +52,8 @@ _WINDOWS_CANDIDATES = {
 
 
 def find_tool(key: str, config: Config) -> str:
-    """Path to the program for `key`, from config, PATH, or a known install folder."""
+    """Path to the program for `key`: the one set in config, else the copy a standalone
+    build carries, else the first on PATH, else one in a known install folder."""
     program, install_hint = TOOLS[key]
     configured = config["tools"][key]
     if configured:
@@ -62,6 +64,9 @@ def find_tool(key: str, config: Config) -> str:
             f"tools.{key} is set to '{configured}', but that program wasn't found.",
             hint=f"Fix the path in your config, or clear it to search for it. {install_hint}",
         )
+    bundled = bundle.program(program)
+    if bundled:
+        return str(bundled)
     found = shutil.which(program)
     if found:
         return found

@@ -1,7 +1,8 @@
 """Voices: turning sentences into audio.
 
 `engine.py` defines what every engine provides. Kokoro is the built-in engine; its model
-files are downloaded on first use and checked against `catalog.toml`.
+files are downloaded on first use and checked against `catalog.toml`. A standalone build
+carries the default voice's files (see `dogear.bundle`), so it downloads only other voices.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from dogear import bundle
 from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.paths import models_dir
@@ -55,7 +57,13 @@ def make_engine(config: Config, report: Report) -> VoiceEngine:
         model=setup.model.path,
         tokenizer=setup.tokenizer.path,
         voice=setup.voice_file.path,
-        g2p=EnglishG2P(spacy_model_dir(models), setup.voice.british, espeak, dictionary),
+        g2p=EnglishG2P(
+            spacy_model_dir(models),
+            setup.voice.british,
+            espeak,
+            dictionary,
+            espeak_data=bundle.espeak_data(espeak),
+        ),
         speed=config["voice"]["speed"],
         threads=config["kokoro"]["threads"],
         sample_rate=kokoro["sample_rate"],

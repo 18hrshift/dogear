@@ -247,7 +247,8 @@ convert_timeout_seconds = 600
 
 [tools]
 # Command name or full path for each external program.
-# An empty value means: search PATH, then common install locations.
+# An empty value means: use the copy that came with Dogear's installer, if there is one,
+# else search PATH, then common install locations.
 ffmpeg = ""
 ffprobe = ""
 tesseract = ""
