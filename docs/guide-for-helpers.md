@@ -73,10 +73,14 @@ device, please tell us (see "Getting help" below).
 3. **Try a short piece first.** For your first book, check only one or two short
    sections, so you can hear the voice and speed in a few minutes before making the whole
    thing.
-4. **Start.** Choose "Start making". The book's page says how far Dogear has got and
+4. **Check the names (optional).** Before a long book, follow "check how words are said"
+   on the same page. It lists the names and unusual words the voice has to guess, so you
+   can listen to them and fix any it gets wrong (see "A name or word is said wrong"
+   below). It takes a minute and saves making the book twice.
+5. **Start.** Choose "Start making". The book's page says how far Dogear has got and
    about how long is left. You can close the page and come back to it from "Your books".
    Dogear makes one book at a time; others wait their turn.
-5. **Download.** When the book is ready, its page has a download link for each thing you
+6. **Download.** When the book is ready, its page has a download link for each thing you
    made, with its size. A DAISY book or an MP3 folder downloads as a zip file. The page
    also shows the folder on the computer where everything was saved.
 
