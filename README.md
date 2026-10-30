@@ -312,6 +312,14 @@ To fix a book's words:
 `dogear text mybook.epub --spoken --words names.toml` shows every line with your
 spellings in place.
 
+For other programs, `dogear words mybook.epub --json` prints the same list as JSON, in
+ASCII: an object whose `words` is a list, most frequent first, of objects with the
+`word` and its `count`. Errors are still the plain `Error:` and `What to do:` lines, and
+the exit status is 1.
+
+To say a text that starts with a hyphen, put `--` before it, so it isn't read as an
+option: `dogear say -o test.wav -- "-ing words"`.
+
 **Exact phonemes, for experts.** An entry can give the phonemes the voice should use,
 written in the symbols of misaki, the voice's pronunciation dictionary
 ([the list of symbols](https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md)).

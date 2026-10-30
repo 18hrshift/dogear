@@ -36,7 +36,7 @@ from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
 from dogear.pronunciations import dictionary_from_config
 from dogear.say import say_text
-from dogear.unknown_words import WordsRequest, find_unknown_words
+from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
 from dogear.voice import find_voice, prepare_kokoro
 from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
 from dogear.web.child import UTF8_OUTPUT_ENV
@@ -181,6 +181,11 @@ def _parser() -> argparse.ArgumentParser:
     words.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
     words.add_argument("--language", help="the book's language, if its own label is wrong")
     words.add_argument("--voice", help="voice name, from `dogear voices` (accents differ)")
+    words.add_argument(
+        "--json",
+        action="store_true",
+        help="print the same list as JSON, for other programs to read",
+    )
     words.set_defaults(run=_words)
 
     say = commands.add_parser(
@@ -374,6 +379,10 @@ def _words(args: argparse.Namespace, config: Config) -> int:
         language=args.language,
     )
     unknown = find_unknown_words(request, config, _report)
+    if args.json:
+        # ASCII only, so any program can read it whatever the console's encoding.
+        print(json.dumps(words_to_json(unknown), indent=2))
+        return 0
     where = "these sections" if args.sections else "this book"
     if not unknown:
         print(f"The voice knows every word in {where}.")
