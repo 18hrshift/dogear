@@ -28,6 +28,59 @@ uv tool install git+https://github.com/18hrshift/dogear-app
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
 install Tesseract OCR.
 
+## Use it in a web browser
+
+If you'd rather not type commands, Dogear has a web page. Start it with:
+
+```bash
+dogear serve
+```
+
+Dogear opens your web browser at its page. If it doesn't, open the link Dogear shows in
+its window. The link looks like `http://127.0.0.1:8765/start?key=abcde-fghjk-mnpqr-stuvw-xyz23`.
+
+On the page:
+
+1. Choose a book file (EPUB, PDF, MOBI, or AZW3) and upload it. Dogear reads it to find
+   its chapters.
+2. Choose what to make, the voice, the speed, and which sections to read. To hear the
+   voice before making a whole book, choose one or two sections.
+3. Choose Start making. The book's page says how far it has got. Dogear makes one book
+   at a time, and others wait their turn. You can close the page and come back later.
+4. When the book is ready, download what Dogear made. Folders (MP3 and DAISY) download
+   as a zip file. The page also shows the folder on the computer where everything is
+   saved.
+
+The page works without a mouse and without JavaScript, and it is built to work with
+screen readers. If something on it is hard to use, please tell us.
+
+**Keep Dogear running.** The page only works while Dogear runs. Keep the window where
+you started it open. To stop Dogear, press Ctrl+C in that window. A book being made
+stops too. Its page then has a Start again button, which carries on where it stopped:
+every sentence already spoken is kept.
+
+**The access link.** The part after `key=` is a password, made the first time Dogear's
+page starts and kept for later. Opening the link lets this browser in, so you need it
+once per browser. Anyone without it sees a page asking for it. To make a new key, for
+example after sharing the link by mistake, delete `access-key.txt` from Dogear's web
+folder (Dogear names the folder when it starts) and start Dogear again.
+
+**From a phone or tablet.** To use Dogear from a phone on the same Wi-Fi network as the
+computer, start it with:
+
+```bash
+dogear serve --lan
+```
+
+Dogear shows a second link, with the computer's address on the network. Open it on the
+phone. Anyone on the network who has the link can use Dogear, and the connection isn't
+encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
+
+Other options: `--port 8766` uses another port (if 8765 is taken), and `--no-browser`
+doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
+the page accepts (200 MB at first), how long reading a book may take, and the folder
+where books are kept.
+
 ## Make an audiobook
 
 ```bash
@@ -122,6 +175,12 @@ dogear download                           # fetch the voice now, before going of
 ```
 
 Everything Dogear prints is plain text, written to read well with a screen reader.
+
+For other programs, `dogear outline mybook.epub --json` prints the same facts as JSON: the
+`title`, `authors`, `language`, `source_format`, and `words`, and `sections`, each with its
+`number`, `title`, `kind` (`front`, `body`, or `back`), `words`, `first_page` and
+`last_page` (print page labels, or null), and counts of `images`, `notes`, and `tables`.
+Errors are still the plain `Error:` and `What to do:` lines, and the exit status is 1.
 
 ### Fix how a word is said
 
@@ -240,8 +299,10 @@ can't see the screen. Dogear is:
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
 - **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
   never leave your machine.
-- **Accessible to run.** The command line, and the web interface planned for later, are
-  designed to work with screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca).
+- **Accessible to run.** The command line and the web page are designed to work with
+  screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca). The web page aims at WCAG 2.2
+  AA, and CI checks every page with axe-core; testing with screen-reader users is still
+  to come.
 
 ## Outputs
 
