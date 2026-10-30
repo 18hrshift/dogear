@@ -10,13 +10,14 @@ import signal
 import sys
 import time
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from web_samples import CHOSEN, add_book, sample_app, sample_config, sample_summary, visitor
 
-from dogear.web import child, making
-from dogear.web.books import CLOSED_ERROR, BookRecord, BookStore, Choices
+from dogear.web import child, making, progress
+from dogear.web.books import CLOSED_ERROR, BookRecord, Choices
 from dogear.web.library import UNEXPECTED, Library
 from dogear.web.making import make_args, saved_outputs, section_spec
 from dogear.web.reading import INTERRUPTED_ERROR
@@ -109,7 +110,7 @@ def test_a_book_is_read_chosen_made_and_downloaded(running, commands):
     choose(client, book_id, format=["m4b", "mp3"], speed="1.0", section=["2", "3"])
     record = wait_for(app, book_id, "done")
     assert [o.format for o in record.outputs] == ["m4b", "mp3"]
-    assert record.lines[-1] == "Section 3 of 3 done: Two."
+    assert app.state.library.progress(book_id).lines[-1].text == "Section 3 of 3 done: Two."
 
     page = client.get(f"/books/{book_id}").text
     assert "<title>Ready: Fake Book - Dogear</title>" in page
@@ -217,17 +218,19 @@ def test_a_full_disk_for_progress_lines_does_not_stop_the_book(running, monkeypa
     book_id = upload(client, "ok")
     wait_for(app, book_id, "ready")
 
-    def full(self, book_id, line):
+    def full(path, data):
         raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(BookStore, "add_line", full)
-    with caplog.at_level(logging.WARNING, logger="dogear.web.making"):
+    monkeypatch.setattr(progress, "write_atomically", full)
+    with caplog.at_level(logging.WARNING, logger="dogear.web.progress"):
         choose(client, book_id)
         wait_for(app, book_id, "done")
-    warnings = [r.getMessage() for r in caplog.records if r.name == "dogear.web.making"]
+    warnings = [r.getMessage() for r in caplog.records if r.name == "dogear.web.progress"]
+    folder = app.state.library.folder(book_id)
     assert warnings == [
-        f"Couldn't save progress for book {book_id}: [Errno 28] No space left on device"
+        f"Couldn't save the progress lines in {folder}: [Errno 28] No space left on device"
     ]
+    assert app.state.library.progress(book_id).lines[-1].text == "Section 3 of 3 done: Two."
 
 
 def test_a_bug_while_making_ends_the_child_before_the_job_ends(running, monkeypatch, pids):
@@ -287,7 +290,8 @@ def test_a_crash_is_a_problem_dogear_did_not_expect(running):
     choose(client, book_id)
     record = wait_for(app, book_id, "failed")
     assert record.error == "Dogear stopped because of a problem it didn't expect."
-    assert any(line.startswith("RuntimeError: a bug") for line in record.lines)
+    lines = app.state.library.progress(book_id).lines
+    assert any(line.text.startswith("RuntimeError: a bug") for line in lines)
 
 
 def status(client, book_id):
@@ -492,7 +496,9 @@ def test_make_args_and_section_lists(tmp_path):
         "--sections",
         "1-2,4",
     ]
-    record.choices = Choices(("m4b",), "af_heart", 0.9, (1, 2, 3, 4), as_english=True)
+    record = replace(
+        record, choices=Choices(("m4b",), "af_heart", 0.9, (1, 2, 3, 4), as_english=True)
+    )
     assert make_args(record, tmp_path)[-2:] == ["--language", "en"]
     assert "--sections" not in make_args(record, tmp_path)
     assert section_spec((7, 1, 2, 3, 5, 6, 10)) == "1-3,5-7,10"

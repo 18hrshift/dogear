@@ -56,12 +56,12 @@
 <p><a href="/books/{{ book.id }}/choose">Make it again with other choices</a></p>
 {% endif %}
 
-{% if book.state in ("waiting", "making") or (book.state in ("failed", "stopped") and book.lines) %}
+{% if book.state in ("waiting", "making") or (book.state in ("failed", "stopped") and progress.lines) %}
 <h2>Progress so far</h2>
-{% if book.lines_dropped %}<p>Earlier lines aren't shown.</p>{% endif %}
-<ol id="progress-lines" class="progress-lines" start="{{ book.lines_dropped + 1 }}">
-  {% for line in book.lines %}
-  <li>{{ line }}</li>
+<p id="lines-left-out"{% if not progress.left_out %} hidden{% endif %}>{% if progress.left_out %}{{ left_out }}{% endif %}</p>
+<ol id="progress-lines" class="progress-lines" start="{{ progress.left_out + 1 }}" data-max-lines="{{ max_lines }}" data-left-out-one="{{ left_out_one }}" data-left-out-many="{{ left_out_many }}">
+  {% for line in progress.lines %}
+  <li>{{ line.shown }}</li>
   {% endfor %}
 </ol>
 {% endif %}

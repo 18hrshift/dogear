@@ -1,9 +1,9 @@
 """Making a book: `dogear make` in a child process, with its progress lines kept as they
-come. Its `Saved:` lines say what it made; `Error:` and `What to do:` say why it failed."""
+come (progress.py). Its `Saved:` lines say what it made; `Error:` and `What to do:` say
+why it failed."""
 
 from __future__ import annotations
 
-import logging
 import shutil
 from pathlib import Path
 
@@ -11,8 +11,6 @@ from dogear.web.books import MADE, ZIPS, BookRecord, BookStore, Output
 from dogear.web.child import Stopper, child_command, interrupted, read_lines, start_lines
 from dogear.web.reading import problem_from_output
 from dogear.web.settings import WebSettings
-
-log = logging.getLogger(__name__)
 
 
 def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: Stopper) -> None:
@@ -22,7 +20,8 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
         return
     folder = store.folder(book_id)
     shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make are stale
-    store.update(book_id, state="making", lines=[], lines_dropped=0, error="", hint="", outputs=[])
+    store.clear_lines(book_id)
+    store.update(book_id, state="making", error="", hint="", outputs=())
     command = child_command(make_args(record, folder), settings.config_file)
     try:
         child = start_lines(command)
@@ -39,7 +38,6 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
     assert process.stdout is not None
     saved: list[str] = []
     problem: list[str] = []
-    keep = _LineKeeper(store, book_id)
     try:
         for line in read_lines(process.stdout):
             if stopper.requested.is_set():
@@ -53,7 +51,7 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             elif line.startswith(("Error: ", "What to do: ")):
                 problem.append(line)
             elif line.strip():
-                keep(line)
+                store.add_line(book_id, line)  # a full disk is logged, and the book goes on
         returncode = process.wait()
     except BaseException:
         # A bug here. The child mustn't run on unwatched: Stop couldn't reach it, and
@@ -66,6 +64,7 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
         stopper.detach()
         child.close()
         process.stdout.close()
+        store.save_lines(book_id)
     if stopper.requested.is_set() or interrupted(returncode):
         store.update(book_id, state="stopped", error="", hint="")
     elif returncode != 0:
@@ -82,24 +81,6 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             )
         else:
             store.update(book_id, state="done", outputs=outputs)
-
-
-class _LineKeeper:
-    """Keeps progress lines. A line that can't be saved (a full disk, say) is no reason
-    to stop making the book: it is logged in Dogear's window, once per book."""
-
-    def __init__(self, store: BookStore, book_id: str) -> None:
-        self._store = store
-        self._book_id = book_id
-        self._warned = False
-
-    def __call__(self, line: str) -> None:
-        try:
-            self._store.add_line(self._book_id, line)
-        except OSError as e:
-            if not self._warned:
-                self._warned = True
-                log.warning("Couldn't save progress for book %s: %s", self._book_id, e)
 
 
 def make_args(record: BookRecord, folder: Path) -> list[str]:

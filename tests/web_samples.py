@@ -14,6 +14,7 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
@@ -81,12 +82,22 @@ def sample_summary(title: str = "The Strange Case of Dr Jekyll and Mr Hyde") -> 
     )
 
 
-def add_book(library: Library, folder: Path, name: str = "jekyll.epub", **changes) -> str:
-    """A book in the store, with whatever record fields `changes` gives it."""
+def add_book(
+    library: Library,
+    folder: Path,
+    name: str = "jekyll.epub",
+    lines: Iterable[str] = (),
+    **changes,
+) -> str:
+    """A book in the store, with whatever record fields `changes` gives it, and these
+    progress lines."""
     upload = folder / "upload.partial"
     upload.write_bytes(b"ok")
     record = library.store.create(name, Path(name).suffix, upload)
     library.store.update(record.id, **changes)
+    for line in lines:
+        library.store.add_line(record.id, line)
+    library.store.save_lines(record.id)
     return record.id
 
 
@@ -96,6 +107,14 @@ MAKING_LINES = [
     "6,042 words, voice af_heart.",
     "Section 1 of 4 done: Title Page. About 12 minutes left.",
     "Section 2 of 4 done: Story of the Door. About 8 minutes left.",
+]
+# A book that warns about every note and many words: repeats in a row are one line with a
+# count, and only the latest lines are shown.
+LONG_LINES = [
+    "Making an audiobook of A Long Book: 30 sections, about 250,000 words, voice af_heart.",
+    *["WARNING: A note in OEBPS/notes.xhtml has no id; reading it as ordinary text."] * 412,
+    *[f"WARNING: No pronunciation found for 'Xq{n}', so it will be skipped." for n in range(140)],
+    *[f"Section {n} of 30 done: Chapter {n}. About {60 - n} minutes left." for n in range(1, 13)],
 ]
 
 
@@ -135,6 +154,14 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
             ),
             "making": add_book(
                 library, folder, state="making", choices=CHOSEN, lines=MAKING_LINES, **common
+            ),
+            "making-long": add_book(
+                library,
+                folder,
+                state="making",
+                choices=CHOSEN,
+                lines=LONG_LINES,
+                summary=sample_summary("A Long Book"),
             ),
             "waiting": add_book(library, folder, state="waiting", choices=CHOSEN, **common),
             "done": add_book(library, folder, state="done", choices=CHOSEN, **common),

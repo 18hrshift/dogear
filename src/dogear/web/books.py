@@ -2,14 +2,16 @@
 
 Every book has its own folder under the web folder's `books`, named by a random id. It
 holds `book.json` (the record), the uploaded file (`book.epub` or similar), `made` (what
-was made from it), and `zips` (folders zipped for download). The record is saved on every
-change, so a restarted server lists every book. One that was waiting or being made when
-the server stopped shows as stopped.
+was made from it), `zips` (folders zipped for download), and `progress.json` (the lines
+of its latest make, progress.py). The record is saved on every change, so a restarted
+server lists every book. One that was waiting or being made when the server stopped
+shows as stopped.
+
+Records are immutable: a change makes a new one, so pages share them without copying.
 """
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import os
@@ -18,7 +20,7 @@ import secrets
 import shutil
 import threading
 import time
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,6 +28,7 @@ from dogear.book_summary import BookSummary, summary_from_json, summary_to_json
 from dogear.extract import EXTRACTORS
 from dogear.make import FORMATS
 from dogear.web.atomic import remove_leftovers, write_atomically
+from dogear.web.progress import LINES_FILE, Progress, ProgressLog
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +55,6 @@ STATES: tuple[State, ...] = (
 RECORD = "book.json"
 MADE = "made"
 ZIPS = "zips"
-MAX_LINES = 200  # progress lines kept per book; older ones are dropped
 MAX_NAME_CHARS = 255  # of the uploaded file's name, as shown
 ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{16}")
 
@@ -75,7 +77,7 @@ class Output:
     path: str  # inside the book's folder, such as "made/The Title.m4b"
 
 
-@dataclass
+@dataclass(frozen=True)
 class BookRecord:
     id: str
     original_name: str  # the uploaded file's name: shown, never used as a path
@@ -84,11 +86,12 @@ class BookRecord:
     state: State
     summary: BookSummary | None = None
     choices: Choices | None = None
-    lines: list[str] = field(default_factory=list)
-    lines_dropped: int = 0  # how many earlier lines MAX_LINES let go
     error: str = ""
     hint: str = ""
-    outputs: list[Output] = field(default_factory=list)
+    outputs: tuple[Output, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "outputs", tuple(self.outputs))  # however it was given
 
     @property
     def title(self) -> str:
@@ -107,6 +110,7 @@ class BookStore:
         self.dir = books_dir
         self._lock = threading.RLock()
         self._books: dict[str, BookRecord] = {}
+        self._progress: dict[str, ProgressLog] = {}
 
     def load(self) -> list[str]:
         """Read every saved record. Returns the ids of books that were still being read,
@@ -116,10 +120,10 @@ class BookStore:
         with self._lock:
             for folder in sorted(self.dir.iterdir()):
                 record = _read_record(folder)
-                if record is not None:
-                    remove_leftovers(folder, RECORD)
                 if record is None:
                     continue
+                remove_leftovers(folder, RECORD)
+                self._progress[record.id] = ProgressLog.load(folder)
                 if record.state in ("waiting", "making"):
                     record = replace(record, state="stopped", error=CLOSED_ERROR, hint=CLOSED_HINT)
                     self._books[record.id] = record
@@ -154,17 +158,17 @@ class BookStore:
                 shutil.rmtree(folder, ignore_errors=True)
                 raise
             self._books[book_id] = record
-            return copy.deepcopy(record)
+            self._progress[book_id] = ProgressLog(folder / LINES_FILE)
+            return record
 
     def get(self, book_id: str) -> BookRecord | None:
         with self._lock:
-            record = self._books.get(book_id)
-            return copy.deepcopy(record) if record else None
+            return self._books.get(book_id)
 
     def all(self) -> list[BookRecord]:
         """Every book, newest first."""
         with self._lock:
-            records = [copy.deepcopy(r) for r in self._books.values()]
+            records = list(self._books.values())
         return sorted(records, key=lambda r: r.added, reverse=True)
 
     def update(self, book_id: str, **changes: Any) -> BookRecord | None:
@@ -176,28 +180,39 @@ class BookStore:
             record = replace(record, **changes)
             self._books[book_id] = record
             self._save(record)
-            return copy.deepcopy(record)
+            return record
+
+    def progress(self, book_id: str) -> Progress:
+        """The lines of the book's latest make (none for a book that isn't listed)."""
+        log = self._progress_log(book_id)
+        return log.view() if log else Progress(0, ())
 
     def add_line(self, book_id: str, line: str) -> None:
-        with self._lock:
-            record = self._books.get(book_id)
-            if record is None:
-                return
-            lines = [*record.lines, line]
-            dropped = max(0, len(lines) - MAX_LINES)
-            self.update(
-                book_id, lines=lines[dropped:], lines_dropped=record.lines_dropped + dropped
-            )
+        if log := self._progress_log(book_id):
+            log.add(line)
+
+    def clear_lines(self, book_id: str) -> None:
+        if log := self._progress_log(book_id):
+            log.clear()
+
+    def save_lines(self, book_id: str) -> None:
+        if log := self._progress_log(book_id):
+            log.save()
 
     def delete(self, book_id: str) -> None:
         with self._lock:
             self._books.pop(book_id, None)
+            self._progress.pop(book_id, None)
             shutil.rmtree(self.folder(book_id), ignore_errors=False)
 
     def folder(self, book_id: str) -> Path:
         if not ID_PATTERN.fullmatch(book_id):
             raise ValueError(f"not a book id: {book_id!r}")
         return self.dir / book_id
+
+    def _progress_log(self, book_id: str) -> ProgressLog | None:
+        with self._lock:
+            return self._progress.get(book_id)
 
     def _save(self, record: BookRecord) -> None:
         data = json.dumps(_to_json(record), indent=1).encode("utf-8")
@@ -243,11 +258,9 @@ def _from_json(data: dict[str, Any], book_id: str) -> BookRecord:
         state=data["state"],
         summary=summary_from_json(data["summary"]) if data.get("summary") else None,
         choices=choices,
-        lines=[str(line) for line in data.get("lines", [])][-MAX_LINES:],
-        lines_dropped=int(data.get("lines_dropped", 0)),
         error=str(data.get("error", "")),
         hint=str(data.get("hint", "")),
-        outputs=[
+        outputs=tuple(
             Output(format=str(o["format"]), path=str(o["path"])) for o in data.get("outputs", [])
-        ],
+        ),
     )

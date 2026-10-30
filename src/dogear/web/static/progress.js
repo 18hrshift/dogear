@@ -5,6 +5,10 @@
 // region (role="status") only when the sentence is different, so a screen reader never
 // hears the same news twice, and adds new progress lines to the list without announcing
 // them. When the book moves on (made, stopped, or read), it says so and stops asking.
+//
+// The status carries only the latest lines. A line repeated in a row is one line with a
+// count, so the last lines shown may change ("(3 times)" becomes "(4 times)"). The list
+// keeps at most as many lines as the page shows, and says how many came before them.
 (function () {
   "use strict";
 
@@ -18,20 +22,58 @@
   }
   var continues = (box.dataset.continues || "").split(" ");
   var lines = document.getElementById("progress-lines");
+  var leftOut = document.getElementById("lines-left-out");
   var link = document.getElementById("check-progress");
-  var shown = lines ? Number(lines.getAttribute("start") || 1) - 1 + lines.children.length : 0;
+  // The number of lines before the first one in the list.
+  var first = lines ? Number(lines.getAttribute("start") || 1) - 1 : 0;
+  var maxLines = lines ? Number(lines.dataset.maxLines || 0) : 0;
+
+  function startAt(number) {
+    first = number;
+    lines.setAttribute("start", String(number + 1));
+    if (leftOut) {
+      var many = (lines.dataset.leftOutMany || "").replace("{n}", number.toLocaleString("en-US"));
+      leftOut.textContent = number === 1 ? lines.dataset.leftOutOne : many;
+      leftOut.hidden = number === 0;
+    }
+  }
 
   function addLines(status) {
     if (!lines) {
       return;
     }
     // status.first is the number of lines before status.lines[0].
-    for (var i = Math.max(0, shown - status.first); i < status.lines.length; i++) {
-      var item = document.createElement("li");
-      item.textContent = status.lines[i];
-      lines.appendChild(item);
+    var end = first + lines.children.length;
+    if (status.first > end) {
+      // More lines came than one status carries: start the list again from these.
+      lines.textContent = "";
+      startAt(status.first);
+      end = status.first;
     }
-    shown = Math.max(shown, status.first + status.lines.length);
+    for (var i = 0; i < status.lines.length; i++) {
+      var number = status.first + i;
+      if (number < first) {
+        continue;
+      }
+      if (number < end) {
+        var shown = lines.children[number - first];
+        if (shown.textContent !== status.lines[i]) {
+          shown.textContent = status.lines[i];
+        }
+      } else {
+        var item = document.createElement("li");
+        item.textContent = status.lines[i];
+        lines.appendChild(item);
+      }
+    }
+    var removed = 0;
+    while (maxLines && lines.children.length > maxLines) {
+      lines.removeChild(lines.firstElementChild);
+      removed++;
+    }
+    if (removed) {
+      startAt(first + removed);
+    }
   }
 
   function say(text) {

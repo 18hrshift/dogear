@@ -15,8 +15,9 @@ class Status:
     sentence: str  # for the role="status" region
 
 
-def describe(record: BookRecord, ahead: int | None) -> Status:
-    """`ahead`: how many books will be made before this one, if it is waiting."""
+def describe(record: BookRecord, ahead: int | None, latest: str = "") -> Status:
+    """`ahead`: how many books will be made before this one, if it is waiting. `latest`:
+    the latest progress line of the book being made (progress.Progress.latest)."""
     match record.state:
         case "reading":
             return Status(
@@ -44,8 +45,7 @@ def describe(record: BookRecord, ahead: int | None) -> Status:
                 sentence = f"Waiting: {books} ahead of this one."
             return Status("Waiting", record.title, sentence)
         case "making":
-            latest = record.lines[-1] if record.lines else "Starting."
-            return Status("Making", record.title, f"Making: {latest}")
+            return Status("Making", record.title, f"Making: {latest or 'Starting.'}")
         case "done":
             return Status("Ready", "Your talking book is ready", "Your talking book is ready.")
         case "failed":

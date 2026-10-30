@@ -13,6 +13,7 @@ from dogear.errors import DogearError
 from dogear.web.books import BookRecord, BookStore, Choices
 from dogear.web.child import STOP_GRACE_SECONDS, Stopper
 from dogear.web.making import make_book
+from dogear.web.progress import Progress
 from dogear.web.reading import read_book
 from dogear.web.settings import WebSettings
 from dogear.web.worker import Worker
@@ -110,6 +111,9 @@ class Library:
                 f"Dogear couldn't delete everything in the book's folder: {e}.",
                 hint="Try again in a moment. If a file is open in another program, close it.",
             ) from None
+
+    def progress(self, book_id: str) -> Progress:
+        return self.store.progress(book_id)
 
     def ahead(self, book_id: str) -> int | None:
         return self.maker.ahead(book_id)

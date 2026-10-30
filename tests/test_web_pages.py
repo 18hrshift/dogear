@@ -36,6 +36,7 @@ def test_every_state_has_a_page(pages):
         "choose-language-errors",
         "waiting",
         "making",
+        "making-long",
         "done",
         "failed",
         "stopped",
