@@ -353,6 +353,34 @@ def test_stop_then_start_again(running):
     assert record.choices == Choices(("m4b",), "af_heart", 0.9, (1, 2, 3))
 
 
+@pytest.mark.parametrize("how", ["stop", "server closing"])
+def test_once_stopped_the_childs_goodbye_for_a_terminal_is_not_shown(tmp_path, commands, how):
+    """`dogear make` says "Run the same command again to continue" when stopped. The page
+    has its own words for that (Start again), so nothing the child says after the server
+    asked it to stop is kept."""
+    app = sample_app(tmp_path / "web")
+    with visitor(app) as client:
+        book_id = upload(client, "slow")
+        wait_for(app, book_id, "ready")
+        choose(client, book_id)
+        deadline = time.monotonic() + 30
+        while not status(client, book_id)["lines"]:  # the child is under way
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        if how == "stop":
+            client.post(f"/books/{book_id}/stop")
+            wait_for(app, book_id, "stopped")
+    restarted = sample_app(tmp_path / "web") if how == "server closing" else app
+    client = visitor(restarted)
+    assert status(client, book_id)["lines"] == [
+        "Making an audiobook of Fake Book: 3 sections, about 300 words."
+    ]
+    page = client.get(f"/books/{book_id}").text
+    assert "Stopped.</li>" not in page
+    assert "Run the same command again" not in page
+    assert "Choose Start again to carry on." in page
+
+
 def test_the_status_says_what_the_page_needs(running):
     app, client = running
     book_id = upload(client, "ok")

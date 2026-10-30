@@ -95,8 +95,12 @@ def make(argv: list[str], behaviour: str) -> int:
     if behaviour == "slow":
         try:
             time.sleep(60)
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:  # the goodbye `dogear make` gives in a terminal
             print("Stopped.", file=sys.stderr)
+            print(
+                "Sentences spoken so far are saved. Run the same command again to continue.",
+                file=sys.stderr,
+            )
             return 130
     for n, title in enumerate(SECTIONS, start=1):
         print(f"Section {n} of 3 done: {title}.", file=sys.stderr)

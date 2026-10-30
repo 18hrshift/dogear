@@ -42,12 +42,17 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
     keep = _LineKeeper(store, book_id)
     try:
         for line in read_lines(process.stdout):
+            if stopper.requested.is_set():
+                # The server asked it to stop, so what's left is `dogear`'s goodbye,
+                # written for a terminal ("Run the same command again to continue").
+                # The page says what stopping means in its own words. It's read to the
+                # end all the same, so the child never waits on a full pipe.
+                continue
             if line.startswith("Saved: "):
                 saved.append(line.removeprefix("Saved: "))
             elif line.startswith(("Error: ", "What to do: ")):
                 problem.append(line)
-            elif line.strip() and not stopper.requested.is_set():
-                # After a stop, what's left is `dogear`'s goodbye, written for a terminal.
+            elif line.strip():
                 keep(line)
         returncode = process.wait()
     except BaseException:
