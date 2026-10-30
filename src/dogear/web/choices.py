@@ -49,6 +49,9 @@ FORMAT_INFO = {
     )
 }
 
+# Digits in the longest section number the form takes: more than reading.MAX_SECTIONS.
+MAX_SECTION_DIGITS = 5
+
 # Speeds offered, in words. The configured speed is added if it isn't one of these.
 SPEEDS: tuple[tuple[float, str], ...] = (
     (0.8, "Slower"),
@@ -128,13 +131,12 @@ def check(
     """What was sent back, as shown on the form; the choices, if they're all right; and
     an error for each field that isn't, keyed by the field's name."""
     numbers = {s.number for s in summary.sections}
+    sent_sections = [section_number(v) for v in every(fields, "section")]
     picked = Picked(
         formats=frozenset(f for f in every(fields, "format") if f in FORMATS),
         voice=first(fields, "voice"),
         speed=first(fields, "speed"),
-        sections=frozenset(
-            int(v) for v in every(fields, "section") if v.isdigit() and int(v) in numbers
-        ),
+        sections=frozenset(n for n in sent_sections if n in numbers),
         as_english=first(fields, "english") == "yes",
     )
     errors: dict[str, str] = {}
@@ -149,7 +151,10 @@ def check(
         errors["voice"] = "Choose a voice from the list."
     if picked.speed not in {option.value for option in speed_options(config)}:
         errors["speed"] = "Choose a speed."
-    if not picked.sections:
+    if any(n not in numbers for n in sent_sections):
+        # Only a changed or very old copy of the form sends these.
+        errors["section"] = "Choose sections from the list."
+    elif not picked.sections:
         errors["section"] = "Choose at least one section."
     if errors:
         return picked, None, errors
@@ -161,6 +166,15 @@ def check(
         as_english=picked.as_english and asks_about_language(summary),
     )
     return picked, choices, {}
+
+
+def section_number(value: str) -> int | None:
+    """A section number as the form sends it, or None if it isn't one. Only ASCII digits,
+    and not too many of them: int() would turn "²" into an error and a 5,000-digit
+    string into a long wait."""
+    if value.isascii() and value.isdecimal() and len(value) <= MAX_SECTION_DIGITS:
+        return int(value)
+    return None
 
 
 def _speed_text(speed: float) -> str:
