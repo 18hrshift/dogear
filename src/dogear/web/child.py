@@ -1,13 +1,14 @@
 """Running the `dogear` command as a child process: starting it, reading it, stopping it.
 
 The server runs `dogear outline --json` and `dogear make` this way, so a book file that
-crashes or hangs the reader takes down only the child. Children write UTF-8.
+crashes or hangs the reader takes down only the child. Each child and whatever it starts
+make one process tree (process_tree.py) that only the server stops, and a child stops
+by itself if the server ends first (server_watch.py). Children write UTF-8.
 """
 
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -15,6 +16,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
+
+from dogear.web.process_tree import INTERRUPTED, ProcessTree
+from dogear.web.process_tree import popen_options as tree_options
+from dogear.web.server_watch import STOP_WITH_SERVER_ENV
 
 # Set for every child: `dogear` then writes its output as UTF-8 (see cli.py).
 UTF8_OUTPUT_ENV = "DOGEAR_UTF8_OUTPUT"
@@ -41,21 +46,76 @@ def child_command(args: list[str], config_file: Path | None) -> list[str]:
 
 
 def popen_options() -> dict:
-    """What every child is started with: UTF-8 text, and no console window on Windows."""
+    """What every child is started with: UTF-8 text, its own process tree, a stdin the
+    server never writes to (its end says the server has gone), and no console window on
+    Windows."""
     options: dict = {
-        "env": {**os.environ, UTF8_OUTPUT_ENV: "1", "PYTHONIOENCODING": "utf-8"},
-        "stdin": subprocess.DEVNULL,
+        "env": {
+            **os.environ,
+            UTF8_OUTPUT_ENV: "1",
+            STOP_WITH_SERVER_ENV: "1",
+            "PYTHONIOENCODING": "utf-8",
+        },
+        "stdin": subprocess.PIPE,
+        **tree_options(),
     }
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NO_WINDOW
     return options
 
 
-def start_lines(command: list[str]) -> subprocess.Popen[bytes]:
+def interrupted(returncode: int) -> bool:
+    """Whether a child ended because something stopped it: Ctrl+C (exit code 130), or a
+    signal on Linux and macOS (a negative code), rather than finishing or failing."""
+    return returncode == INTERRUPTED or returncode < 0
+
+
+class Child:
+    """A running child and its process tree. Close it once it has ended."""
+
+    def __init__(self, command: list[str], *, stderr: int) -> None:
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=stderr, **popen_options()
+        )
+        try:
+            self._tree = ProcessTree(process)
+        except BaseException:
+            process.kill()
+            process.wait()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+            raise
+        self.process = process
+        self._kill_timer: threading.Timer | None = None
+
+    def stop(self) -> None:
+        """Ask the child, and what it started, to stop. Whatever is still running after
+        STOP_GRACE_SECONDS is killed."""
+        self._tree.interrupt()
+        if self._kill_timer is None:
+            self._kill_timer = threading.Timer(STOP_GRACE_SECONDS, self._tree.kill)
+            self._kill_timer.daemon = True
+            self._kill_timer.start()
+
+    def end(self) -> int:
+        """Stop the child and wait until it has ended, for a job that can't go on."""
+        self.stop()
+        return self.process.wait()
+
+    def close(self) -> None:
+        """Once the child has ended: end anything it left running, and let go of it.
+        Its stdout and stderr are closed by whatever reads them."""
+        if self._kill_timer is not None:
+            self._kill_timer.cancel()
+        self._tree.close()
+        if self.process.stdin is not None:
+            self.process.stdin.close()
+
+
+def start_lines(command: list[str]) -> Child:
     """Start a child whose stdout and stderr are read together, line by line."""
-    return subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **popen_options()
-    )
+    return Child(command, stderr=subprocess.STDOUT)
 
 
 def read_lines(stream: IO[bytes]) -> Iterator[str]:
@@ -85,11 +145,10 @@ def run_captured(
     command: list[str], *, timeout: float, max_stdout: int, stopper: Stopper | None = None
 ) -> Captured:
     """Run a child to the end, keeping at most `max_stdout` bytes of its stdout."""
-    process = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_options()
-    )
+    child = Child(command, stderr=subprocess.PIPE)
+    process = child.process
     if stopper is not None:
-        stopper.attach(process)
+        stopper.attach(child)
     out = _Collector(process.stdout, max_stdout)
     err = _Collector(process.stderr, 64 * 1024)
     timed_out = False
@@ -97,15 +156,14 @@ def run_captured(
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
-        stop_process(process)
-        try:
-            process.wait(timeout=STOP_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+        child.end()
+    except BaseException:
+        child.end()
+        raise
     finally:
         if stopper is not None:
             stopper.detach()
+        child.close()
     out.join()
     err.join()
     return Captured(
@@ -147,57 +205,27 @@ class _Collector:
         return b"".join(self._chunks)
 
 
-def stop_process(process: subprocess.Popen) -> None:
-    """Ask a child to stop: Ctrl+C on Linux and macOS, so it tidies up as it does in a
-    terminal; on Windows, which has no such signal for a windowless child, end it."""
-    if process.poll() is not None:
-        return
-    try:
-        if os.name == "nt":
-            process.terminate()
-        else:
-            process.send_signal(signal.SIGINT)
-    except OSError:
-        pass  # it ended in the meantime
-
-
 class Stopper:
     """Lets another thread stop whichever child a job is running now, or the next one it
-    starts. A child that hasn't stopped after STOP_GRACE_SECONDS is killed."""
+    starts."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._process: subprocess.Popen | None = None
+        self._child: Child | None = None
         self.requested = threading.Event()
 
-    def attach(self, process: subprocess.Popen) -> None:
+    def attach(self, child: Child) -> None:
         with self._lock:
-            self._process = process
+            self._child = child
             if self.requested.is_set():
-                self._stop_locked()
+                child.stop()
 
     def detach(self) -> None:
         with self._lock:
-            self._process = None
+            self._child = None
 
     def stop(self) -> None:
         with self._lock:
             self.requested.set()
-            self._stop_locked()
-
-    def _stop_locked(self) -> None:
-        process = self._process
-        if process is None:
-            return
-        stop_process(process)
-        timer = threading.Timer(STOP_GRACE_SECONDS, _kill_if_running, args=(process,))
-        timer.daemon = True
-        timer.start()
-
-
-def _kill_if_running(process: subprocess.Popen) -> None:
-    if process.poll() is None:
-        try:
-            process.kill()
-        except OSError:
-            pass
+            if self._child is not None:
+                self._child.stop()

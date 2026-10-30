@@ -7,11 +7,9 @@ import shutil
 from pathlib import Path
 
 from dogear.web.books import MADE, ZIPS, BookRecord, BookStore, Output
-from dogear.web.child import Stopper, child_command, read_lines, start_lines
+from dogear.web.child import Stopper, child_command, interrupted, read_lines, start_lines
 from dogear.web.reading import problem_from_output
 from dogear.web.settings import WebSettings
-
-INTERRUPTED = 130  # `dogear` stopped by Ctrl+C, or by the server asking it to stop
 
 
 def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: Stopper) -> None:
@@ -24,7 +22,7 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
     store.update(book_id, state="making", lines=[], lines_dropped=0, error="", hint="", outputs=[])
     command = child_command(make_args(record, folder), settings.config_file)
     try:
-        process = start_lines(command)
+        child = start_lines(command)
     except OSError as e:
         store.update(
             book_id,
@@ -33,7 +31,8 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             hint="Check that Dogear is installed properly, then choose Start again.",
         )
         return
-    stopper.attach(process)
+    stopper.attach(child)
+    process = child.process
     saved: list[str] = []
     problem: list[str] = []
     try:
@@ -49,7 +48,9 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
         returncode = process.wait()
     finally:
         stopper.detach()
-    if stopper.requested.is_set() or returncode == INTERRUPTED:
+        child.close()
+        process.stdout.close()
+    if stopper.requested.is_set() or interrupted(returncode):
         store.update(book_id, state="stopped", error="", hint="")
     elif returncode != 0:
         found = problem_from_output("\n".join(problem))

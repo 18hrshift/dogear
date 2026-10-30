@@ -19,11 +19,14 @@ import sys
 import time
 from pathlib import Path
 
+from dogear.web.server_watch import stop_with_server_when_asked
+
 TITLE = "Fake Book"
 SECTIONS = ["Title Page", "One", "Two"]
 
 
 def main(argv: list[str]) -> int:
+    stop_with_server_when_asked()  # as the real `dogear` does
     log = os.environ.get("DOGEAR_FAKE_LOG")
     if log:
         with open(log, "a", encoding="utf-8") as file:
