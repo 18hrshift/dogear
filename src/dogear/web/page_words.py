@@ -7,9 +7,9 @@ the ones in the user's settings, so the page's entries win.
 
 The page adds, changes, and removes sounds-like entries. Phoneme entries, which only
 someone editing the file by hand can add, are kept as they are. Every word and spelling
-is checked here before it is saved, with the bounds in [web]. A save can say
-what the page showed for each word; then, if one of them was changed since (in another
-window, say), it saves nothing rather than undo that change.
+is checked here before it is added or changed, with the bounds in [web]; any entry can
+be removed. A save can say what the page showed for each word; then, if one of them was
+changed since (in another window, say), it saves nothing rather than undo that change.
 
 The file is written whole or not at all, owner-only like the rest of the web folder, and
 read back through pronunciations.py before it replaces the old one, so a file `dogear`
@@ -118,8 +118,9 @@ class PageWords:
 
     def save(self, spellings: Mapping[str, str], shown: Mapping[str, str] | None = None) -> None:
         """Give each word its spelling, or remove the word's entry if its spelling is "".
-        The words and spellings have been through clean_word and clean_spelling. Words
-        match as in any pronunciation file, whatever their capitals.
+        A word given a spelling has been through clean_word and clean_spelling; a word
+        being removed is matched to whichever entry it is. Words match as in any
+        pronunciation file, whatever their capitals.
 
         `shown` has, for some of the words, the spelling the page showed when it was
         opened ("" for none). If one of them has another spelling now, and not the one

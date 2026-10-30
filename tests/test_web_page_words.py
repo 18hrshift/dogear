@@ -65,6 +65,14 @@ def test_a_save_that_says_what_the_page_showed_keeps_changes_made_since(words):
     assert [e.word for e in words.entries()] == ["lanyon", "Poole", "UTTERSON"]
 
 
+def test_any_entry_can_be_removed_whatever_the_limits(tmp_path):
+    words = PageWords(tmp_path / "words.toml", LIMITS)
+    long = "Abracadabra-" * 5  # longer than LIMITS.word_chars, written by hand
+    words.path.write_text(f'[words]\n"{long}" = "ay"\nHyde = "hide"\n', encoding="utf-8")
+    words.save({long.upper(): ""}, shown={long.upper(): "ay"})
+    assert saved(words) == [("Hyde", "hide", None)]
+
+
 def test_quotes_backslashes_and_unicode_are_saved_as_typed(words):
     typed = {
         'The "Doctor"': 'the "doc"',

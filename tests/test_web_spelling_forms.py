@@ -42,6 +42,20 @@ def test_only_the_words_changed_on_the_page_are_asked_for():
     assert changes.errors == {}
 
 
+def test_the_rules_for_new_words_apply_only_to_words_being_given_a_spelling():
+    long = "Dr. Henry Jekyll"  # longer than LIMITS.word_chars
+    sent = [
+        SentWord(1, long, "doctor jekyll", "doctor jekyll"),  # left alone: no error
+        SentWord(2, f" {long} ", "", "doctor jekyll"),  # removed: matched however long
+        SentWord(3, "Mr. Edward Hyde", "mister hide", "mister hyde"),  # changed: checked
+    ]
+    changes = spellings_to_save(sent, LIMITS)
+    assert changes.spellings == {long: ""}
+    assert changes.errors == {
+        "say-3": "Mr. Edward Hyde can't be saved: A word can be at most 12 characters long."
+    }
+
+
 def test_a_word_changed_elsewhere_keeps_what_was_typed_and_shows_its_new_spelling():
     sent = [
         SentWord(1, "Utterson", "otter son", "utter son"),

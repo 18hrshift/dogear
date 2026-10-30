@@ -97,23 +97,31 @@ def sent_words(fields: list[tuple[str, str]], most: int) -> list[SentWord]:
 
 
 def spellings_to_save(sent: list[SentWord], limits: WordLimits) -> Changes:
-    """The spellings a form asks to save: only the words whose "Say it like" changed."""
+    """The spellings a form asks to save: only the words whose "Say it like" changed.
+    A word being given a spelling must pass the rules for new words; a word being
+    removed is matched to its entry whatever it is, so any entry the page shows can be
+    removed."""
     changes = Changes()
     for item in sent:
         typed = tidy(item.typed)
         if item.was is not None and typed == tidy(item.was):
             continue  # left as it was shown: nothing asked
-        try:
-            word = clean_word(item.word, limits)
-        except EntryError as e:
-            if typed:
+        if typed:
+            try:
+                word = clean_word(item.word, limits)
+            except EntryError as e:
                 changes.errors[item.field] = f"{item.word.strip()} can't be saved: {e.message}"
-            continue  # a word that can't be saved has no entry to remove
-        try:
-            changes.spellings[word] = clean_spelling(item.typed, word, limits)
-        except EntryError as e:
-            changes.errors[item.field] = e.message
-            continue
+                continue
+            try:
+                changes.spellings[word] = clean_spelling(item.typed, word, limits)
+            except EntryError as e:
+                changes.errors[item.field] = e.message
+                continue
+        else:
+            word = tidy(item.word)
+            if not word:
+                continue  # no entry has an empty word
+            changes.spellings[word] = ""
         if item.was is not None:
             changes.shown[word] = tidy(item.was)
     return changes

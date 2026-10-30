@@ -177,6 +177,29 @@ def test_a_word_removed_in_another_window_says_so(running):
     assert saved(app) == []
 
 
+def test_an_entry_outside_the_limits_can_be_removed(tmp_path, commands):
+    config = sample_config(tmp_path / "web")
+    config["web"]["max_word_chars"] = 8
+    app = sample_app(tmp_path / "web", config)
+    long = "Dr. Henry Jekyll"  # saved by hand, or before the limit was lowered
+    app.state.settings.words_file.write_text(
+        f'[words]\n"{long}" = "doctor jekyll"\n"Mr. Edward Hyde" = "mister hyde"\nPoole = "pool"\n',
+        encoding="utf-8",
+    )
+    with visitor(app) as client:
+        form = typed(save_form(client, "/pronunciations"), long, "")
+        form = typed(form, "Poole", "pooh")  # the other long word is left as it is
+        response = client.post("/pronunciations", data=form, follow_redirects=False)
+        assert response.headers["location"] == "/pronunciations?done=saved"
+        assert saved(app) == [("Mr. Edward Hyde", "mister hyde", None), ("Poole", "pooh", None)]
+        # Changing one is checked as a new word is, and says why it can't be saved.
+        form = typed(save_form(client, "/pronunciations"), "Mr. Edward Hyde", "mister hide")
+        response = client.post("/pronunciations", data=form, follow_redirects=False)
+    assert response.status_code == 400
+    assert "Mr. Edward Hyde can&#39;t be saved: A word can be at most 8" in response.text
+    assert saved(app) == [("Mr. Edward Hyde", "mister hyde", None), ("Poole", "pooh", None)]
+
+
 def test_adding_needs_a_word_and_a_spelling_and_keeps_what_was_typed(running):
     app, client = running
     response = add(client, "  ", "")
