@@ -1,7 +1,8 @@
 """Running the `dogear` command as a child process: starting it, reading it, stopping it.
 
-The server runs `dogear outline --json` and `dogear make` this way, so a book file that
-crashes or hangs the reader takes down only the child. Each child and whatever it starts
+The server runs `dogear outline --json`, `make`, `words --json`, and `say` this way, so
+a book file that crashes or hangs the reader takes down only the child, and the server
+never loads the voice. Each child and whatever it starts
 make one process tree (process_tree.py) that only the server stops, and a child stops
 by itself if the server ends first (server_watch.py). Children write UTF-8.
 """

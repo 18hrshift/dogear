@@ -8,7 +8,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
-    "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    "media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
+    "base-uri 'none'"
 )
 EVERY_RESPONSE = [
     (b"content-security-policy", CONTENT_SECURITY_POLICY.encode()),

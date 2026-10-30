@@ -6,7 +6,7 @@
 <h1>{{ status.heading }}</h1>
 {% if show_title %}<p>Book: <strong>{{ book.title }}</strong></p>{% endif %}
 
-<div id="book-status"{% if watching %} data-status-url="/books/{{ book.id }}/status" data-continues="{{ continues }}" data-changed="Follow the Show the result link to go on." data-changed-link="Show the result"{% endif %}>
+<div id="live-status"{% if watching %} data-status-url="/books/{{ book.id }}/status" data-continues="{{ continues }}" data-changed="Follow the Show the result link to go on." data-changed-link="Show the result"{% endif %}>
   <p id="status" class="status" role="status">{{ status.sentence }}</p>
 </div>
 
