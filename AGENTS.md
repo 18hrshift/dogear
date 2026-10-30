@@ -33,6 +33,11 @@ uv run python tests/daisy_samples.py /tmp/daisy        # sample books, with a fa
 scripts/check-daisy.sh /tmp/daisy/*/*DAISY             # exits 0 only if every book passes
 ```
 
+The standalone installers are built on the platform they're for, with
+`uv run --no-dev --group installer python packaging/build.py`; `packaging/README.md` lists
+what each platform needs. The Installers workflow builds all three, installs each, and runs
+`packaging/smoke_test.py` on the installed copy.
+
 ## Layout
 
 | Path | Job |
@@ -40,7 +45,8 @@ scripts/check-daisy.sh /tmp/daisy/*/*DAISY             # exits 0 only if every b
 | `src/dogear/document.py` | The structured book every stage reads: sections and blocks (headings, paragraphs, lists, tables, images, notes, page markers). Display text only. |
 | `src/dogear/defaults.toml`, `config.py` | Every default setting, and loading and validating a user's TOML on top. |
 | `src/dogear/errors.py` | Errors a user can fix, each with a hint. Anything else is a bug. |
-| `src/dogear/tools.py` | Finding and running ffmpeg, Tesseract, and Calibre with install hints. |
+| `src/dogear/tools.py` | Finding and running ffmpeg, Tesseract, and Calibre with install hints: the program set in config, else a standalone build's own copy, else PATH, else known install folders. |
+| `src/dogear/bundle.py` | What a standalone (PyInstaller) build carries: where its programs are, the espeak-ng data folder to pass with `--path`, and its voice files, used when the build-time manifest's SHA-256 matches the catalog's. Every answer is None in a normal install. |
 | `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `epub_sections` for sections from the table of contents, `epub_kind`, `epub_cover`, `xhtml`, `xhtml_blocks`, `xhtml_split`, `safe_xml`), `pdf.py` (+ `pdf_page`, `pdf_text`, `pdf_furniture` for running headers, `pdf_columns`, `pdf_notes` for page-foot footnotes, `pdf_headings`, `pdf_figures`, `pdf_hyphens`, `pdf_chapters`, `pdf_sections`), `calibre.py` for Kindle. |
 | `src/dogear/speech/` | `sentences.py` splits display text into sentences; `normalize.py` rewrites a sentence into what the voice should say, with `money`, `times`, `units`, and `roman` handling one kind of text each. |
 | `src/dogear/narration.py` | Spoken structure: a section becomes utterances with pauses (headings, image descriptions, notes, tables, scene breaks), per `[narration]`, plus passages that say which utterances read which block. Also the title track. |
@@ -58,6 +64,8 @@ scripts/check-daisy.sh /tmp/daisy/*/*DAISY             # exits 0 only if every b
 | `scripts/check-epub.sh` | Checks an EPUB with EPUBCheck 5.4.0 (`--failonwarnings`) and Ace 1.4.6 (`-E`), downloading both pinned into `$DOGEAR_VALIDATORS` (default `~/.cache/dogear-validators`). Reports go next to the book. |
 | `scripts/make-sample-epub.py` | Makes two sample EPUB talking books with a fake voice. Between them they use every kind of block, with pages announced and not, tables read and skipped, and the title track on and off. Check them with `check-epub.sh`. |
 | `scripts/check-daisy.sh` | Validates DAISY 2.02 books with DAISY Pipeline 2's `daisy202-validator` (pinned Docker image), saving its report next to each book. Used locally and in CI. |
+| `packaging/build.py` | Builds the standalone bundle and installer for the platform it runs on (`uv run --no-dev --group installer python packaging/build.py`); `packaging/README.md` explains it. The steps are modules in `packaging/dogear_build/`: `pins` (reads `pins.toml`, every source archive pinned by URL and SHA-256), `fetch`, `programs` (runs `build-programs.sh`, which builds LAME, FFmpeg, and eSpeak NG from source, in MSYS2 on Windows), `freeze` (PyInstaller, with `entry.py` as the program), `voice` (the default voice and its manifest), `notices` (`THIRD-PARTY-NOTICES.txt`), `assemble`, and one installer module per platform: `linux` (a .tar.gz with `linux/install.sh`), `macos` (an app in a .dmg, with `macos/launcher.sh`), `windows` (Inno Setup, `windows/dogear.iss`). |
+| `packaging/smoke_test.py` | Runs a built Dogear offline with an empty home folder and nothing on PATH: `--version`, `voices`, `say`, and `make`. CI runs it on each installed copy (`.github/workflows/installers.yml`). |
 | `tests/daisy_samples.py`, `tests/dtd/` | A book with every kind of block, made into DAISY books through `dogear make` with a fake voice; and the W3C XHTML 1.0 and SMIL 1.0 DTDs the unit tests validate against, offline. |
 
 ## Project rules
@@ -107,12 +115,32 @@ Checked with `uv tree --no-dev` when added. Recheck when adding or upgrading.
 | misaki (+ addict, regex) | Apache-2.0 (MIT, Apache-2.0) | English phonemes for Kokoro. Installed without its `en` extra, which pulls in GPL phonemizer and espeak-ng libraries. |
 | spaCy and its dependencies (thinc, pydantic, typer, requests, and others) | MIT, BSD, Apache-2.0, ISC, PSF; **tqdm and certifi are MPL-2.0**, used unmodified | Part-of-speech tags, so heteronyms are pronounced right |
 
-Downloaded on first use, not bundled: the Kokoro-82M model and voices (Apache-2.0) and spaCy's
-`en_core_web_sm` model (MIT), each pinned by SHA-256 in `src/dogear/voice/catalog.toml`.
+Downloaded on first use: the Kokoro-82M model and voices (Apache-2.0) and spaCy's
+`en_core_web_sm` model (MIT), each pinned by SHA-256 in `src/dogear/voice/catalog.toml`. The
+standalone installers bundle the default ones.
 
-External programs (not bundled, run as separate processes, never linked): ffmpeg, Tesseract,
-Calibre, and eSpeak NG (GPL-3.0, used only for words misaki's dictionaries don't have, the
-same fallback Kokoro's own pipeline uses).
+External programs (run as separate processes, never linked): ffmpeg, Tesseract, Calibre, and
+eSpeak NG (GPL-3.0, used only for words misaki's dictionaries don't have, the same fallback
+Kokoro's own pipeline uses). The standalone installers bundle ffmpeg and ffprobe (FFmpeg,
+LGPL-2.1-or-later, built with LAME, LGPL-2.0-or-later) and eSpeak NG, built from the source
+archives pinned in `packaging/pins.toml`, with every license and a link to the exact source in
+the bundle's `THIRD-PARTY-NOTICES.txt`.
+
+## Build-only tool licenses
+
+Used to build the standalone installers, never needed to run Dogear. The installer
+dependency group in `pyproject.toml` holds the Python ones. Only PyInstaller's bootloader
+ends up in the bundle, under its exception; the bundle's notices include it.
+
+| Tool | License | Used for |
+|---|---|---|
+| PyInstaller | GPL-2.0-or-later, with an exception that lets the programs it builds use any license | Freezing Dogear into one folder with its Python |
+| pyinstaller-hooks-contrib | GPL-2.0-or-later or Apache-2.0 | PyInstaller's hooks for spaCy, onnxruntime, pypdfium2, and others |
+| altgraph, macholib (macOS), pefile (Windows) | MIT | PyInstaller dependencies |
+| pywin32-ctypes (Windows) | BSD-3-Clause | PyInstaller dependency |
+| setuptools | MIT | PyInstaller dependency |
+| Inno Setup 6 | Inno Setup License (free to use; commercial users are asked to buy a license) | The Windows installer |
+| MSYS2 with MinGW-w64 GCC, CMake, nasm | Various free licenses. The Windows programs are linked statically, so the MinGW-w64 runtime parts they use are inside them; GCC's runtime library exception covers GCC's | Building FFmpeg and eSpeak NG on Windows |
 
 CI only, never needed to run Dogear: DAISY Pipeline 2 (LGPL-3.0), run from its Docker image
 by `scripts/check-daisy.sh` to validate DAISY output.
