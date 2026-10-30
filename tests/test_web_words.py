@@ -10,7 +10,16 @@ from pathlib import Path
 
 import lxml.html
 import pytest
-from web_samples import CHOSEN, add_book, sample_app, sample_config, sample_summary, visitor
+from web_samples import (
+    CHOSEN,
+    add_book,
+    changed_elsewhere,
+    sample_app,
+    sample_config,
+    sample_summary,
+    save_form,
+    visitor,
+)
 
 from dogear.web import child
 from dogear.web.books import BookRecord
@@ -145,6 +154,35 @@ def test_emptying_a_saved_spelling_removes_it(running):
     assert [(e.word, e.sounds_like) for e in app.state.page_words.entries()] == [
         ("Lanyon", "lan yun")
     ]
+
+
+def test_a_words_page_opened_earlier_keeps_spellings_saved_since(running):
+    app, client = running
+    book_id = ready_book(app)
+    check(client, app, book_id)
+    path = f"/books/{book_id}/words"
+    save(client, book_id, {"Utterson": "utter son", "Lanyon": "lan yon"})
+    earlier = save_form(client, path)
+    assert [earlier[f"was-{n}"] for n in (1, 2, 3)] == ["utter son", "lan yon", ""]
+    # Meanwhile, the Pronunciations page changes one word and removes another.
+    app.state.page_words.save({"Utterson": "utter sun", "Lanyon": ""})
+    response = client.post(path, data={**earlier, "say-3": "pool"}, follow_redirects=False)
+    assert response.headers["location"] == f"{path}?saved=1"
+    assert [(e.word, e.sounds_like) for e in app.state.page_words.entries()] == [
+        ("Poole", "pool"),
+        ("Utterson", "utter sun"),
+    ]
+    page = changed_elsewhere(
+        client, path, "Utterson", "otter son", lambda: app.state.page_words.save({"Utterson": ""})
+    )
+    tree = lxml.html.fromstring(page)
+    assert tree.xpath("//*[@role='alert']//a/@href") == ["#say-1"]
+    assert texts(tree, "//p[@id='say-1-error']") == [
+        "Error: Utterson was changed in another window since this page was opened. It now "
+        "has no spelling. Check it and save again."
+    ]
+    assert tree.xpath("//input[@id='say-1']/@aria-describedby") == ["say-1-about say-1-error"]
+    assert [(e.word, e.sounds_like) for e in app.state.page_words.entries()] == [("Poole", "pool")]
 
 
 def test_a_book_with_choices_checks_its_sections_with_its_voice(running, commands):

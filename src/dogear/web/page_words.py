@@ -7,10 +7,13 @@ the ones in the user's settings, so the page's entries win.
 
 The page adds, changes, and removes sounds-like entries. Phoneme entries, which only
 someone editing the file by hand can add, are kept as they are. Every word and spelling
-is checked here before it is saved, with the bounds in [web]. The file is written whole
-or not at all, owner-only like the rest of the web folder, and read back through
-pronunciations.py before it replaces the old one, so a file `dogear` can't read is never
-left in place.
+is checked here before it is saved, with the bounds in [web]. A save can say
+what the page showed for each word; then, if one of them was changed since (in another
+window, say), it saves nothing rather than undo that change.
+
+The file is written whole or not at all, owner-only like the rest of the web folder, and
+read back through pronunciations.py before it replaces the old one, so a file `dogear`
+can't read is never left in place.
 """
 
 from __future__ import annotations
@@ -44,6 +47,15 @@ class EntryError(Exception):
         self.word = word
 
 
+class ChangedElsewhere(Exception):
+    """Words whose spelling was changed since the page that sends them was shown.
+    `words` has each word as sent, with its spelling now ("" if it has none)."""
+
+    def __init__(self, words: dict[str, str]) -> None:
+        super().__init__(", ".join(words))
+        self.words = words
+
+
 def words_option(path: Path) -> list[str]:
     """--words with the page's file (WebSettings.words_file), for a child command that
     takes it; nothing until the page has saved a word."""
@@ -54,7 +66,7 @@ def clean_word(text: str, limits: WordLimits) -> str:
     """A word as the book writes it, with its spacing tidied the way pronunciations.py
     tidies it. Raises EntryError if it can't be saved."""
     _one_line(text, "The word")
-    word = " ".join(text.split())
+    word = tidy(text)
     if not word:
         raise EntryError("Type the word as the book writes it.")
     if len(word) > limits.word_chars:
@@ -68,13 +80,18 @@ def clean_spelling(text: str, word: str, limits: WordLimits) -> str:
     """How to say `word`, tidied: "" when it's empty. Raises EntryError if it can't be
     saved."""
     _one_line(text, f"How to say {word}")
-    spelling = " ".join(text.split())
+    spelling = tidy(text)
     if len(spelling) > limits.spelling_chars:
         raise EntryError(
             f"How to say {word} can be at most {limits.spelling_chars} characters long.",
             word,
         )
     return spelling
+
+
+def tidy(text: str) -> str:
+    """`text` with its spacing tidied, as pronunciations.py tidies words and spellings."""
+    return " ".join(text.split())
 
 
 def _one_line(text: str, what: str) -> None:
@@ -99,15 +116,22 @@ class PageWords:
             return []
         return sorted(read_pronunciation_file(self.path), key=lambda e: word_key(e.word))
 
-    def save(self, spellings: Mapping[str, str]) -> None:
+    def save(self, spellings: Mapping[str, str], shown: Mapping[str, str] | None = None) -> None:
         """Give each word its spelling, or remove the word's entry if its spelling is "".
         The words and spellings have been through clean_word and clean_spelling. Words
-        match as in any pronunciation file, whatever their capitals. Raises EntryError for
-        a word with a phoneme entry, or a new word when the file is full."""
+        match as in any pronunciation file, whatever their capitals.
+
+        `shown` has, for some of the words, the spelling the page showed when it was
+        opened ("" for none). If one of them has another spelling now, and not the one
+        asked for, someone changed it since: nothing is saved, and ChangedElsewhere names
+        each such word. Raises EntryError for a word with a phoneme entry, or a new word
+        when the file is full. Saves all or nothing."""
+        shown = shown or {}
         with self._lock:
             before = {word_key(e.word): e for e in self.entries()}
             after = dict(before)
             added = ""
+            changed: dict[str, str] = {}
             for word, spelling in spellings.items():
                 key = word_key(word)
                 existing = before.get(key)
@@ -119,12 +143,18 @@ class PageWords:
                         "there by hand. The page doesn't change those.",
                         word,
                     )
+                now = (existing.sounds_like or "") if existing is not None else ""
+                if word in shown and now not in (shown[word], spelling):
+                    changed[word] = now
+                    continue
                 if spelling:
                     after[key] = Pronunciation(word, spelling, None, self.path)
                     if key not in before:
                         added = added or word
                 else:
                     after.pop(key, None)
+            if changed:
+                raise ChangedElsewhere(changed)
             if len(after) > self.limits.entries and len(after) > len(before):
                 raise EntryError(
                     f"Dogear's word list is full: it holds at most {self.limits.entries} "

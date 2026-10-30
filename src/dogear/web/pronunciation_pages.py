@@ -2,8 +2,10 @@
 add one, and a field to hear any short text said with them.
 
 It edits the page's own pronunciation file (page_words.py). Each saved word is a group
-like those on a book's words page (spelling_forms.py), with its own Listen button.
-Phoneme entries, written into the file by hand, are listed but never changed here.
+like those on a book's words page (spelling_forms.py), with its own Listen button. Save
+saves only the words changed on the page, so a page opened earlier never undoes a
+change made since. Phoneme entries, written into the file by hand, are listed but never
+changed here.
 """
 
 from __future__ import annotations
@@ -22,10 +24,10 @@ from dogear.web.spelling_forms import (
     MAX_NUMBER_DIGITS,
     SentWord,
     WordItem,
-    field_for,
     form_limits,
+    save_sent,
     sent_words,
-    spellings_to_save,
+    shown_again,
 )
 from dogear.web.templating import message, render
 from dogear.web.word_pages import word_file_problem
@@ -49,8 +51,10 @@ async def pronunciations_page(request: Request) -> Response:
 
 
 async def save(request: Request) -> Response:
-    """POST /pronunciations: every saved word's "Say it like"; an empty one removes it."""
-    most_bytes, most_fields = form_limits(_settings(request).word_limits)
+    """POST /pronunciations: every saved word's "Say it like"; an empty one removes it.
+    Only the words changed on the page are saved."""
+    limits = _settings(request).word_limits
+    most_bytes, most_fields = form_limits(limits)
     try:
         fields = await read_form(
             request, max(MAX_FORM_BYTES, most_bytes), max(MAX_FIELDS, most_fields)
@@ -58,14 +62,10 @@ async def save(request: Request) -> Response:
     except FormTooBig:
         return message(request, 413, "Form too big", "That form was too big", "Try again.")
     sent = sent_words(fields, 10**MAX_NUMBER_DIGITS - 1)
-    spellings, errors = spellings_to_save(sent, _settings(request).word_limits)
-    if not errors:
-        try:
-            await run_in_threadpool(_page_words(request).save, spellings)
-        except EntryError as e:
-            errors[field_for(sent, e.word)] = e.message
-        except DogearError as e:
-            return word_file_problem(request, "Dogear couldn't save the words", e)
+    try:
+        sent, errors = await run_in_threadpool(save_sent, _page_words(request), sent, limits)
+    except DogearError as e:
+        return word_file_problem(request, "Dogear couldn't save the words", e)
     if errors:
         return await _page(request, sent=sent, errors=errors, status_code=400)
     return RedirectResponse(f"{PAGE}?done=saved", status_code=303)
@@ -137,10 +137,13 @@ async def _page(
     except DogearError as e:
         return word_file_problem(request, "Dogear can't read its word list", e)
     if sent is not None:
-        items = [WordItem(s.number, s.word, "", s.typed) for s in sent]
+        items = shown_again(sent, entries)
     else:
-        spelled = [e for e in entries if e.sounds_like is not None]
-        items = [WordItem(n, e.word, "", e.sounds_like or "") for n, e in enumerate(spelled, 1)]
+        spelled = [(e.word, e.sounds_like) for e in entries if e.sounds_like is not None]
+        items = [
+            WordItem(n, word, "", spelling, spelling)
+            for n, (word, spelling) in enumerate(spelled, 1)
+        ]
     errors = errors or {}
     return render(
         request,

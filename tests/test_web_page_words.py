@@ -11,6 +11,7 @@ from dogear.errors import DogearError, PronunciationError
 from dogear.pronunciations import load_dictionary, read_pronunciation_file
 from dogear.web import page_words
 from dogear.web.page_words import (
+    ChangedElsewhere,
     EntryError,
     PageWords,
     clean_spelling,
@@ -39,6 +40,29 @@ def test_nothing_is_written_until_a_word_is_saved(words):
     words.save({"Utterson": "utter son"})
     assert words_option(words.path) == ["--words", str(words.path)]
     assert saved(words) == [("Utterson", "utter son", None)]
+
+
+def test_a_save_that_says_what_the_page_showed_keeps_changes_made_since(words):
+    words.save({"Utterson": "utter son", "Lanyon": "lan yon", "Poole": "pool"})
+    # As the page showed them: saved.
+    words.save({"lanyon": "lanny on"}, shown={"lanyon": "lan yon"})
+    assert saved(words)[0] == ("lanyon", "lanny on", None)
+    # Changed since: "utter son" isn't what that page showed. Nothing is saved.
+    with pytest.raises(ChangedElsewhere) as error:
+        words.save(
+            {"Utterson": "otter son", "Poole": "", "Hyde": "hide"},
+            shown={"Utterson": "utter sun", "Poole": "pool", "Hyde": "hidey"},
+        )
+    assert error.value.words == {"Utterson": "utter son", "Hyde": ""}
+    assert saved(words) == [
+        ("lanyon", "lanny on", None),
+        ("Poole", "pool", None),
+        ("Utterson", "utter son", None),
+    ]
+    # Changed since, but to what was asked for: nothing to undo.
+    words.save({"UTTERSON": "utter son"}, shown={"UTTERSON": "utter sun"})
+    words.save({"Hyde": ""}, shown={"Hyde": "hidey"})  # removed since: removed
+    assert [e.word for e in words.entries()] == ["lanyon", "Poole", "UTTERSON"]
 
 
 def test_quotes_backslashes_and_unicode_are_saved_as_typed(words):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import lxml.html
 import pytest
-from web_samples import sample_app, sample_config, visitor
+from web_samples import changed_elsewhere, sample_app, sample_config, save_form, visitor
 
 from dogear.web import child
 from dogear.web.settings import WordLimits
@@ -95,6 +95,86 @@ def test_add_change_and_remove_words(running):
     assert texts(tree_of(client.get("/pronunciations?done=saved")), "//p[@class='notice']") == [
         "Saved."
     ]
+
+
+def typed(form, word, spelling):
+    """`form` with `spelling` typed in the "Say it like" field of `word`."""
+    [number] = [k[len("word-") :] for k, v in form.items() if k.startswith("word-") and v == word]
+    return {**form, f"say-{number}": spelling}
+
+
+def test_a_page_opened_earlier_saves_only_what_it_changed(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    add(client, "Lanyon", "lan yon")
+    earlier = save_form(client, "/pronunciations")  # another tab, or Back
+    assert earlier == {
+        "word-1": "Lanyon",
+        "was-1": "lan yon",
+        "say-1": "lan yon",
+        "word-2": "Utterson",
+        "was-2": "utter son",
+        "say-2": "utter son",
+    }
+    client.post(
+        "/pronunciations", data=typed(save_form(client, "/pronunciations"), "Utterson", "utter sun")
+    )
+    response = client.post(
+        "/pronunciations", data=typed(earlier, "Lanyon", "lanny on"), follow_redirects=False
+    )
+    assert response.headers["location"] == "/pronunciations?done=saved"
+    assert saved(app) == [("Lanyon", "lanny on", None), ("Utterson", "utter sun", None)]
+    # Nor does it bring back a word removed since.
+    client.post("/pronunciations", data=typed(save_form(client, "/pronunciations"), "Lanyon", ""))
+    client.post("/pronunciations", data=earlier)
+    assert saved(app) == [("Utterson", "utter sun", None)]
+
+
+def test_a_word_changed_in_another_window_is_not_overwritten(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    add(client, "Poole", "pool")
+    page = changed_elsewhere(
+        client,
+        "/pronunciations",
+        "Utterson",
+        "otter son",
+        lambda: app.state.page_words.save({"Utterson": "utter sun"}),
+    )
+    tree = lxml.html.fromstring(page)
+    message = (
+        "Utterson was changed in another window since this page was opened. "
+        "It now says: utter sun. Check it and save again."
+    )
+    links = tree.xpath("//*[@role='alert']//a")
+    assert [(a.get("href"), a.text_content()) for a in links] == [("#say-2", message)]
+    assert texts(tree, "//p[@id='say-2-error']") == [f"Error: {message}"]
+    assert tree.xpath("//input[@id='say-2']/@aria-describedby") == ["say-2-error"]
+    assert saved(app) == [("Poole", "pool", None), ("Utterson", "utter sun", None)]
+    # What was typed is kept, and saving again saves it.
+    [form] = tree.xpath("//form[@action='/pronunciations']")
+    again = dict(form.form_values())
+    assert (again["say-2"], again["was-2"]) == ("otter son", "utter sun")
+    response = client.post("/pronunciations", data=again, follow_redirects=False)
+    assert response.headers["location"] == "/pronunciations?done=saved"
+    assert saved(app) == [("Poole", "pool", None), ("Utterson", "otter son", None)]
+
+
+def test_a_word_removed_in_another_window_says_so(running):
+    app, client = running
+    add(client, "Utterson", "utter son")
+    page = changed_elsewhere(
+        client,
+        "/pronunciations",
+        "Utterson",
+        "otter son",
+        lambda: app.state.page_words.save({"Utterson": ""}),
+    )
+    assert (
+        "Utterson was changed in another window since this page was opened. It now has no "
+        "spelling. Check it and save again." in page
+    )
+    assert saved(app) == []
 
 
 def test_adding_needs_a_word_and_a_spelling_and_keeps_what_was_typed(running):
@@ -207,8 +287,8 @@ def test_a_word_file_broken_by_hand_is_reported_not_overwritten(running):
 def test_the_save_form_is_bounded_by_the_word_limits(tmp_path, commands):
     limits = WordLimits(entries=3, word_chars=10, spelling_chars=10)
     most_bytes, most_fields = form_limits(limits)
-    assert most_fields == 22
-    assert most_bytes > 3 * 9 * 20
+    assert most_fields == 25  # word-N, was-N, and say-N for each, and a few more
+    assert most_bytes > 3 * 9 * 30
     config = sample_config(tmp_path / "web")
     config["web"].update(max_pronunciations=3, max_word_chars=10, max_spelling_chars=10)
     app = sample_app(tmp_path / "web", config)
