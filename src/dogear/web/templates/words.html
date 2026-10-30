@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import error_summary, word_group, listen_form %}
+{% block head %}
+{% if watching %}<script src="/static/progress.js" defer></script>{% endif %}
+{% if items %}<script src="/static/listen.js" defer></script>{% endif %}
+{% endblock %}
+{% block main %}
+<h1>{{ status.heading }}</h1>
+{% if errors %}{{ error_summary(errors, targets) }}{% endif %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+<p>Book: <strong>{{ book_title }}</strong></p>
+
+{% if check is none %}
+<p>Dogear can list the words in {{ where }} that the voice doesn't know, most frequent first. They are usually names. The voice guesses how to say them, and sometimes gets one wrong. You can then listen to each word, and fix the ones that sound wrong.</p>
+{% if needs_english %}
+<p>This book says it is in the language with the code "{{ language }}". Dogear's voice speaks only English. Books are sometimes marked with the wrong language, so if this one is in English, check its words as English.</p>
+{% endif %}
+<form method="post" action="/books/{{ book_id }}/words/check">
+  {% if needs_english %}<input type="hidden" name="english" value="yes">{% endif %}
+  <button type="submit">{% if needs_english %}Check the words as English{% else %}Check the words{% endif %}</button>
+</form>
+{% else %}
+<div id="live-status"{% if watching %} data-status-url="/books/{{ book_id }}/words/status" data-continues="waiting checking" data-changed="Follow the Show the words link to go on." data-changed-link="Show the words"{% endif %}>
+  <p id="status" class="status" role="status">{{ status.sentence }}</p>
+</div>
+{% if watching %}
+<p><a id="check-progress" href="/books/{{ book_id }}/words">Check progress</a></p>
+{% endif %}
+{% endif %}
+
+{% if check and check.state == "failed" %}
+<p><strong>Error:</strong> {{ check.error }}</p>
+{% if check.hint %}<p><strong>What to do:</strong> {{ check.hint }}</p>{% endif %}
+<form method="post" action="/books/{{ book_id }}/words/check">
+  {% if needs_english %}<input type="hidden" name="english" value="yes">{% endif %}
+  <button type="submit">Check again</button>
+</form>
+{% endif %}
+
+{% if items %}
+<h2>Words the voice doesn't know</h2>
+<p>These come from {{ where }}, most frequent first. Choose Listen to hear how the voice says a word. If it sounds wrong, write how it sounds in "Say it like", with ordinary words or parts of words: Utterson as "utter son", say. Then choose Save, and Listen again.</p>
+<p>Leave a word empty to let the voice guess. Emptying a word you fixed before takes your spelling away. Your spellings are used for every book Dogear makes, and listed on the Pronunciations page.</p>
+{% if more %}
+<p>{{ more }} more {{ "word isn't" if more == 1 else "words aren't" }} listed. Each comes up {{ fewest }} {{ "time" if fewest == 1 else "times" }} or fewer.</p>
+{% endif %}
+<form method="post" action="/books/{{ book_id }}/words" novalidate>
+  {% for item in items %}
+  {{ word_group(item, errors) }}
+  {% endfor %}
+  <button type="submit">Save</button>
+</form>
+{% for item in items %}
+{{ listen_form(item, back, book_id) }}
+{% endfor %}
+{% elif check and check.state == "done" %}
+<p>The voice knows every word in {{ where }}, so there's nothing to fix.</p>
+{% endif %}
+
+{% if check and check.state == "done" %}
+<h2>Check again</h2>
+<p>Check again after choosing other sections to make, or after fixing words: a spelling can have words of its own that the voice doesn't know.</p>
+<form method="post" action="/books/{{ book_id }}/words/check">
+  {% if needs_english %}<input type="hidden" name="english" value="yes">{% endif %}
+  <button type="submit" class="secondary">Check again</button>
+</form>
+{% endif %}
+
+<p><a href="/books/{{ book_id }}">Back to the book</a></p>
+{% endblock %}

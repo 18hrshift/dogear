@@ -96,11 +96,18 @@ On the page:
    its chapters.
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
-3. Choose Start making. The book's page says how far it has got, with its latest
+3. To fix names the voice says wrong, follow "check how words are said" on that page
+   (or on a finished book's page). Dogear lists the words the voice doesn't know, most
+   frequent first, each with a Listen button and a "Say it like" field. Write "utter son"
+   for Utterson, say, choose Save, and Listen again. The Pronunciations page lists every
+   word you have fixed, and can say any short text. The page keeps these words in
+   `words.toml` in its web folder and uses them for every book it makes, after any
+   pronunciation files in your settings, so the page's spellings win.
+4. Choose Start making. The book's page says how far it has got, with its latest
    progress lines. A warning repeated many times in a row is one line that says how many
    times. Dogear makes one book at a time, and others wait their turn. You can close the
    page and come back later.
-4. When the book is ready, download what Dogear made. Folders (MP3 and DAISY) download
+5. When the book is ready, download what Dogear made. Folders (MP3 and DAISY) download
    as a zip file. The page also shows the folder on the computer where everything is
    saved.
 
@@ -141,8 +148,9 @@ encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
 
 Other options: `--port 8766` uses another port (if another program has 8765), and
 `--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
-the page accepts (200 MB at first), how long reading a book may take, and the folder
-where books are kept.
+the page accepts (200 MB at first), how long reading a book (or checking its words, or
+saying something for Listen) may take, the folder where books are kept, and how many
+words the page's pronunciation file holds and how long each word and spelling may be.
 
 ## Make an audiobook
 
@@ -311,6 +319,14 @@ To fix a book's words:
 
 `dogear text mybook.epub --spoken --words names.toml` shows every line with your
 spellings in place.
+
+For other programs, `dogear words mybook.epub --json` prints the same list as JSON, in
+ASCII: an object whose `words` is a list, most frequent first, of objects with the
+`word` and its `count`. Errors are still the plain `Error:` and `What to do:` lines, and
+the exit status is 1.
+
+To say a text that starts with a hyphen, put `--` before it, so it isn't read as an
+option: `dogear say -o test.wav -- "-ing words"`.
 
 **Exact phonemes, for experts.** An entry can give the phonemes the voice should use,
 written in the symbols of misaki, the voice's pronunciation dictionary

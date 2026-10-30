@@ -21,3 +21,34 @@
 {% macro describedby(hint_id, errors, field, error_id) -%}
 {{ hint_id }}{% if errors.get(field) %} {{ error_id }}{% endif %}
 {%- endmacro %}
+
+{# A word to fix, in a form that saves spellings (spelling_forms.py): a group that starts
+   with the word itself, as a heading, then how often it comes up, its "Say it like"
+   field, and its Listen button. The button belongs to the word's own Listen form
+   (listen_form, below, outside the Save form), so Enter in a field still saves. #}
+{% macro word_group(item, errors) %}
+{% set about_id = item.field ~ "-about" %}
+{% set error_id = item.field ~ "-error" %}
+<fieldset class="word{% if errors.get(item.field) %} has-error{% endif %}" id="word-{{ item.number }}">
+  <legend><h3>{{ item.word }}</h3></legend>
+  {% if item.about %}<p class="hint" id="{{ about_id }}">{{ item.about }}</p>{% endif %}
+  <input type="hidden" name="word-{{ item.number }}" value="{{ item.word }}">
+  <div class="field">
+    <label for="{{ item.field }}">Say it like</label>
+    {{ error_message(errors, item.field, error_id) }}
+    <input type="text" id="{{ item.field }}" name="{{ item.field }}" value="{{ item.value }}" autocomplete="off" spellcheck="false"{% if item.about or errors.get(item.field) %} aria-describedby="{% if item.about %}{{ about_id }}{% endif %}{% if item.about and errors.get(item.field) %} {% endif %}{% if errors.get(item.field) %}{{ error_id }}{% endif %}"{% endif %}>
+  </div>
+  <button type="submit" class="secondary" form="listen-{{ item.number }}">Listen<span class="visually-hidden"> to {{ item.word }}</span></button>
+  <p class="listen-status" id="listen-status-{{ item.number }}" role="status"></p>
+</fieldset>
+{% endmacro %}
+
+{# The form a word's Listen button sends: what to say, the place to come back to, and
+   the book whose voice and speed to use, if any. listen.js sends it in place. #}
+{% macro listen_form(item, back, book_id="") %}
+<form id="listen-{{ item.number }}" method="post" action="/listen" data-listen="listen-status-{{ item.number }}">
+  <input type="hidden" name="text" value="{{ item.word }}">
+  <input type="hidden" name="back" value="{{ back }}#word-{{ item.number }}">
+  {% if book_id %}<input type="hidden" name="book" value="{{ book_id }}">{% endif %}
+</form>
+{% endmacro %}

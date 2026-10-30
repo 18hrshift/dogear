@@ -72,9 +72,17 @@ confusing or missing, and anything that took longer than it should.
    with "Stop making this book", then choose "Start again": it should carry on.
 7. **Download.** When the book is ready, find the download links. Each should say what it
    is and its size. Download one and check it plays.
-8. **Delete.** Delete the book. You should be asked to confirm first, then be back on
+8. **Fix a word.** On the book's page, follow "check how words are said" and choose
+   Check the words. You should hear when the list is ready. Move through the words by
+   heading: each group should start with the word, then how often it comes up. Choose
+   Listen on one: you should hear "Getting it ready", then the word, and nothing should
+   play until you choose Listen. Type a spelling in its "Say it like" field (such as
+   "utter son" for Utterson), choose Save, and Listen again. Then open Pronunciations from
+   the links at the top of the page and find the word there.
+9. **Delete.** Delete the book. You should be asked to confirm first, then be back on
    "Your books" with a message saying it was deleted.
-9. **Help.** Open Help. Is it clear how to make a book and how to use Dogear from a phone?
+10. **Help.** Open Help. Is it clear how to make a book, how to fix a word, and how to use
+    Dogear from a phone?
 
 For the combinations without a screen reader (10 to 13), do the same tasks and also check:
 everything can be reached and used with the keyboard; you can always see where the

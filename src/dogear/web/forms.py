@@ -14,13 +14,16 @@ class FormTooBig(Exception):
     pass
 
 
-async def read_form(request: Request) -> list[tuple[str, str]]:
-    """The form's fields, in order. Raises FormTooBig past MAX_FORM_BYTES or MAX_FIELDS."""
+async def read_form(
+    request: Request, max_bytes: int = MAX_FORM_BYTES, max_fields: int = MAX_FIELDS
+) -> list[tuple[str, str]]:
+    """The form's fields, in order. Raises FormTooBig past `max_bytes` or `max_fields`:
+    MAX_FORM_BYTES and MAX_FIELDS, unless a form that can hold more says how much."""
     body = bytearray()
     try:
         async for chunk in request.stream():
             body += chunk
-            if len(body) > MAX_FORM_BYTES:
+            if len(body) > max_bytes:
                 raise FormTooBig
     except ClientDisconnect:
         return []
@@ -28,7 +31,7 @@ async def read_form(request: Request) -> list[tuple[str, str]]:
         return parse_qsl(
             body.decode("utf-8", errors="replace"),
             keep_blank_values=True,
-            max_num_fields=MAX_FIELDS,
+            max_num_fields=max_fields,
         )
     except ValueError:
         raise FormTooBig from None

@@ -23,11 +23,15 @@ from starlette.testclient import TestClient
 
 from dogear.book_summary import BookSummary, SectionSummary
 from dogear.config import Config, default_config
+from dogear.unknown_words import UnknownWord
 from dogear.web.access_key import AccessKey
 from dogear.web.app import STATIC, create_app
 from dogear.web.books import Choices, Output
 from dogear.web.library import Library
+from dogear.web.listening import Listen, Listens
+from dogear.web.page_words import PageWords
 from dogear.web.settings import WebSettings, web_settings
+from dogear.web.word_check import WordCheck
 
 KEY = "abcde-fghjk-mnpqr-stuvw-xyz23"
 PORT = 8765
@@ -194,6 +198,9 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
             data={"format": "m4b", "voice": "af_heart", "speed": "0.9", "section": "1"},
         ).text
         pages["delete"] = client.get(f"/books/{books['done']}/delete").text
+        pages.update(_word_pages(app, client, folder))
+        pages.update(_listen_pages(app, client))
+        pages.update(_pronunciation_pages(app, client))
         pages["home-books"] = client.get("/").text
         pages["home-deleted"] = client.get("/?deleted=1").text
         pages["help"] = client.get("/help").text
@@ -207,6 +214,129 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
         saved[name].write_text(html, encoding="utf-8")
     shutil.copytree(STATIC, out_dir / "static", dirs_exist_ok=True)
     return saved
+
+
+# Words a check found, most frequent first. The book has more than the page lists.
+CHECKED_WORDS = (
+    UnknownWord("Utterson", 131),
+    UnknownWord("Lanyon", 40),
+    UnknownWord("Poole", 12),
+    UnknownWord("Enfield", 9),
+)
+
+
+def keep_check(library: Library, book_id: str, check: WordCheck) -> None:
+    """The book's word check in this state, as a check would leave it."""
+    library.words._checks[book_id] = check
+
+
+def keep_listen(listens: Listens, listen: Listen) -> None:
+    """A listen in this state, with its recording if it's done, as saying it would leave it."""
+    listens._listens[listen.id] = listen
+    if listen.state == "done":
+        (listens.folder / f"{listen.id}.wav").write_bytes(b"RIFF" + bytes(44_000))
+
+
+def _word_pages(app: Starlette, client: TestClient, folder: Path) -> dict[str, str]:
+    """A book's "Check how words are said" page in each state."""
+    library: Library = app.state.library
+    pages = {}
+    summary = {"summary": sample_summary()}
+    start = add_book(library, folder, state="ready", **summary)
+    pages["words-start"] = client.get(f"/books/{start}/words").text
+    roman = replace(sample_summary("Le Roman"), language="fr")
+    language = add_book(library, folder, "roman.epub", state="ready", summary=roman)
+    pages["words-start-language"] = client.get(f"/books/{language}/words").text
+    states = {
+        "words-waiting": WordCheck("waiting"),
+        "words-checking": WordCheck("checking", sections=(2, 3)),
+        "words-list": WordCheck("done", words=CHECKED_WORDS, total=64),
+        "words-empty": WordCheck("done", sections=(1,)),
+        "words-failed": WordCheck(
+            "failed",
+            error="This book is marked as being in 'fr', but Dogear's voice only speaks "
+            "English so far.",
+            hint="If the book is really in English, check its words as English.",
+        ),
+    }
+    books = {}
+    for name, check in states.items():
+        books[name] = add_book(library, folder, state="done", choices=CHOSEN, **summary)
+        keep_check(library, books[name], check)
+        pages[name] = client.get(f"/books/{books[name]}/words").text
+    page_words: PageWords = app.state.page_words
+    page_words.save({"Lanyon": "lan yon"})
+    listed = books["words-list"]
+    pages["words-list"] = client.get(f"/books/{listed}/words").text
+    pages["words-saved"] = client.get(f"/books/{listed}/words?saved=1").text
+    pages["words-errors"] = client.post(
+        f"/books/{listed}/words",
+        data={
+            "word-1": "Utterson",
+            "say-1": "utter son " * 30,
+            "word-2": "Lanyon",
+            "say-2": "lan yon",
+            "word-3": "Poole",
+            "say-3": "pool\x00",
+            "word-4": "Enfield",
+            "say-4": "",
+        },
+    ).text
+    page_words.save({"Lanyon": ""})
+    return pages
+
+
+def _listen_pages(app: Starlette, client: TestClient) -> dict[str, str]:
+    """A Listen's page: waiting, done (the player), failed, and gone."""
+    listens: Listens = app.state.listens
+    states = {
+        "listen-waiting": Listen("1" * 32, "Utterson", "/pronunciations", state="saying"),
+        "listen-done": Listen(
+            "2" * 32,
+            "Mr. Utterson the lawyer.",
+            "/books/" + "A" * 16 + "/words#word-1",
+            state="done",
+            said=("Mister Utter son the lawyer.",),
+        ),
+        "listen-failed": Listen(
+            "3" * 32,
+            "Lanyon",
+            "/pronunciations#try",
+            state="failed",
+            error="The voice couldn't be loaded.",
+            hint="Check your internet connection, then choose Listen again.",
+        ),
+    }
+    pages = {}
+    for name, listen in states.items():
+        keep_listen(listens, listen)
+        pages[name] = client.get(f"/listen/{listen.id}").text
+    pages["listen-gone"] = client.get("/listen/" + "4" * 32).text
+    return pages
+
+
+def _pronunciation_pages(app: Starlette, client: TestClient) -> dict[str, str]:
+    """The Pronunciations page: empty, full, and with errors in each form."""
+    pages = {"pronunciations-empty": client.get("/pronunciations").text}
+    words_file = app.state.settings.words_file
+    words_file.write_text('[words]\nLanyon = { phonemes = "lˈænjən" }\n', encoding="utf-8")
+    app.state.page_words.save(
+        {"Utterson": "utter son", "St. John": "sin jun", "Zoë": "zo ee", "Poole": "pool"}
+    )
+    pages["pronunciations-full"] = client.get("/pronunciations").text
+    pages["pronunciations-added"] = client.get("/pronunciations?done=added").text
+    pages["pronunciations-add-errors"] = client.post(
+        "/pronunciations/add", data={"word": "--", "spelling": ""}
+    ).text
+    pages["pronunciations-errors"] = client.post(
+        "/pronunciations",
+        data={"word-1": "Poole", "say-1": "pool " * 50, "word-2": "St. John", "say-2": ""},
+    ).text
+    pages["pronunciations-try-error"] = client.post(
+        "/pronunciations/try", data={"text": "..."}
+    ).text
+    words_file.unlink()
+    return pages
 
 
 def _made_outputs(library: Library, book_id: str) -> None:

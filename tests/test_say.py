@@ -143,3 +143,14 @@ def test_cli_say_needs_an_output_file(capsys):
     with pytest.raises(SystemExit):
         cli.main(["say", "Hello."])
     assert "-o/--output" in capsys.readouterr().err
+
+
+def test_cli_say_takes_text_that_looks_like_an_option_after_two_hyphens(voice, capsys, tmp_path):
+    """The web page puts what a person typed after `--`, so it is never an option."""
+    out = tmp_path / "said.wav"
+    elsewhere = tmp_path / "elsewhere.wav"
+    assert cli.main(["say", "-o", str(out), "--", f"-o{elsewhere}"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == f"Saved: {out}"
+    assert out.is_file() and not elsewhere.exists()
+    assert cli.main(["say", "-o", str(out), "--", "--help"]) == 0
+    assert capsys.readouterr().out.startswith("Said: ")

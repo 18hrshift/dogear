@@ -21,6 +21,7 @@ class WebSettings:
     max_upload_bytes: int
     read_timeout_seconds: float
     config_file: Path | None  # passed on to every child, so books use the same settings
+    word_limits: WordLimits
 
     @property
     def listen_host(self) -> str:
@@ -34,6 +35,25 @@ class WebSettings:
     def incoming_dir(self) -> Path:
         """Where an upload is written until it is complete."""
         return self.dir / "incoming"
+
+    @property
+    def words_file(self) -> Path:
+        """The page's own pronunciation file (page_words.py)."""
+        return self.dir / "words.toml"
+
+    @property
+    def listen_dir(self) -> Path:
+        """Recordings made for Listen (listening.py)."""
+        return self.dir / "listen"
+
+
+@dataclass(frozen=True)
+class WordLimits:
+    """How much the page's own pronunciation file holds."""
+
+    entries: int
+    word_chars: int
+    spelling_chars: int
 
 
 def web_settings(
@@ -52,10 +72,14 @@ def web_settings(
         )
     if web["max_upload_mb"] <= 0:
         raise ConfigError(f"web.max_upload_mb must be more than 0, got {web['max_upload_mb']}.")
-    if web["read_timeout_seconds"] <= 0:
-        raise ConfigError(
-            f"web.read_timeout_seconds must be more than 0, got {web['read_timeout_seconds']}."
-        )
+    for name in (
+        "read_timeout_seconds",
+        "max_pronunciations",
+        "max_word_chars",
+        "max_spelling_chars",
+    ):
+        if web[name] <= 0:
+            raise ConfigError(f"web.{name} must be more than 0, got {web[name]}.")
     return WebSettings(
         dir=web_dir(config).resolve(),
         port=chosen_port,
@@ -63,4 +87,9 @@ def web_settings(
         max_upload_bytes=web["max_upload_mb"] * 1024 * 1024,
         read_timeout_seconds=float(web["read_timeout_seconds"]),
         config_file=config_file.resolve() if config_file is not None else None,
+        word_limits=WordLimits(
+            entries=web["max_pronunciations"],
+            word_chars=web["max_word_chars"],
+            spelling_chars=web["max_spelling_chars"],
+        ),
     )

@@ -1,7 +1,8 @@
 """Running the `dogear` command as a child process: starting it, reading it, stopping it.
 
-The server runs `dogear outline --json` and `dogear make` this way, so a book file that
-crashes or hangs the reader takes down only the child. Each child and whatever it starts
+The server runs `dogear outline --json`, `make`, `words --json`, and `say` this way, so
+a book file that crashes or hangs the reader takes down only the child, and the server
+never loads the voice. Each child and whatever it starts
 make one process tree (process_tree.py) that only the server stops, and a child stops
 by itself if the server ends first (server_watch.py). Children write UTF-8.
 """
@@ -37,11 +38,17 @@ def dogear_command() -> list[str]:
     return [sys.executable, "-m", "dogear"]
 
 
-def child_command(args: list[str], config_file: Path | None) -> list[str]:
-    """The full command for `dogear ARGS`, with the server's own --config if it has one."""
+def child_command(
+    args: list[str], config_file: Path | None, *, text: str | None = None
+) -> list[str]:
+    """The full command for `dogear ARGS`, with the server's own --config if it has one.
+    `text`, which a person typed, comes last, after `--`, so that nothing in it can be
+    read as an option."""
     command = [*dogear_command(), *args]
     if config_file is not None:
         command += ["--config", str(config_file)]
+    if text is not None:
+        command += ["--", text]
     return command
 
 

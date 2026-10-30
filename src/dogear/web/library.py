@@ -1,4 +1,5 @@
-"""The books, and the two queues that work on them: one reads uploads, one makes books.
+"""The books, and the queues that work on them: one reads uploads, one makes books, and
+one checks books' words (word_check.py).
 
 Reading has its own queue so a new upload is read straight away, even while a long
 book is being made. Each queue runs one child process at a time.
@@ -17,6 +18,7 @@ from dogear.web.making import make_book
 from dogear.web.progress import Progress
 from dogear.web.reading import read_book
 from dogear.web.settings import WebSettings
+from dogear.web.word_check import CheckFunction, WordChecks, check_words
 from dogear.web.worker import Worker
 
 # Whatever runs a job: `read_book` and `make_book`, or a stand-in in tests.
@@ -37,23 +39,27 @@ class Library:
         settings: WebSettings,
         read: JobFunction = read_book,
         make: JobFunction = make_book,
+        check: CheckFunction = check_words,
     ) -> None:
         self.settings = settings
         self.store = BookStore(settings.books_dir)
         self.reader = Worker("reader", self._job(read, "unreadable"))
         self.maker = Worker("maker", self._job(make, "failed"))
+        self.words = WordChecks(self.store, settings, check)
         for book_id in self.store.load():
             self.reader.add(book_id)
 
     def start(self) -> None:
         self.reader.start()
         self.maker.start()
+        self.words.start()
 
     def close(self) -> None:
         """Stop every job and child process. Books being made become "stopped"."""
         timeout = STOP_GRACE_SECONDS + 5
         self.reader.close(timeout)
         self.maker.close(timeout)
+        self.words.close(timeout)
         for record in self.store.all():
             if record.state in ("waiting", "making"):
                 self.store.update(record.id, state="stopped", error="", hint="")
@@ -106,6 +112,7 @@ class Library:
         for worker in (self.reader, self.maker):
             if worker.stop(book_id):
                 worker.wait_until_not_running(book_id, STOP_GRACE_SECONDS + 5)
+        self.words.forget(book_id, STOP_GRACE_SECONDS + 5)
         try:
             with self.store.made_lock(book_id):  # not while it's being zipped
                 self.store.delete(book_id)

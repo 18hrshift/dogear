@@ -141,8 +141,15 @@ Dogear says what went wrong and what to do next. The most common problems:
 - **"Dogear's voice speaks only English":** the book is marked as being in another
   language. If it really is in English (books are sometimes marked wrongly), check "Read
   it as English". Dogear's voice can't read other languages yet.
-- **A name or word is said wrong:** fixing pronunciations needs a terminal for now. The
-  README's "Fix how a word is said" section shows how.
+- **A name or word is said wrong:** on the book's page (or on "Choose what to make",
+  before making it), follow "check how words are said". Dogear lists the words the voice
+  doesn't know, most frequent first; they are usually names. Choose Listen beside a word
+  to hear it. If it sounds wrong, type how it sounds in "Say it like", using ordinary
+  words or parts of words (Utterson as "utter son"), choose Save, and Listen again. Then
+  make the book again: only the sentences with those words are spoken again. Your
+  spellings are used for every book, and the Pronunciations page, in the list at the top
+  of every page, lets you change or remove them, add a word, and listen to any short
+  text.
 - **"This page needs Dogear's access link":** open the link shown in Dogear's window,
   which logs this browser in. It looks like `http://127.0.0.1:8765/start?key=...`.
 - **"Port 8765 is in use already":** Dogear is probably running in another window. Use

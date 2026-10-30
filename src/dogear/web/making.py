@@ -1,6 +1,6 @@
 """Making a book: `dogear make` in a child process, with its progress lines kept as they
 come (progress.py). Its `Saved:` lines say what it made; `Error:` and `What to do:` say
-why it failed."""
+why it failed. It uses the page's own pronunciation file (page_words.py) too."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dogear.web.books import MADE, ZIPS, BookRecord, BookStore, Output
 from dogear.web.child import Stopper, child_command, interrupted, read_lines, start_lines
+from dogear.web.page_words import words_option
 from dogear.web.reading import problem_from_output
 from dogear.web.settings import WebSettings
 
@@ -28,7 +29,9 @@ def make_book(store: BookStore, settings: WebSettings, book_id: str, stopper: St
             book_id, state="making", run=secrets.token_hex(8), error="", hint="", outputs=()
         )
         shutil.rmtree(folder / ZIPS, ignore_errors=True)  # zips of an earlier make
-    command = child_command(make_args(record, folder), settings.config_file)
+    command = child_command(
+        [*make_args(record, folder), *words_option(settings.words_file)], settings.config_file
+    )
     try:
         child = start_lines(command)
     except OSError as e:

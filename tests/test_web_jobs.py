@@ -448,6 +448,26 @@ def test_children_get_the_servers_config_file(tmp_path, commands, monkeypatch):
     assert make[-2:] == expected
 
 
+def test_making_uses_the_pages_word_file_once_there_is_one(running, commands):
+    app, client = running
+    book_id = upload(client, "ok")
+    wait_for(app, book_id, "ready")
+    choose(client, book_id)
+    wait_for(app, book_id, "done")
+    assert "--words" not in logged(commands)[-1]
+
+    app.state.page_words.save({"Utterson": "utter son"})
+    client.post(
+        f"/books/{book_id}/choose",
+        data={"format": "m4b", "voice": "af_heart", "speed": "0.9", "section": ["2"]},
+    )
+    wait_for(app, book_id, "done")
+    make = logged(commands)[-1]
+    words_file = app.state.settings.words_file
+    assert make[make.index("--words") + 1] == str(words_file)
+    assert words_file.parent == app.state.settings.dir
+
+
 def test_after_a_restart_books_being_made_show_as_stopped(tmp_path, commands):
     config = sample_config(tmp_path)
     settings = web_settings(config)

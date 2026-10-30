@@ -335,6 +335,52 @@ fieldset.has-error {
   border: 1px solid var(--border);
 }
 
+/* A word to fix: its fieldset's legend is a heading, so a screen reader can move from
+   word to word by heading. */
+.word legend h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.word .field {
+  margin: 0.5rem 0;
+}
+
+audio {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0;
+}
+
+/* Says how a Listen is going (listen.js). Empty until then, and still in the page, so
+   a screen reader announces it when it changes. */
+.listen-status {
+  margin: 0.25rem 0 0;
+  font-weight: 700;
+}
+
+.listen-status:empty {
+  margin: 0;
+}
+
+.phoneme-list li {
+  margin: 0.5rem 0;
+}
+
+/* Read by screen readers, not shown: such as the word a Listen button says. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;

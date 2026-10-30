@@ -13,6 +13,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from dogear.config import Config
 from dogear.extract import extract_book
@@ -71,3 +72,26 @@ def rank_words(counts: Counter[str]) -> list[UnknownWord]:
         spellings.setdefault(key, Counter())[base] += count
     ranked = sorted(totals.items(), key=lambda pair: (-pair[1], pair[0]))
     return [UnknownWord(spellings[key].most_common(1)[0][0], count) for key, count in ranked]
+
+
+def words_to_json(words: list[UnknownWord]) -> dict[str, Any]:
+    """What `dogear words --json` prints: {"words": [{"word": ..., "count": ...}, ...]},
+    most frequent first."""
+    return {"words": [{"word": w.word, "count": w.count} for w in words]}
+
+
+def words_from_json(data: Any) -> list[UnknownWord]:
+    """Words in `words_to_json`'s shape, checked one by one. Raises ValueError naming the
+    first one that is missing or wrong."""
+    if not isinstance(data, dict) or not isinstance(data.get("words"), list):
+        raise ValueError("there is no list of words")
+    words = []
+    for number, item in enumerate(data["words"], start=1):
+        word = item.get("word") if isinstance(item, dict) else None
+        count = item.get("count") if isinstance(item, dict) else None
+        if not isinstance(word, str) or not word.strip():
+            raise ValueError(f"word {number} has no text")
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            raise ValueError(f"word {number} has no count, or it isn't a whole number above 0")
+        words.append(UnknownWord(word, count))
+    return words

@@ -1,10 +1,12 @@
-// Keeps a book's page up to date while it is read or made. Without this script the
-// page still works: its "Check progress" link reloads it.
+// Keeps a page up to date while Dogear works: a book's page while it is read or made,
+// and the waiting pages for checking a book's words and for a Listen. Without this
+// script the page still works: its "Check progress" link reloads it.
 //
-// Every few seconds it asks the server for the book's status. It changes the status
-// region (role="status") only when the sentence is different, so a screen reader never
-// hears the same news twice, and adds new progress lines to the list without announcing
-// them. When the book moves on (made, stopped, or read), it says so and stops asking.
+// Every few seconds it asks the server for the status (data-status-url). It changes the
+// status region (role="status") only when the sentence is different, so a screen reader
+// never hears the same news twice, and adds new progress lines to the list, if the page
+// has one, without announcing them. When the work moves on (a book made, stopped, or
+// read; words checked; a recording ready), it says so and stops asking.
 //
 // The status carries only the latest lines. A line repeated in a row is one line with a
 // count, so the last lines shown may change ("(3 times)" becomes "(4 times)"). The list
@@ -15,7 +17,7 @@
   var EVERY_MS = 4000;
   var AFTER_ERROR_MS = 15000;
 
-  var box = document.getElementById("book-status");
+  var box = document.getElementById("live-status");
   var region = document.getElementById("status");
   if (!box || !region || !box.dataset.statusUrl || !window.fetch) {
     return;
