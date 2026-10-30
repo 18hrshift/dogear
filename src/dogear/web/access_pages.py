@@ -64,6 +64,6 @@ def _let_in(request: Request) -> Response:
         max_age=COOKIE_MAX_AGE,
         path="/",
         httponly=True,
-        samesite="strict",
+        samesite="lax",
     )
     return response

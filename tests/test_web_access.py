@@ -5,7 +5,7 @@ import os
 import stat
 
 import pytest
-from web_samples import BASE, KEY, PORT, sample_app, visitor
+from web_samples import BASE, CHOSEN, KEY, PORT, add_book, sample_app, sample_summary, visitor
 
 from dogear.errors import DogearError
 from dogear.web.access_key import KEY_FILE, AccessKey, WrongKeyDelay, load_or_make_key
@@ -31,7 +31,7 @@ def test_help_and_the_stylesheet_need_no_cookie(app):
     assert client.get("/static/dogear.css").status_code == 200
 
 
-def test_the_access_link_sets_a_strict_http_only_cookie_and_leaves_the_address_bar(app):
+def test_the_access_link_sets_a_lax_http_only_cookie_and_leaves_the_address_bar(app):
     client = visitor(app, signed_in=False)
     response = client.get(f"/start?key={KEY}", follow_redirects=False)
     assert response.status_code == 303
@@ -39,7 +39,7 @@ def test_the_access_link_sets_a_strict_http_only_cookie_and_leaves_the_address_b
     cookie = response.headers["set-cookie"]
     assert cookie.startswith(f"dogear_access_{PORT}=")
     assert "HttpOnly" in cookie
-    assert "SameSite=strict" in cookie
+    assert "SameSite=lax" in cookie
     assert "Max-Age=34560000" in cookie
     assert KEY.replace("-", "") not in cookie.replace("-", "")
     home = client.get("/")
@@ -88,11 +88,37 @@ def test_a_cookie_from_another_key_is_refused(app):
     assert client.get("/").status_code == 403
 
 
-def test_the_access_page_offers_to_continue_after_a_link_from_another_site(app):
-    client = visitor(app, signed_in=False)
-    page = client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).text
-    assert "continue to Dogear</a>" in page
-    assert "continue to Dogear" not in client.get("/").text
+def test_a_link_from_another_site_opens_the_page_straight_away(app):
+    """SameSite=Lax: the browser sends the cookie when a link elsewhere (web mail, say)
+    is followed, so there is no extra page to go through."""
+    client = visitor(app)
+    response = client.get("/", headers={"Sec-Fetch-Site": "cross-site"})
+    assert response.status_code == 200
+    assert "<h1>Make a talking book</h1>" in response.text
+    stranger = visitor(app, signed_in=False)
+    assert "continue to Dogear" not in stranger.get("/").text
+
+
+def test_no_get_changes_anything(app, tmp_path):
+    """Lax sends the cookie with GETs from other sites, so no GET may change a book."""
+    library = app.state.library
+    ids = [
+        add_book(library, tmp_path, state="ready", summary=sample_summary()),
+        add_book(library, tmp_path, state="stopped", choices=CHOSEN, summary=sample_summary()),
+        add_book(library, tmp_path, state="failed", choices=CHOSEN, summary=sample_summary()),
+        add_book(library, tmp_path, state="unreadable", error="e"),
+    ]
+    before = library.books()
+    client = visitor(app)
+    get_routes = [r.path for r in app.routes if "GET" in getattr(r, "methods", set())]
+    for path in get_routes:
+        if path == "/start":
+            continue  # needs the key, and only sets the cookie
+        for book_id in ids:
+            url = path.replace("{book_id}", book_id).replace("{number:int}", "0")
+            assert client.get(url).status_code in (200, 303, 404), url
+    assert library.books() == before
+    assert [library.folder(i).exists() for i in ids] == [True] * len(ids)
 
 
 @pytest.mark.parametrize(
