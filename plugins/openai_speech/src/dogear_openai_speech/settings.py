@@ -19,6 +19,7 @@ from dogear.output.language_tag import language_tag
 from dogear.voice.engines import Voice
 
 from dogear_openai_speech.address import TABLE, Address, parse_address
+from dogear_openai_speech.key_text import check_key
 
 FORMATS = ("wav", "pcm")
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -77,12 +78,16 @@ def read_settings(config: Config) -> Settings:
 
 
 def api_key(settings: Settings) -> str:
-    """The key from the environment, or "" for none. A service on another computer with
-    `api_key_env` set must have one: a VoiceError says how to give it."""
+    """The key from the environment, or "" for none, checked to be one a request can carry
+    (key_text.check_key). A service on another computer with `api_key_env` set must have
+    one: a VoiceError says how to give it."""
     if not settings.api_key_env:
         return ""
     key = os.environ.get(settings.api_key_env, "").strip()
-    if key or settings.address.local:
+    if key:
+        check_key(key, settings.api_key_env)
+        return key
+    if settings.address.local:
         return key  # a server on this computer usually takes none
     raise VoiceError(
         f"The environment variable {settings.api_key_env} has no key in it, so Dogear can't "

@@ -9,12 +9,14 @@ from pathlib import Path
 import pytest
 from dogear import cli
 from dogear.config import load_config
-from dogear.errors import ConfigError
+from dogear.errors import ConfigError, VoiceError
 from dogear.voice import make_engine, voice_pace
 from dogear.voice.check import engine_files
 from dogear.voice.cloud import text_goes_to
 from dogear.voice.engines import choose_voice, find_voice, installed
 from dogear.web import choices
+
+from dogear_openai_speech.client import SpeechClient
 
 FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
 REFUSED = "Dogear doesn't send text off this computer unless you allow it, so nothing was sent."
@@ -115,6 +117,44 @@ def test_a_missing_key_stops_it_before_anything_is_sent(service, config, monkeyp
     with pytest.raises(Exception, match="OPENAI_API_KEY has no key in it"):
         make_engine(config, print)
     assert service.sent == []
+
+
+def test_a_key_with_a_line_break_is_never_shown_or_sent(service, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("MY_TTS_KEY", "sk-proj-FIRSTPART\nsk-proj-SECONDPART")
+    path = tmp_path / "settings.toml"
+    path.write_text(
+        f'[openai_speech]\nbase_url = "{service.url}"\napi_key_env = "MY_TTS_KEY"\n',
+        encoding="utf-8",
+    )
+    args = ["say", "Hello.", "-o", str(tmp_path / "test.wav"), "--voice", "marin", "-v"]
+    assert cli.main([*args, "--config", str(path)]) == 1
+    captured = capsys.readouterr()
+    said = captured.out + captured.err
+    assert "MY_TTS_KEY has a line break in it" in said
+    assert "FIRSTPART" not in said and "SECONDPART" not in said
+    assert service.sent == []
+
+
+def test_an_engine_error_with_the_key_in_it_reaches_no_message_or_log(
+    service, config, monkeypatch, caplog
+):
+    key = "sk-proj-FIRSTPARTSECONDPART"
+    monkeypatch.setenv("OPENAI_API_KEY", key)
+
+    def fails(self, data, most_bytes):
+        raise ValueError(f"Invalid header value b'Bearer {key}'")
+
+    monkeypatch.setattr(SpeechClient, "_send", fails)
+    choose_voice(config, "marin")
+    engine = make_engine(config, print)
+    caplog.set_level("DEBUG")
+    with pytest.raises(VoiceError) as error:
+        engine.render(engine.plan("Hello."))
+    assert "stopped while speaking a sentence" in error.value.message
+    assert "(your key)" in error.value.message
+    for text in (error.value.message, error.value.hint, caplog.text):
+        assert "FIRSTPART" not in text
+    assert "Traceback" in caplog.text  # -v still shows where it failed
 
 
 def test_sentences_longer_than_the_service_takes_stop_it_first(service, config):

@@ -10,7 +10,8 @@ timeout) is tried again, waiting longer each time, or as long as the service say
 every request waits its turn under `requests_per_minute`. Anything else becomes a
 VoiceError at once, with a hint. Redirects aren't followed, so the text goes nowhere but
 the address in the settings, and a server on this computer is reached directly, never
-through a proxy that the environment names.
+through a proxy that the environment names. No error from here repeats the key
+(key_text.py).
 """
 
 from __future__ import annotations
@@ -25,9 +26,10 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any
 
-from dogear.errors import VoiceError
+from dogear.errors import DogearError, VoiceError
 
 from dogear_openai_speech.address import TABLE
+from dogear_openai_speech.key_text import hide_key
 from dogear_openai_speech.settings import Settings
 
 Report = Callable[[str], None]
@@ -53,6 +55,12 @@ class _Passing(Exception):
         self.error = error
         self.why = why  # "it asked Dogear to slow down", for the progress line
         self.wait = wait  # what the service asked for, in seconds, if anything
+
+
+class ClientBug(Exception):
+    """An error Dogear didn't expect, from this code or Python's, whose message had the
+    key in it: the same message with the key taken out. Dogear reports it as a bug in
+    the plugin."""
 
 
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -81,7 +89,22 @@ class SpeechClient:
         self._opener = urllib.request.build_opener(proxies, _NoRedirects())
 
     def speak(self, voice: str, text: str, speed: float, most_bytes: int) -> Answer:
-        """The audio for `text`, at most `most_bytes` of it. Raises VoiceError."""
+        """The audio for `text`, at most `most_bytes` of it. Raises VoiceError. No error
+        leaves here with the key in it, whatever raised it (key_text.hide_key)."""
+        try:
+            return self._speak(voice, text, speed, most_bytes)
+        except DogearError as e:
+            raise type(e)(self._hidden(e.message), self._hidden(e.hint)) from None
+        except Exception as e:
+            if any(self._hidden(str(link)) != str(link) for link in _chain(e)):
+                # Raised again without the key, and without the errors it came from.
+                raise ClientBug(f"{type(e).__name__}: {self._hidden(str(e))}") from None
+            raise  # nothing of the key in it: as it was, for its traceback
+
+    def _hidden(self, text: str) -> str:
+        return hide_key(text, self._key)
+
+    def _speak(self, voice: str, text: str, speed: float, most_bytes: int) -> Answer:
         body = {
             "model": self.settings.model,
             "voice": voice,
@@ -137,6 +160,9 @@ class SpeechClient:
         except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
             reason = getattr(e, "reason", None) or e
             raise _Passing(self._unreachable(reason), "the connection failed") from None
+        except ValueError:
+            # Python refuses a header it can't send, and its message repeats the header.
+            raise self._unsendable() from None
         if len(audio) > most_bytes:
             raise VoiceError(
                 f"{self.settings.address.host} sent back more than a sentence's audio could "
@@ -239,6 +265,16 @@ class SpeechClient:
             return f"It wants a key: put your key for the service in {name}."
         return f"Check the key in {name}: it must be your key for this service."
 
+    def _unsendable(self) -> VoiceError:
+        """Python wouldn't send a header. Only the key comes from outside the plugin, and
+        settings.api_key checks it, so this is a key that got past the check."""
+        name = self.settings.api_key_env or "the environment variable api_key_env names"
+        return VoiceError(
+            f"Dogear couldn't send the request to {self.settings.address.host}: a header "
+            "in it has a character a request can't carry, usually in the key.",
+            hint=f"Set {name} again to the key alone, copied from the service, on one line.",
+        )
+
     def _timed_out(self) -> VoiceError:
         seconds = _seconds(self.settings.timeout_seconds)
         return VoiceError(
@@ -272,12 +308,21 @@ def _reason(body: bytes, key: str) -> str:
             found = found[name]
     if isinstance(found, dict):
         found = found.get("message", "")
-    reason = " ".join(str(found).split())
-    if key:
-        reason = reason.replace(key, "(your key)")
+    reason = hide_key(" ".join(hide_key(str(found), key).split()), key)
     if reason.lstrip().startswith("<"):
         return ""  # a web page, not a reason
     return reason[:MAX_REASON_CHARS].rstrip(".") + "." if reason else ""
+
+
+def _chain(error: BaseException) -> list[BaseException]:
+    """`error` and every error it was raised from or while handling, as a traceback
+    shows them."""
+    found: list[BaseException] = []
+    link: BaseException | None = error
+    while link is not None and link not in found:
+        found.append(link)
+        link = link.__cause__ or link.__context__
+    return found
 
 
 def _code(body: bytes) -> str:
