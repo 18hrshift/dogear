@@ -152,7 +152,9 @@ Dogear says what went wrong and what to do next. The most common problems:
   it as English". Dogear's voice can't read other languages yet.
 - **A name or word is said wrong:** on the book's page (or on "Choose what to make",
   before making it), follow "check how words are said". Dogear lists the words the voice
-  doesn't know, most frequent first; they are usually names. Choose Listen beside a word
+  doesn't know, most frequent first; they are usually names. It shows the 50 that come up
+  most, and "Show all" lists the rest. The list stays with the book, even after Dogear is
+  closed and started again. Choose Listen beside a word
   to hear it. If it sounds wrong, type how it sounds in "Say it like", using ordinary
   words or parts of words (Utterson as "utter son"), choose Save, and Listen again. Then
   make the book again: only the sentences with those words are spoken again. Your

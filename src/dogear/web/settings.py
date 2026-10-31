@@ -22,6 +22,7 @@ class WebSettings:
     read_timeout_seconds: float
     config_file: Path | None  # passed on to every child, so books use the same settings
     word_limits: WordLimits
+    words_listed: int  # the most words a book's word check keeps and lists
 
     @property
     def listen_host(self) -> str:
@@ -77,6 +78,7 @@ def web_settings(
         "max_pronunciations",
         "max_word_chars",
         "max_spelling_chars",
+        "max_words_listed",
     ):
         if web[name] <= 0:
             raise ConfigError(f"web.{name} must be more than 0, got {web[name]}.")
@@ -92,4 +94,5 @@ def web_settings(
             word_chars=web["max_word_chars"],
             spelling_chars=web["max_spelling_chars"],
         ),
+        words_listed=web["max_words_listed"],
     )

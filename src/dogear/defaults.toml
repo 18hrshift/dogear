@@ -369,3 +369,7 @@ max_pronunciations = 1000
 max_word_chars = 80
 # ...and each spelling (such as "utter son" for Utterson) at most this many characters.
 max_spelling_chars = 160
+# A book's "Check how words are said" page lists the 50 words the voice doesn't know that
+# come up most often, with a link to the rest: at most this many, most frequent first.
+# Each is a field with a Listen button, so a longer list makes a longer page.
+max_words_listed = 500

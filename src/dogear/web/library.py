@@ -43,10 +43,11 @@ class Library:
     ) -> None:
         self.settings = settings
         self.store = BookStore(settings.books_dir)
+        unread = self.store.load()
         self.reader = Worker("reader", self._job(read, "unreadable"))
         self.maker = Worker("maker", self._job(make, "failed"))
-        self.words = WordChecks(self.store, settings, check)
-        for book_id in self.store.load():
+        self.words = WordChecks(self.store, settings, check)  # with the saved ones, so after load
+        for book_id in unread:
             self.reader.add(book_id)
 
     def start(self) -> None:

@@ -33,7 +33,7 @@ WAIT_STEP_SECONDS = 0.1
 TITLE_CHARS = 60  # of the text, in the page title and the download's name
 PRONUNCIATIONS = "/pronunciations"
 # Pages a Listen goes back to, each with an optional fragment naming a place on it.
-BACK = re.compile(r"(/pronunciations|/books/[A-Za-z0-9_-]{16}/words)(#[a-z0-9-]{1,40})?")
+BACK = re.compile(r"(/pronunciations|/books/[A-Za-z0-9_-]{16}/words(/all)?)(#[a-z0-9-]{1,40})?")
 
 
 @dataclass(frozen=True)

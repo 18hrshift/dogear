@@ -217,13 +217,15 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
     return saved
 
 
-# Words a check found, most frequent first. The book has more than the page lists.
+# Words a check found, most frequent first. The book has more than the check kept.
 CHECKED_WORDS = (
     UnknownWord("Utterson", 131),
     UnknownWord("Lanyon", 40),
     UnknownWord("Poole", 12),
     UnknownWord("Enfield", 9),
 )
+# More words than the page lists at first, so it links to them all.
+MANY_WORDS = (*CHECKED_WORDS, *(UnknownWord(f"Name{n:02d}", 8) for n in range(1, 57)))
 
 
 def keep_check(library: Library, book_id: str, check: WordCheck) -> None:
@@ -252,6 +254,7 @@ def _word_pages(app: Starlette, client: TestClient, folder: Path) -> dict[str, s
         "words-waiting": WordCheck("waiting"),
         "words-checking": WordCheck("checking", sections=(2, 3)),
         "words-list": WordCheck("done", words=CHECKED_WORDS, total=64),
+        "words-many": WordCheck("done", words=MANY_WORDS, total=len(MANY_WORDS)),
         "words-empty": WordCheck("done", sections=(1,)),
         "words-failed": WordCheck(
             "failed",
@@ -265,6 +268,7 @@ def _word_pages(app: Starlette, client: TestClient, folder: Path) -> dict[str, s
         books[name] = add_book(library, folder, state="done", choices=CHOSEN, **summary)
         keep_check(library, books[name], check)
         pages[name] = client.get(f"/books/{books[name]}/words").text
+    pages["words-all"] = client.get(f"/books/{books['words-many']}/words/all").text
     page_words: PageWords = app.state.page_words
     page_words.save({"Lanyon": "lan yon"})
     listed = books["words-list"]

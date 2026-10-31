@@ -97,9 +97,10 @@ On the page:
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
 3. To fix names the voice says wrong, follow "check how words are said" on that page
-   (or on a finished book's page). Dogear lists the words the voice doesn't know, most
-   frequent first, each with a Listen button and a "Say it like" field. Write "utter son"
-   for Utterson, say, choose Save, and Listen again. Save changes only the words you
+   (or on a finished book's page). Dogear lists the 50 words the voice doesn't know that
+   come up most, each with a Listen button and a "Say it like" field, and a link to show
+   the rest. Write "utter son" for Utterson, say, choose Save, and Listen again. The list
+   is kept with the book, so it is still there after Dogear restarts. Save changes only the words you
    changed, so a page left open in another tab never undoes a change made since; if one
    of your words was also changed there, Dogear saves nothing and says so beside it. The
    Pronunciations page lists every word you have fixed, and can say any short text. The
@@ -151,8 +152,9 @@ encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
 Other options: `--port 8766` uses another port (if another program has 8765), and
 `--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
 the page accepts (200 MB at first), how long reading a book (or checking its words, or
-saying something for Listen) may take, the folder where books are kept, and how many
-words the page's pronunciation file holds and how long each word and spelling may be.
+saying something for Listen) may take, the folder where books are kept, how many
+words the page's pronunciation file holds and how long each word and spelling may be, and
+how many of a book's words "check how words are said" keeps and lists (500 at first).
 
 ## Make an audiobook
 
