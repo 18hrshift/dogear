@@ -102,8 +102,8 @@ def check_words(
     if result.timed_out:
         return _failed(
             check,
-            f"Checking the words took longer than {settings.read_timeout_seconds:g} seconds, "
-            "so Dogear stopped.",
+            f"Dogear went {settings.read_timeout_seconds:g} seconds without any progress "
+            "checking the words, so it stopped.",
             "If the book is very long, choose a few sections to make, then check again. Or "
             "raise web.read_timeout_seconds in your config file.",
         )

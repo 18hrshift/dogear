@@ -7,6 +7,7 @@ from audio_builder import probe
 from conftest import require_tool
 from epub3_reader import Epub
 from fake_voice import HumEngine
+from pdf_builder import CHAPTER_TITLES, novel, scanned
 
 from dogear import cli, make
 from dogear.document import Book, Heading, Metadata, Paragraph, Section
@@ -39,7 +40,7 @@ def setup(monkeypatch, config, tmp_path):
     """make.py with the small book and the fake voice; returns what the run used."""
     config["render"]["cache_dir"] = str(tmp_path / "cache")
     used = {"book": small_book(), "engine": HumEngine(), "lines": []}
-    monkeypatch.setattr(make, "extract_book", lambda path, cfg: used["book"])
+    monkeypatch.setattr(make, "extract_book", lambda path, cfg, report: used["book"])
     monkeypatch.setattr(make, "make_engine", lambda cfg, report: used["engine"])
     return used
 
@@ -73,6 +74,28 @@ def test_makes_an_m4b_named_after_the_title(setup, config, tmp_path):
         for line in setup["lines"]
     )
     assert "Section 4 of 4 done: Three." in setup["lines"]
+
+
+def test_a_scanned_pdf_is_read_with_ocr_then_made(monkeypatch, config, tmp_path):
+    """The whole way with the real Tesseract and the fake voice: OCR, then the M4B."""
+    require_tool("tesseract")
+    require_tool("ffmpeg")
+    config["render"]["cache_dir"] = str(tmp_path / "cache")
+    config["ocr"]["dpi"] = 150
+    engine = HumEngine()
+    monkeypatch.setattr(make, "make_engine", lambda cfg, report: engine)
+    text = novel(
+        tmp_path / "text.pdf", headings=CHAPTER_TITLES[:2], paragraphs=4, running_header=False
+    )
+    scan = scanned(text, tmp_path / "scan.pdf", dpi=200)
+    lines = []
+    request = MakeRequest(book=scan, output_dir=tmp_path / "out")
+    [m4b] = make_audiobook(request, config, lines.append)
+    assert chapter_titles(m4b) == ["scan", "Down the Rabbit-Hole", "The Pool of Tears"]
+    assert lines[0].startswith("This PDF is scanned, so Dogear is reading its 2 pages with OCR")
+    making = next(n for n, line in enumerate(lines) if line.startswith("Making an audiobook"))
+    assert lines[making - 1] == "Finished reading 2 pages with OCR."
+    assert any(text.startswith("Alice was beginning") for text in engine.rendered)
 
 
 def test_the_title_track_can_be_turned_off(setup, config, tmp_path):
@@ -317,4 +340,13 @@ def test_cli_make_says_how_to_continue_after_ctrl_c(monkeypatch, capsys, tmp_pat
 
     monkeypatch.setattr(cli, "make_audiobook", interrupted)
     assert cli.main(["make", str(tmp_path / "b.epub")]) == 130
-    assert "Run the same command again to continue." in capsys.readouterr().err
+    assert "Run the same command again to carry on." in capsys.readouterr().err
+
+
+def test_cli_voices_says_only_stopped_after_ctrl_c(monkeypatch, capsys):
+    def interrupted(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_voices", interrupted)
+    assert cli.main(["voices"]) == 130
+    assert capsys.readouterr().err.strip() == "Stopped."

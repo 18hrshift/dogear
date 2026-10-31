@@ -35,6 +35,10 @@ class ToolFailedError(DogearError):
     """An external program ran but reported an error."""
 
 
+class OcrLanguageError(DogearError):
+    """Tesseract is installed, but not the language data that ocr.language asks for."""
+
+
 class DownloadError(DogearError):
     """A voice model file couldn't be downloaded, or didn't match its checksum."""
 

@@ -65,7 +65,10 @@ device, please tell us (see "Getting help" below).
 
 1. **Add the book.** On Dogear's page, under "Add a book", choose the book file and
    choose "Upload the book". Dogear reads it to find its chapters. This usually takes
-   less than a minute.
+   less than a minute. A scanned PDF takes longer, a few seconds a page, because Dogear
+   first reads the words in the pictures of its pages (this is called OCR). The book's
+   page says how far it has got and about how long is left. "Stop reading this book"
+   stops it, and "Read again" carries on with the pages it hasn't read yet.
 2. **Choose what to make.** Check one or more kinds of book. Choose a voice: the list
    starts with the best rated. If someone has added more voices (such as Piper's: see
    Dogear's README), each set is grouped under its engine's name, such as "Kokoro
@@ -106,7 +109,8 @@ off part way.
 
 Besides the books themselves, Dogear keeps every sentence it has spoken, so that it can
 carry on after a stop and remake a book quickly with other choices. That takes about
-170 MB for each hour of audio, so a long book can leave a few gigabytes behind. Once the
+170 MB for each hour of audio, so a long book can leave a few gigabytes behind. The words
+Dogear read from scanned PDFs are kept there too, which takes little space. Once the
 listener has the book, it is safe to delete. It is in a folder named `dogear`:
 
 - Windows: `%LOCALAPPDATA%\dogear\Cache` (paste that into File Explorer's address bar).
@@ -139,9 +143,19 @@ Dogear says what went wrong and what to do next. The most common problems:
 
 - **"protected by DRM":** the book is copy-protected. Look for a DRM-free copy, or ask the
   listener's library for the book.
-- **"probably scanned page images":** the PDF is photos of pages, with no text Dogear can
-  read. Making it readable (OCR) needs a terminal for now: the README's "Check a book
-  before making it" section covers `dogear ocr`.
+- **"This PDF is scanned, and reading it needs Tesseract OCR":** the PDF is photos of
+  pages. Dogear can read the words in them (OCR) with a free program, Tesseract, which
+  Dogear's installers don't include. Install it, then choose "Read again" on the book's
+  page. On Windows, get the installer from
+  <https://github.com/UB-Mannheim/tesseract/wiki> and keep the folder it suggests, so
+  Dogear finds it. On a Mac with Homebrew, run `brew install tesseract`; on Ubuntu or
+  Debian, `sudo apt install tesseract-ocr`. (The Docker image has it already.)
+- **"probably scanned page images":** the PDF is photos of pages, and reading them with
+  OCR is turned off in Dogear's settings (`auto_ocr = false`). Set it back to `true`, or
+  remove that line, then choose "Read again".
+- **"found almost no text":** Dogear read a scanned PDF with OCR but found next to no
+  words. Check the scan in a PDF reader: the pages should be sharp, printed text the right
+  way up.
 - **A Kindle book (MOBI or AZW3) won't open:** Dogear needs the free program Calibre to
   read Kindle books. Install it from calibre-ebook.com, then try again.
 - **"Dogear's voice speaks only English":** the book is marked as being in another

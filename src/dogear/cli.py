@@ -42,7 +42,6 @@ from dogear.voice.engines import choose_voice, describe_voice, installed
 from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
 
-PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 VOICE_HELP = "voice name, from `dogear voices`, or engine:name such as kokoro:af_heart"
@@ -68,8 +67,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Stopped.", file=sys.stderr)
         if args.run is _make:
+            # Spoken sentences, and pages of a scanned PDF read with OCR, are kept as
+            # they're done. (A stopped OCR says so itself, for every command.)
             print(
-                "Sentences spoken so far are saved. Run the same command again to continue.",
+                "What was done so far is saved. Run the same command again to carry on.",
                 file=sys.stderr,
             )
         return 130
@@ -238,8 +239,12 @@ def _parser() -> argparse.ArgumentParser:
     ocr = commands.add_parser(
         "ocr",
         parents=[common],
-        help="make a scanned PDF readable",
-        description="Add a text layer to a scanned PDF so Dogear can read it.",
+        help="save a scanned PDF with a text layer",
+        description=(
+            "Save a copy of a scanned PDF with a text layer, read with OCR (Tesseract), for "
+            "other programs to read as well. Dogear's other commands read a scanned PDF "
+            "with OCR by themselves."
+        ),
     )
     ocr.add_argument("pdf", type=Path, help="the scanned PDF")
     ocr.add_argument("-o", "--output", type=Path, help="where to save (default: NAME_ocr.pdf)")
@@ -269,7 +274,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _outline(args: argparse.Namespace, config: Config) -> int:
-    summary = summarize(extract_book(args.book, config))
+    summary = summarize(extract_book(args.book, config, _report))
     if args.json:
         # ASCII only, so any program can read it whatever the console's encoding.
         print(json.dumps(summary_to_json(summary), indent=2))
@@ -292,7 +297,7 @@ def _outline(args: argparse.Namespace, config: Config) -> int:
 def _text(args: argparse.Namespace, config: Config) -> int:
     if args.spoken or args.words:
         _use_word_files(args, config)
-    book = extract_book(args.book, config)
+    book = extract_book(args.book, config, _report)
     sections = _chosen_sections(book, args.section)
     if args.spoken:
         _print_spoken(book, config, {number for number, _ in sections})
@@ -487,12 +492,7 @@ def _ocr(args: argparse.Namespace, config: Config) -> int:
     if args.dpi:
         config["ocr"]["dpi"] = args.dpi
     output = args.output or default_output_path(args.pdf)
-
-    def progress(done: int, total: int) -> None:
-        if done % PROGRESS_EVERY == 0 or done == total:
-            print(f"OCR: page {done} of {total} done.", file=sys.stderr)
-
-    pages = ocr_pdf(args.pdf, output, config, progress)
+    pages = ocr_pdf(args.pdf, output, config, _report)
     print(f"Saved {count(pages, 'page')} with a text layer to {output}")
     return 0
 
