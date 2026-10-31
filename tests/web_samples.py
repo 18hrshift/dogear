@@ -113,6 +113,14 @@ MAKING_LINES = [
     "Section 1 of 4 done: Title Page. About 12 minutes left.",
     "Section 2 of 4 done: Story of the Door. About 8 minutes left.",
 ]
+# A scanned PDF being read with OCR.
+OCR_LINES = [
+    "This PDF is scanned, so Dogear is reading its 240 pages with OCR, which takes a while: "
+    "often a few seconds a page.",
+    "Read 1 of 240 pages with OCR. About 9 minutes left.",
+    "Read 10 of 240 pages with OCR. About 8 minutes left.",
+    "Read 20 of 240 pages with OCR. About 8 minutes left.",
+]
 # A book that warns about every note and many words: repeats in a row are one line with a
 # count, and only the latest lines are shown.
 LONG_LINES = [
@@ -141,13 +149,22 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
         common = {"summary": summary}
         books = {
             "reading": add_book(library, folder, state="reading"),
+            "reading-ocr": add_book(library, folder, "scan.pdf", state="reading", lines=OCR_LINES),
+            "read-stopped": add_book(
+                library, folder, "scan.pdf", state="read_stopped", lines=OCR_LINES[:2]
+            ),
             "unreadable": add_book(
                 library,
                 folder,
                 "scan.pdf",
                 state="unreadable",
-                error="This PDF has no text layer: it is a scan.",
-                hint="Run dogear ocr on it first, then upload the new file.",
+                lines=OCR_LINES[:1],
+                error="This PDF is scanned, and reading it needs Tesseract OCR. tesseract was "
+                "not found.",
+                hint="Install Tesseract OCR (Windows: winget install UB-Mannheim.TesseractOCR; "
+                "macOS: brew install tesseract; Debian/Ubuntu: sudo apt install tesseract-ocr). "
+                "Or, to have Dogear stop at scanned PDFs instead, set auto_ocr = false under "
+                "[pdf] in your settings file.",
             ),
             "choose": add_book(library, folder, state="ready", **common),
             "choose-language": add_book(

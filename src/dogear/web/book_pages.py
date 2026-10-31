@@ -201,9 +201,9 @@ async def stop(request: Request) -> Response:
 async def read_again(request: Request) -> Response:
     record = requested_book(request)
     try:
-        _library(request).read_again(record.id)
+        await run_in_threadpool(_library(request).read_again, record.id)
     except DogearError:
-        pass  # being read again already; the book's page says how it's going
+        pass  # being read again already, or still stopping; the book's page says which
     return RedirectResponse(f"/books/{record.id}", status_code=303)
 
 

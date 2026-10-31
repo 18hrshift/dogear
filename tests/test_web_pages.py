@@ -73,6 +73,8 @@ def test_every_state_has_a_page(pages):
         "home-books",
         "home-deleted",
         "reading",
+        "reading-ocr",
+        "read-stopped",
         "unreadable",
         "choose",
         "choose-errors",
@@ -212,7 +214,17 @@ def test_choices_sent_back_with_errors_are_kept(pages):
 
 
 def test_book_pages_have_a_status_region(pages):
-    for name in ("reading", "waiting", "making", "done", "failed", "stopped", "unreadable"):
+    for name in (
+        "reading",
+        "reading-ocr",
+        "read-stopped",
+        "waiting",
+        "making",
+        "done",
+        "failed",
+        "stopped",
+        "unreadable",
+    ):
         [region] = pages[name].xpath("//*[@role='status']")
         assert region.text_content().strip(), name
     making = pages["making"].xpath("//*[@role='status']")[0].text_content()
@@ -222,12 +234,36 @@ def test_book_pages_have_a_status_region(pages):
 
 
 def test_pages_being_made_work_without_javascript(pages):
-    for name in ("reading", "waiting", "making"):
+    for name in ("reading", "reading-ocr", "waiting", "making"):
         page = pages[name]
         assert page.xpath("//a[@id='check-progress']/text()") == ["Check progress"], name
         assert page.xpath("//script/@src") == ["/static/progress.js"], name
-    for name in ("done", "failed", "choose", "home-books"):
+    for name in ("done", "failed", "read-stopped", "choose", "home-books"):
         assert not pages[name].xpath("//script"), name
+
+
+def test_reading_a_scanned_pdf_shows_its_progress_and_can_be_stopped(pages):
+    page = pages["reading-ocr"]
+    status = page.xpath("//*[@role='status']")[0].text_content()
+    assert status == "Read 20 of 240 pages with OCR. About 8 minutes left."
+    lines = page.xpath("//ol[@id='progress-lines']/li/text()")
+    assert lines[0].startswith("This PDF is scanned, so Dogear is reading its 240 pages")
+    assert len(lines) == 4
+    assert page.xpath("//form[@action][button]/button/text()") == ["Stop reading this book"]
+    assert page.xpath("//*[@id='live-status']/@data-continues") == ["reading"]
+    # An ordinary book being read has no lines yet, and says what reading is for.
+    reading = pages["reading"].xpath("//*[@role='status']")[0].text_content()
+    assert reading.startswith("Reading the book to find its sections.")
+
+
+def test_a_stopped_read_says_so_and_can_be_read_again(pages):
+    page = pages["read-stopped"]
+    assert page.xpath("//h1/text()") == ["Reading this book stopped"]
+    status = page.xpath("//*[@role='status']")[0].text_content()
+    assert status == "Stopped. Choose Read again to carry on."
+    buttons = page.xpath("//form/button/text()")
+    assert "Read again" in buttons and "Stop reading this book" not in buttons
+    assert len(page.xpath("//ol[@id='progress-lines']/li")) == 2
 
 
 def test_actions_are_buttons_and_links_go_somewhere(pages):

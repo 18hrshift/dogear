@@ -365,10 +365,16 @@ port = 8765
 # 20 MB, and a long PDF with pictures can reach 100 to 200 MB. 200 lets nearly any book
 # in while keeping one upload from filling the disk.
 max_upload_mb = 200
-# Reading a book to list its sections stops after this many seconds. Kindle books are
-# converted with Calibre first, which can take up to kindle.convert_timeout_seconds.
-# The same limit applies to checking a book's words and to saying something for Listen
-# (the first Listen may download the voice).
+# Reading a book to list its sections stops once Dogear has gone this many seconds
+# without reporting any progress, and is then taken to be stuck. The count starts again
+# with each progress line, so a long job that keeps reporting is never cut short: a
+# scanned PDF is read with OCR first, a few seconds a page, and says how far it has got
+# every few pages. A limit on the whole read would stop a long scanned book half way, or
+# be too long to catch a read that is stuck. Kindle books are converted with Calibre
+# first, which reports nothing until it's done and can take up to
+# kindle.convert_timeout_seconds. The same limit applies to checking a book's words and
+# to saying something for Listen (the first Listen may download the voice, which reports
+# as it goes).
 read_timeout_seconds = 900
 # Where uploaded books, everything made from them, and the page's access key are kept.
 # Empty means a folder named web in the usual per-user data folder. Each book has its own
