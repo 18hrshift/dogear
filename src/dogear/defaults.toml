@@ -67,9 +67,14 @@ max_member_mb = 64
 # section per file.
 toc_depth = 2
 
-# HTML and Markdown books have no table of contents, so each is cut into sections
+# HTML, Markdown, and Word books have no table of contents, so each is cut into sections
 # at its top heading level: the highest level used more than once. A title heading used
 # once above the chapters gets a short section of its own, and each chapter gets one.
+
+[docx]
+# Largest size, in megabytes, that one part of a Word document may unpack to (zip-bomb
+# guard). The text of a long novel is under 5 MB.
+max_member_mb = 64
 
 [html]
 # Largest HTML file Dogear reads, in megabytes. A long novel is under 5 MB of HTML.

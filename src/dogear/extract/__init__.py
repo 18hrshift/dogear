@@ -33,6 +33,12 @@ def _pdf(path: Path, config: Config) -> Book:
     return pdf.extract(path, config)
 
 
+def _docx(path: Path, config: Config) -> Book:
+    from dogear.extract import docx
+
+    return docx.extract(path, config)
+
+
 def _html(path: Path, config: Config) -> Book:
     from dogear.extract import html_book
 
@@ -62,6 +68,7 @@ class Format:
 FORMATS: tuple[Format, ...] = (
     Format("EPUB", (".epub",), _epub),
     Format("PDF", (".pdf",), _pdf),
+    Format("Word (DOCX)", (".docx",), _docx),
     Format("HTML", (".html", ".htm", ".xhtml"), _html),
     Format("Markdown", (".md", ".markdown"), _markdown),
     Format("MOBI", (".mobi",), _kindle),
