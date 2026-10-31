@@ -22,7 +22,9 @@ NAME = "dogear"
 CONTENTS = "_internal"
 
 # Packages PyInstaller can't follow by reading imports.
-COLLECT_DATA = ["dogear", "misaki"]  # defaults.toml, catalog.toml, epub3.css; dictionaries
+# Dogear: defaults.toml, catalog.toml, epub3.css. misaki: its dictionaries. py3langid: its
+# language model, for [language_detection].
+COLLECT_DATA = ["dogear", "misaki", "py3langid"]
 COLLECT_SUBMODULES = ["dogear"]
 # Package metadata to carry. Dogear finds its voice engines through entry points, which
 # live in a package's metadata, so Dogear's own is needed for Kokoro. Only Dogear's: a

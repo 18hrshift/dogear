@@ -34,6 +34,7 @@ dependencies = [
     "markdown-it-py>=3",     # MIT: Markdown to HTML
     "mdit-py-plugins>=0.4",  # MIT: Markdown footnotes and front matter
     "pyyaml>=6",             # MIT: Markdown front matter, read with BaseLoader only
+    "py3langid>=0.4,<0.5",
 ]
 
 [project.urls]
