@@ -131,7 +131,11 @@ Goal: a helper with no Python experience can make a book.
       (see [`docs/voice-engines.md`](docs/voice-engines.md)): OmniVoice's weights turned
       out to be non-commercial, and Qwen3-TTS and Chatterbox are too slow on a CPU. Pocket
       TTS (MIT code, CC BY weights) is the best candidate for a second plugin.
-- [ ] Cloud voices as opt-in plugins with a clear privacy warning.
+- [x] Cloud voices as opt-in plugins with a clear privacy warning. Dogear itself refuses a
+      voice that sends text off the computer unless `[voice] allow_cloud` or `--allow-cloud`
+      says yes, and names the host first. The first plugin speaks the OpenAI-compatible
+      speech API (`plugins/openai_speech/`), which local servers speak too. Its default is
+      OpenAI, whose speech models shut down on 2027-01-06: change the default before then.
 - [ ] Language detection per section, so a French quote in an English book gets a French voice.
 - [x] More inputs: DOCX, HTML, Markdown, MOBI/AZW3 via Calibre, automatic OCR for scanned PDFs.
       Known limits: a PDF with only some pages scanned isn't OCR'd, and the installers
