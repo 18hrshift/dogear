@@ -2,7 +2,8 @@
 
 Dogear speaks through voice engines. Kokoro comes with Dogear. Others are plugins: Python
 packages installed beside Dogear, which Dogear finds by themselves. This page records why
-Piper is the first plugin, then describes the interface for anyone writing one.
+Piper is the first plugin, and why the first cloud plugin speaks OpenAI's speech API, then
+describes the interface for anyone writing one.
 
 ## Decision: Piper is the first plugin (2026-10-30)
 
@@ -83,6 +84,36 @@ Open questions:
 [kani]: https://github.com/nineninesix-ai/kani-tts
 [sherpa-pr]: https://github.com/k2-fsa/sherpa-onnx/pull/4055
 [sherpa-oov]: https://github.com/k2-fsa/sherpa-onnx/issues/4139
+
+## Decision: an OpenAI-compatible speech engine is the first cloud plugin (2026-10-30)
+
+The roadmap asks for cloud voices as opt-in plugins. Rather than one plugin per company,
+the first speaks the request shape most services and local servers share: OpenAI's
+`POST /v1/audio/speech`, a JSON body with `model`, `voice`, `input` (at most 4096
+characters at OpenAI), `response_format` (`mp3`, `opus`, `aac`, `flac`, `wav`, or `pcm`),
+`speed` (0.25 to 4.0), and, for `gpt-4o-mini-tts`, `instructions`. The answer is the audio
+itself; `pcm` is 24 kHz, 16-bit, little-endian samples with no header ([reference],
+[guide]). The plugin asks for WAV, which says its own sample rate, so Dogear can check it.
+
+Checked on 2026-10-30:
+
+- OpenAI says `tts-1`, `tts-1-hd`, and `gpt-4o-mini-tts` shut down on January 6, 2027, and
+  that their replacement works only through its Realtime API, not this endpoint
+  ([guide]). The plugin's default is OpenAI all the same, as the shape everyone copies;
+  its README says so.
+- The same requests work with [OpenRouter] (`mp3` or `pcm` only), Groq's Orpheus voices
+  ([groq]: `wav` only, at most 200 characters a request), and servers run at home:
+  [Kokoro-FastAPI] (port 8880), [Speaches] (port 8000, Kokoro and Piper models), and
+  [LocalAI]. Each has its own voice names, so the voices are a setting.
+- Python's own urllib is enough for the requests, so the plugin adds no HTTP library.
+
+[reference]: https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
+[guide]: https://developers.openai.com/api/docs/guides/text-to-speech
+[OpenRouter]: https://openrouter.ai/docs/guides/overview/multimodal/tts
+[groq]: https://console.groq.com/docs/text-to-speech/orpheus
+[Kokoro-FastAPI]: https://github.com/remsky/Kokoro-FastAPI
+[Speaches]: https://speaches.ai/usage/text-to-speech/
+[LocalAI]: https://localai.io/features/text-to-audio/
 
 ## Writing a voice engine plugin
 
@@ -187,7 +218,7 @@ settings: a server at `localhost`, `127.0.0.1`, or `[::1]` keeps the text here, 
 other address doesn't, including one on the same network. It must not send anything
 before `engine()` is called, and must not follow a redirect to somewhere else. A secret
 such as an API key belongs in an environment variable that a setting names, never in a
-settings file, a cache key, or a message.
+settings file, a cache key, or a message. `plugins/openai_speech/` is a complete example.
 
 ### Errors
 

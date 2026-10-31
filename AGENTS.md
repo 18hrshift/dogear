@@ -11,7 +11,8 @@ each phase and what "done" means.
 **Current state:** Phase 4 (more voices and languages). `dogear make` reads an EPUB, PDF,
 Word (DOCX), HTML, Markdown, or Kindle book into a structured document, narrates it with
 spoken structure, speaks it on the CPU with a voice engine (Kokoro, built in, or a plugin
-such as Piper in `plugins/piper/`), and packages an M4B, an MP3 folder, an EPUB 3 talking
+such as Piper in `plugins/piper/`, or a speech service, opt-in, through
+`plugins/openai_speech/`), and packages an M4B, an MP3 folder, an EPUB 3 talking
 book, and/or a DAISY 2.02 talking book. `dogear serve` is a local web page that does the
 same from a browser, running `dogear` itself as a child process for each book. Standalone
 installers (`packaging/`) and a Docker image (`Dockerfile`, `docker/`) carry everything,
@@ -35,6 +36,13 @@ The Piper plugin has its own tests, run with the plugin installed beside Dogear 
 
 ```bash
 uv run --frozen --with-editable ./plugins/piper pytest plugins/piper/tests
+```
+
+So does the speech service plugin (the `openai-speech` CI job), against a fake service on
+this computer (`plugins/openai_speech/tests/fake_service.py`): no network and no key.
+
+```bash
+uv run --frozen --with-editable ./plugins/openai_speech pytest plugins/openai_speech/tests
 ```
 
 DAISY output is validated outside pytest, with DAISY Pipeline 2 in Docker:
@@ -95,6 +103,7 @@ what each platform needs. The Installers workflow builds all three, installs eac
 | `scripts/check-web-a11y.sh`, `scripts/web-a11y.cjs` | Checks every web page in every state with axe-core 4.14.0 in Playwright 1.64.1's headless Chromium (pinned, downloaded into `$DOGEAR_VALIDATORS`): desktop and 320 pixels wide, light and dark, plus no sideways scrolling with text at 200% and a focus ring on everything Tab reaches. Used locally and in CI. |
 | `tests/engine_fakes.py` | Stand-in voice engine plugins and entry points. `conftest.py` shows the tests only Dogear's own engines unless a test installs stand-ins with `installed_engines`. |
 | `tests/web_samples.py`, `tests/fake_dogear.py` | The web app with books in every state, each page saved as HTML (for the unit tests and `check-web-a11y.sh`); and a stand-in `dogear` command the web tests run as the child process. |
+| `plugins/openai_speech/` | The speech service plugin, `dogear-openai-speech` (Apache-2.0): voices from any service or server that takes OpenAI's `POST /audio/speech`. `plugin.py` is what its entry point gives Dogear (voices from its settings; `sends_text_to` from `base_url`), `address.py` checks `base_url` and decides whether it is this computer, `settings.py` checks the `[openai_speech]` table and reads the key from the environment variable it names, `client.py` sends one sentence per request with urllib (retries with backoff, a requests-a-minute limit, no redirects, no proxy for this computer, errors as `VoiceError`s with hints), `audio.py` reads and checks the WAV or PCM it gets back, and `engine.py` is the `VoiceEngine`. Its tests use `tests/fake_service.py`. |
 | `plugins/piper/` | The Piper voice engine plugin, `dogear-piper`: a separate package under GPL-3.0-or-later, which Dogear never imports. `plugin.py` is what its entry point gives Dogear, `engine.py` speaks with piper-tts (eSpeak NG phonemes, onnxruntime), `catalog.py` and `catalog.toml` pin its voices by URL and SHA-256. Its own tests are in `plugins/piper/tests/`. |
 | `docs/` | Guides for people, not code: `guide-for-helpers.md` (making a book with the web page, and fixing how words are said, in plain language), `screen-reader-testing.md` (the screen-reader test plan for the web page), and `voice-engines.md` (why Piper is the first plugin, and the interface for writing one). |
 | `Dockerfile`, `docker/` | The Docker image: Dogear, ffmpeg, eSpeak NG, Tesseract, and the default voice, running `dogear serve --lan` with everything it keeps on a `/data` volume. `docker/config.toml` is its settings file (via `DOGEAR_CONFIG`); `docker/README.md` is the guide. The `Docker` workflow builds it and makes a book offline with it. |
