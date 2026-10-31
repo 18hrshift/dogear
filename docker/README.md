@@ -2,8 +2,8 @@
 
 For libraries, schools, and volunteer groups that want Dogear's web page on a shared
 computer or server. The image holds Dogear, the programs it runs (ffmpeg, eSpeak NG, and
-Tesseract), and the default voice, so once it is built it works with no internet
-connection.
+Tesseract with its English language pack, for reading scanned PDFs), and the default
+voice, so once it is built it works with no internet connection.
 
 ## Build the image
 

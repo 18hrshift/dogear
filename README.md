@@ -19,7 +19,9 @@ computer or server, Docker.
 ### With an installer
 
 The installers hold everything Dogear needs: its own Python, ffmpeg, eSpeak NG, and the
-voice, so it can make a book without an internet connection. On Windows and Linux they
+voice, so it can make a book without an internet connection. They don't include
+Tesseract, the program Dogear reads scanned PDFs with: to make books from scanned PDFs,
+install it as well (see "Scanned PDFs" below). On Windows and Linux they
 install Dogear for you alone, with no administrator password. They aren't offered as
 downloads yet; until they are, someone comfortable with a terminal can build one (see
 below).
@@ -70,13 +72,13 @@ uv tool install git+https://github.com/18hrshift/dogear-app
 
 (`pipx install git+https://github.com/18hrshift/dogear-app` works too.) Dogear isn't on PyPI
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
-install Tesseract OCR.
+install Tesseract OCR (see "Scanned PDFs" below).
 
 ### With Docker
 
 For a shared computer or a server, such as at a library or school, there is a Docker image
-with everything inside, the voice included, running the web page: see
-[`docker/README.md`](docker/README.md).
+with everything inside, the voice and Tesseract (with English) included, running the web
+page: see [`docker/README.md`](docker/README.md).
 
 ## Use it in a web browser
 
@@ -93,7 +95,10 @@ doesn't, open the link Dogear shows in its window. That link looks like
 On the page:
 
 1. Choose a book file (EPUB, PDF, MOBI, or AZW3) and upload it. Dogear reads it to find
-   its chapters.
+   its chapters. A scanned PDF is read with OCR first (see "Scanned PDFs" below), which
+   takes a few seconds a page: the book's page says how far it has got and about how long
+   is left, as it does while making. "Stop reading this book" stops it, and Read again
+   carries on with the pages not read yet.
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
 3. To fix names the voice says wrong, follow "check how words are said" on that page
@@ -151,7 +156,8 @@ encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
 Other options: `--port 8766` uses another port (if another program has 8765), and
 `--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
 the page accepts (200 MB at first), how long reading a book (or checking its words, or
-saying something for Listen) may take, the folder where books are kept, and how many
+saying something for Listen) may go without any progress before Dogear takes it to be
+stuck and stops it (15 minutes at first), the folder where books are kept, and how many
 words the page's pronunciation file holds and how long each word and spelling may be.
 
 ## Make an audiobook
@@ -243,17 +249,57 @@ one, please tell us how it went.
 dogear outline mybook.epub                # title, authors, and every section
 dogear text mybook.epub --section 3       # the text Dogear found in section 3
 dogear text mybook.epub --spoken          # every line exactly as the voice will say it
-dogear ocr scanned.pdf                    # add a text layer to a scanned PDF (needs Tesseract)
 dogear download                           # fetch the voice now, before going offline
 ```
 
-Everything Dogear prints is plain text, written to read well with a screen reader.
+Everything Dogear prints is plain text, written to read well with a screen reader. A
+scanned PDF is read with OCR first, by any of these (see "Scanned PDFs" below).
 
 For other programs, `dogear outline mybook.epub --json` prints the same facts as JSON: the
 `title`, `authors`, `language`, `source_format`, and `words`, and `sections`, each with its
 `number`, `title`, `kind` (`front`, `body`, or `back`), `words`, `first_page` and
 `last_page` (print page labels, or null), and counts of `images`, `notes`, and `tables`.
 Errors are still the plain `Error:` and `What to do:` lines, and the exit status is 1.
+
+### Scanned PDFs
+
+A scanned PDF is pictures of pages, with no text in it for Dogear to read. When Dogear
+finds one, it reads the words in the pictures first, with OCR (optical character
+recognition) by the free program [Tesseract](https://github.com/tesseract-ocr/tesseract),
+on your computer, then goes on as with any book. Every command that reads a book does
+this (`outline`, `text`, `make`, and `words`), and so does the web page.
+
+It takes a while: on the 2017 desktop processor above, a full page of a novel took about
+2.5 seconds at the usual 300 dpi, so a 300-page book would take about 12 minutes. Dogear
+says so when it starts, then says how far it has got after the first page and every 10
+pages, with the time left.
+
+**Stopping is safe**: each page is kept in Dogear's cache folder as it is read, so after
+Ctrl+C, the same command carries on from the page it stopped at. Once every page is read,
+the text is kept, so reading the same file again (`dogear make` after `dogear outline`,
+say) needs no OCR at all. Dogear checks that it's the same file by its contents, so a
+renamed copy counts too.
+
+Tesseract has to be installed for this:
+
+- Windows: `winget install UB-Mannheim.TesseractOCR`
+- macOS: `brew install tesseract`
+- Debian, Ubuntu: `sudo apt install tesseract-ocr`
+
+Dogear's installers don't include it, so install it as well on a computer with an
+installer build. The Docker image has it, with English.
+
+Settings, under `[ocr]`: `language` is the book's language as Tesseract names it, such as
+`"eng"` (the default) or `"eng+fra"`. Each one needs its language pack (Debian, Ubuntu:
+`sudo apt install tesseract-ocr-fra`; macOS: `brew install tesseract-lang`), and Dogear
+says which is missing. `dpi` is how sharply pages are drawn for Tesseract (300). Changing
+either, or updating Tesseract, reads the book again. To have Dogear stop at a scanned PDF
+and say so instead, set `auto_ocr = false` under `[pdf]`.
+
+`dogear ocr scanned.pdf` saves a copy of a scanned PDF with its words added as a text
+layer over the pictures, as `scanned_ocr.pdf`, for other programs to read as well. `--language` and
+`--dpi` change those settings for one run. Unlike reading a scanned PDF for a book, it
+starts again from the first page if it is stopped.
 
 ### Fix how a word is said
 
@@ -342,7 +388,7 @@ voice doesn't have stops Dogear with an error that names it.
 ### What it reads, and how
 
 - **EPUB, PDF, and Kindle** (MOBI and AZW3, through Calibre). EPUB chapters come from the
-  book's table of contents.
+  book's table of contents. Scanned PDFs are read with OCR.
 - **A title track** opens the book with its title and who wrote it.
 - **Headings** are read with a pause after them. Longer pauses mark bigger breaks: a
   sentence, a paragraph, a scene break, a chapter.
