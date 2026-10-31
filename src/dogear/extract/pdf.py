@@ -51,7 +51,7 @@ from dogear.extract.pdf_notes import find_notes, link_note_refs, note_lines
 from dogear.extract.pdf_page import ReadSettings, read_page
 from dogear.extract.pdf_sections import build_sections
 from dogear.extract.pdf_text import Layout, Line, Page, measure_layout
-from dogear.ocr.cache import text_layer
+from dogear.ocr.cache import discard, text_layer
 from dogear.render.progress import Report
 
 log = logging.getLogger(__name__)
@@ -161,7 +161,10 @@ def extract(path: Path, config: Config, *, text_layer: Path | None = None) -> Bo
     read = ReadSettings(
         settings.column_gap_ratio, settings.image_min_page_share, settings.note_marker_rise_ratio
     )
-    pages = _read_pages(text_layer or path, path.name, catalog.labels, read)
+    if text_layer is None:
+        pages = _read_pages(path, path.name, catalog.labels, read)
+    else:
+        pages = _read_ocr_pages(text_layer, path.name, catalog.labels, read)
     if text_layer is None:
         _require_text_layer(path, pages, settings.min_chars_per_page)
     else:
@@ -337,27 +340,53 @@ def _resolve(value: Any) -> Any:
 
 
 def _read_pages(path: Path, name: str, labels: list[str], settings: ReadSettings) -> list[Page]:
-    """The pages of the PDF at `path`, which is the book `name` or its text layer."""
+    """The pages of the PDF at `path`, the book `name`."""
     try:
-        with pdfplumber.open(path) as pdf:
-            if len(pdf.pages) != len(labels):
-                log.warning(
-                    "pypdf and pdfplumber disagree on the page count of %s (%d vs %d); "
-                    "page labels may be off",
-                    name,
-                    len(labels),
-                    len(pdf.pages),
-                )
-            pages = []
-            for index, plumber_page in enumerate(pdf.pages):
-                label = labels[index] if index < len(labels) else str(index + 1)
-                pages.append(read_page(plumber_page, index, label, settings))
-                plumber_page.close()  # frees the parsed page; big books stay small in memory
-            return pages
+        return _pages(path, name, labels, settings)
     except (PdfminerException, PSException) as e:
         raise ExtractionError(
             f"Can't read the text in {name}: it is damaged ({e}).", hint=_DAMAGED_HINT
         ) from e
+
+
+def _read_ocr_pages(
+    layer: Path, name: str, labels: list[str], settings: ReadSettings
+) -> list[Page]:
+    """The pages of `layer`, the text OCR found in the book `name`. One that can't be read
+    was damaged in Dogear's cache folder, not in the book: it is deleted, so the next run
+    reads the book with OCR again."""
+    try:
+        return _pages(layer, name, labels, settings)
+    except (PdfminerException, PSException) as e:
+        again = (
+            "Run the same command again: Dogear reads the PDF with OCR again."
+            if discard(layer)
+            else "Run the same command again once the other Dogear reading it has finished."
+        )
+        raise ExtractionError(
+            f"The text Dogear read from {name} with OCR was damaged in its cache folder ({e}).",
+            hint=f"The damage is in Dogear's own copy of the text, not in {name}. {again}",
+        ) from e
+
+
+def _pages(path: Path, name: str, labels: list[str], settings: ReadSettings) -> list[Page]:
+    """The pages of the PDF at `path`, which is the book `name` or its text layer. Raises
+    pdfminer's errors for a damaged file."""
+    with pdfplumber.open(path) as pdf:
+        if len(pdf.pages) != len(labels):
+            log.warning(
+                "pypdf and pdfplumber disagree on the page count of %s (%d vs %d); "
+                "page labels may be off",
+                name,
+                len(labels),
+                len(pdf.pages),
+            )
+        pages = []
+        for index, plumber_page in enumerate(pdf.pages):
+            label = labels[index] if index < len(labels) else str(index + 1)
+            pages.append(read_page(plumber_page, index, label, settings))
+            plumber_page.close()  # frees the parsed page; big books stay small in memory
+        return pages
 
 
 def _chars_per_page(path: Path, pages: list[Page]) -> float:

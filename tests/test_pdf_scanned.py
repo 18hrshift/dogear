@@ -7,6 +7,7 @@ import copy
 import pytest
 from conftest import require_tool
 from pdf_builder import novel, scanned, scanned_words
+from pdfplumber.utils.exceptions import PdfminerException
 from pypdf import PdfReader, PdfWriter
 from test_ocr_cache import TESSERACT, FakeOcr
 
@@ -19,7 +20,7 @@ from dogear.errors import (
     ToolFailedError,
     ToolNotFoundError,
 )
-from dogear.extract import extract_book
+from dogear.extract import extract_book, pdf
 from dogear.extract.pdf import AUTO_OCR_OFF, OCR_HINT
 from dogear.ocr import cache, page
 from dogear.ocr.cache import ALREADY_READ
@@ -165,6 +166,36 @@ def test_a_scan_with_no_words_on_it_says_so(tmp_path, config, fake):
         "Dogear read this scanned PDF with OCR, but found almost no text (about 0 "
         "characters a page)."
     )
+
+
+def test_kept_text_that_cant_be_read_blames_the_cache_not_the_pdf(
+    tmp_path, config, fake, monkeypatch
+):
+    """Before, the error said the PDF was damaged, and the same text was used every time."""
+    scan = scanned_words(tmp_path / "scan.pdf", ["ONE", "TWO"], dpi=20)
+    layer = cache.text_layer(scan, config, print)
+    real = pdf._pages
+
+    def damaged(path, name, labels, settings):
+        if path == layer:
+            raise PdfminerException("bad content stream")
+        return real(path, name, labels, settings)
+
+    monkeypatch.setattr(pdf, "_pages", damaged)
+    with pytest.raises(ExtractionError) as caught:
+        extract_book(scan, config)
+    assert caught.value.message == (
+        "The text Dogear read from scan.pdf with OCR was damaged in its cache folder "
+        "(bad content stream)."
+    )
+    assert caught.value.hint == (
+        "The damage is in Dogear's own copy of the text, not in scan.pdf. Run the same "
+        "command again: Dogear reads the PDF with OCR again."
+    )
+    assert not layer.exists()
+    monkeypatch.setattr(pdf, "_pages", real)
+    assert extract_book(scan, config).sections
+    assert fake.read == [0, 1, 0, 1]
 
 
 def test_the_title_bookmarks_and_page_numbers_come_from_the_scan(tmp_path, config, fake):
