@@ -30,7 +30,7 @@ from dogear.document import (
     block_text,
 )
 from dogear.errors import DogearError
-from dogear.extract import extract_book
+from dogear.extract import extract_book, format_names
 from dogear.make import MakeRequest, make_audiobook, parse_formats, parse_sections
 from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
@@ -43,7 +43,7 @@ from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
 
 PROGRESS_EVERY = 10  # pages between OCR progress lines
-BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
+BOOK_HELP = f"the book file: {format_names('or')}"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 
 

@@ -20,7 +20,7 @@ from python_multipart.exceptions import FormParserError
 from python_multipart.multipart import parse_options_header
 from starlette.requests import ClientDisconnect, Request
 
-from dogear.extract import EXTRACTORS
+from dogear.extract import EXTRACTORS, format_names
 from dogear.web.private import private_folder
 
 FIELD = "book"
@@ -128,7 +128,7 @@ def check_name(name: str) -> str:
     if extension not in EXTRACTORS:
         raise UploadError(
             f"Dogear can't read {extension or 'files without an extension'} files. "
-            "Choose an EPUB, PDF, MOBI, or AZW3 file."
+            f"Choose an {format_names('or')} file."
         )
     return extension
 
