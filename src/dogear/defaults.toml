@@ -348,6 +348,11 @@ space_margin_percent = 20
 # phone or another computer on the same network.
 # The port the page is served on. --port changes it for one run.
 port = 8765
+# With --lan, also show a link for phones and other computers, with this computer's address
+# on the network as Dogear finds it. Inside a container (Docker), the address it finds is
+# the container's own, which other devices can't reach: set this to false there, and Dogear
+# says to use this computer's network address in place of 127.0.0.1 instead.
+show_network_address = true
 # Largest book file the page accepts, in megabytes. Most EPUB and Kindle books are under
 # 20 MB, and a long PDF with pictures can reach 100 to 200 MB. 200 lets nearly any book
 # in while keeping one upload from filling the disk.

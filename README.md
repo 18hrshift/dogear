@@ -147,7 +147,10 @@ dogear serve --lan
 
 Dogear shows a second link, with the computer's address on the network. Open it on the
 phone. Anyone on the network who has the link can use Dogear, and the connection isn't
-encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
+encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi. Where the
+address Dogear finds would be wrong, as in a container, `show_network_address = false`
+under `[web]` leaves the second link out, and Dogear says to use the first one with this
+computer's network address in place of `127.0.0.1`.
 
 Other options: `--port 8766` uses another port (if another program has 8765), and
 `--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
