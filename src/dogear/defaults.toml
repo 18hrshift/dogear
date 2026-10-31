@@ -105,6 +105,11 @@ language = "eng"
 # one page. A book page at 300 dpi is about 8 megapixels; 100 is a page about 33 inches
 # (85 cm) square.
 max_page_megapixels = 100
+# So is a page whose picture would be wider or taller than this many pixels. 32767 is the
+# most Tesseract reads; at 300 dpi it is a page about 9 feet (2.8 m) long. A page that
+# would have to be drawn at less than 70 dpi, the least Tesseract reads, to fit both
+# limits isn't read at all: Dogear stops and says which page it is.
+max_page_side_pixels = 32767
 
 [speech]
 # Longest piece of text sent to a voice engine at once. Longer sentences are split at

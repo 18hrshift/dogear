@@ -9,6 +9,7 @@ import pytest
 from conftest import require_tool
 from pdf_builder import scanned_words
 from PIL import Image
+from pypdf import PdfWriter
 from test_ocr_cache import TESSERACT
 
 from dogear import cli
@@ -20,9 +21,9 @@ from dogear.errors import (
     ToolNotFoundError,
 )
 from dogear.ocr import default_output_path, ocr_pdf, page
-from dogear.ocr.page import open_pdf, page_dpi
+from dogear.ocr.page import open_pdf, page_dpi, page_pixels
 from dogear.ocr.progress import OcrProgress
-from dogear.ocr.settings import OcrSettings
+from dogear.ocr.settings import MIN_DPI, OcrSettings
 from dogear.ocr.tesseract import find_tesseract
 
 WORDS = ["ACCESSIBLE BOOKS", "LISTEN CLOSELY"]
@@ -114,6 +115,8 @@ def test_the_installed_languages_pass(config):
         ("language", "", "Tesseract language codes"),
         ("dpi", 50, "at least 70"),
         ("max_page_megapixels", 0, "more than 0"),
+        ("max_page_side_pixels", 0, "from 1 to 32,767"),
+        ("max_page_side_pixels", 40000, "from 1 to 32,767"),
     ],
 )
 def test_ocr_settings_are_checked(config, key, value, message):
@@ -132,6 +135,80 @@ def test_a_huge_page_is_drawn_at_a_lower_resolution(config):
     smaller = OcrSettings.from_config(config)
     assert smaller.max_page_pixels == 2_000_000
     assert page_dpi(*letter, smaller) == 146  # 1,241 by 1,606 pixels
+
+
+def test_a_long_page_is_drawn_no_longer_than_the_side_limit(config):
+    settings = OcrSettings.from_config(config)
+    scroll = (612, 72 * 100)  # 8.5 inches by 100
+    assert page_dpi(*scroll, settings) == 300
+    assert page_pixels(*scroll, 300) == (2550, 30001)  # rounded up, as pdfium does
+    config["ocr"]["max_page_side_pixels"] = 15000
+    shorter = OcrSettings.from_config(config)
+    assert page_pixels(*scroll, 150) == (1275, 15001)  # one pixel too long...
+    assert page_dpi(*scroll, shorter) == 149  # ...so one dpi less
+    assert page_pixels(*scroll, 149) == (1267, 14901)
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    [
+        (612, 792),
+        (72 * 40, 72 * 40),
+        (0.5, 4e7),  # 2 by 88.9 million pixels before, from rounding the width up
+        (1.01 * 72 / 300, 72 * 100),
+        (3e7, 0.01),
+        (72 * 140, 72 * 140),
+        (72 * 109, 72 * 109),
+    ],
+)
+def test_the_picture_pdfium_draws_is_never_over_either_limit(config, width, height):
+    """Counted the way pdfium makes it, each side rounded up, at the highest resolution
+    that fits, and never under the least Tesseract reads."""
+    for megapixels in (100, 2):
+        config["ocr"]["max_page_megapixels"] = megapixels
+        settings = OcrSettings.from_config(config)
+        dpi = page_dpi(width, height, settings)
+        if dpi is None:
+            over = page_pixels(width, height, MIN_DPI)
+            assert max(over) > settings.max_page_side or over[0] * over[1] > megapixels * 1e6
+            continue
+        assert MIN_DPI <= dpi <= settings.dpi
+        w, h = page_pixels(width, height, dpi)
+        assert max(w, h) <= settings.max_page_side and w * h <= settings.max_page_pixels
+        if dpi < settings.dpi:
+            w, h = page_pixels(width, height, dpi + 1)
+            assert max(w, h) > settings.max_page_side or w * h > settings.max_page_pixels
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "inches"),
+    [
+        (3e6, 3e6, "41,666.7 by 41,666.7"),  # a 439-byte PDF drew a 1.7 GB picture before
+        (1e8, 1e8, "1,388,888.9 by 1,388,888.9"),  # ran out of memory before
+        (0.5, 4e7, "0 by 555,555.6"),
+        (72 * 200, 72 * 200, "200 by 200"),  # would need 50 dpi
+    ],
+)
+def test_a_page_too_big_to_draw_at_70_dpi_is_refused_by_number(
+    tmp_path, config, monkeypatch, width, height, inches
+):
+    pdf = PdfWriter()
+    pdf.add_blank_page(width=612, height=792)
+    pdf.add_blank_page(width=width, height=height)
+    path = tmp_path / "huge.pdf"
+    pdf.write(path)
+    monkeypatch.setattr(page, "_draw", lambda *args, **kwargs: pytest.fail("drawn"))
+    settings = OcrSettings.from_config(config)
+    document = open_pdf(path)
+    try:
+        with pytest.raises(ExtractionError) as error:
+            page.ocr_page(document, 1, tmp_path / "page.pdf", TESSERACT, settings, text_only=True)
+    finally:
+        document.close()
+    assert error.value.message.startswith(f"Page 2 is {inches} inches, too big to read with OCR")
+    assert "less than 70 dpi, the least Tesseract reads" in error.value.message
+    assert "ocr.max_page_megapixels" in error.value.hint
+    assert not (tmp_path / "page.pdf").exists()
 
 
 def test_a_page_over_the_size_limit_is_read_at_the_lower_resolution(

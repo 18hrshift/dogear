@@ -90,6 +90,7 @@ def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
         "language": settings.language,
         "dpi": settings.dpi,
         "max_page_pixels": settings.max_page_pixels,
+        "max_page_side": settings.max_page_side,
         "tesseract": tesseract.version,
     }
     return hashlib.sha256(json.dumps(facts, sort_keys=True).encode("utf-8")).hexdigest()
