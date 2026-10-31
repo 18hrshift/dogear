@@ -82,6 +82,8 @@ def test_every_state_has_a_page(pages):
         "choose-errors",
         "choose-language",
         "choose-language-errors",
+        "choose-cloud",
+        "send-text",
         "waiting",
         "making",
         "making-long",

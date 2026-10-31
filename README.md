@@ -455,7 +455,8 @@ can't see the screen. Dogear is:
 - **Structure-aware.** Headings, image descriptions, footnotes, and tables are read on purpose,
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
 - **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
-  never leave your machine.
+  never leave your machine, unless you add a voice from a speech service and allow it to
+  send them (see "Voices from speech services" below).
 - **Accessible to run.** The command line and the web page are designed to work with
   screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca). The web page aims at WCAG 2.2
   AA, and CI checks every page with axe-core; testing with screen-reader users is still
@@ -482,9 +483,9 @@ Your own pronunciation files come first.
 Every voice file Dogear downloads is checked against a checksum pinned in Dogear before it
 is used, and the files that come with an installer were checked when it was built. If a
 file is damaged later, by a failing disk, say, Dogear may stop with an error that says
-so. `dogear download --check` checks every Kokoro voice file Dogear has against its
-checksum, including the ones that came with an installer, lists each as good or damaged, and
-downloads the damaged ones again. Files that came with an installer can't be downloaded
+so. `dogear download --check` checks every voice file Dogear has against its checksum,
+including the ones that came with an installer and those of voice engine plugins such as
+Piper, lists each as good or damaged, and downloads the damaged ones again. Files that came with an installer can't be downloaded
 again in place: reinstall Dogear to fix one. The command exits with status 1 if a file is
 still damaged at the end. The model alone is 325 MB, so the check takes a few seconds,
 with a progress line now and then.
@@ -511,6 +512,38 @@ skipped (they're written in Kokoro's symbols), and `dogear words` doesn't apply.
 [`plugins/piper/README.md`](plugins/piper/README.md) has the details, and
 [`docs/voice-engines.md`](docs/voice-engines.md) explains why Piper, and how to write a
 plugin for another engine.
+
+### Voices from speech services
+
+The [speech service plugin](plugins/openai_speech/README.md) adds the voices of any service
+that takes requests the way OpenAI's speech API does: OpenAI itself, services that copy
+its API, or a speech server running on your own computer. Install it the same way as
+Piper, with `dogear-openai-speech` and `subdirectory=plugins/openai_speech`.
+
+A service on another computer is sent the book's text, sentence by sentence, as it is
+spoken. That service then has the text, its own terms and privacy policy apply, and it
+usually charges: with OpenAI's `gpt-4o-mini-tts`, a 100,000-word novel was about $10 at
+the prices of October 2026 (the plugin's README has the sums). So Dogear never uses such
+a "cloud voice" unless you allow it:
+
+```bash
+dogear make mybook.epub --voice marin --allow-cloud   # this run only
+```
+
+or with `allow_cloud = true` under `[voice]` in your settings file, which also lets the
+web page offer cloud voices. Without it, Dogear stops before reading the book, says which
+computer the voice would send the text to, and sends nothing. With it, Dogear says once,
+in plain sentences, where the text is going and that the service's terms apply, before
+sending any; the web page shows the same words and asks before it starts. `dogear voices`
+marks every such voice with the computer it sends text to, such as "(sends the book's
+text to api.openai.com)". The service's key goes in an environment variable
+(`OPENAI_API_KEY` at first), never in a settings file.
+
+To keep the text on your computer and still use the plugin, run a speech server there,
+such as Kokoro-FastAPI, and point the plugin at it (`base_url = "http://localhost:8880/v1"`
+under `[openai_speech]`). A server at `localhost`, `127.0.0.1`, or `[::1]` counts as this
+computer, so Dogear doesn't ask or warn. OpenAI says its speech models shut down on
+January 6, 2027.
 
 ## Get involved
 

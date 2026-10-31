@@ -39,13 +39,18 @@ from dogear.say import say_text
 from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
 from dogear.voice import prepare_voice
 from dogear.voice.check import check_voice_files
-from dogear.voice.engines import choose_voice, describe_voice, installed
+from dogear.voice.cloud import ALLOW_OPTION, sends_text, text_goes_to
+from dogear.voice.engines import ChosenVoice, choose_voice, describe_voice, installed
 from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
 
 BOOK_HELP = f"the book file: {format_names('or')}"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 VOICE_HELP = "voice name, from `dogear voices`, or engine:name such as kokoro:af_heart"
+ALLOW_CLOUD_HELP = (
+    "allow a voice that sends the text it speaks off this computer, for this run only "
+    "(Dogear says where first)"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -164,6 +169,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     make.add_argument("--voice", help=VOICE_HELP)
     make.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
+    make.add_argument("--allow-cloud", action="store_true", help=ALLOW_CLOUD_HELP)
     make.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
     make.add_argument("--language", help="the book's language, if its own label is wrong")
     make.set_defaults(run=_make)
@@ -207,6 +213,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     say.add_argument("--voice", help=VOICE_HELP)
     say.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
+    say.add_argument("--allow-cloud", action="store_true", help=ALLOW_CLOUD_HELP)
     say.add_argument(
         "--phonemes",
         action="store_true",
@@ -442,15 +449,32 @@ def _use_word_files(args: argparse.Namespace, config: Config) -> None:
 def _voices(args: argparse.Namespace, config: Config) -> int:
     found = installed()
     using = (config["voice"]["engine"], config["voice"]["voice"])
+    any_cloud = False
     for engine in found.engines:
+        voices = engine.voices_in(config)
         print(
             f"{engine.title}, licensed {engine.plugin.license}: "
-            f"{count(len(engine.voices), 'voice')}. {engine.plugin.about_voices}"
+            f"{count(len(voices), 'voice')}. {engine.plugin.about_voices}"
         )
         print()
-        for number, voice in enumerate(engine.voices, start=1):
+        for number, voice in enumerate(voices, start=1):
+            host = text_goes_to(ChosenVoice(engine, voice), config)
+            any_cloud = any_cloud or host is not None
+            where = f" ({sends_text(host)})" if host else ""
             note = " This is the one Dogear uses now." if (engine.name, voice.name) == using else ""
-            print(f"{number}. {describe_voice(voice)}.{note}")
+            print(f"{number}. {describe_voice(voice)}{where}.{note}")
+        print()
+    if any_cloud:
+        allowed = (
+            "Your settings allow them: allow_cloud is true under [voice]."
+            if config["voice"]["allow_cloud"]
+            else f"Dogear uses one only if you allow it: add {ALLOW_OPTION} to `dogear make` "
+            "or `dogear say`, or set allow_cloud = true under [voice] in your settings file."
+        )
+        print(
+            "Voices marked as sending the book's text are spoken by a service on another "
+            f"computer, and the text they speak is sent there. {allowed}"
+        )
         print()
     for broken in found.broken:
         print(
@@ -459,7 +483,7 @@ def _voices(args: argparse.Namespace, config: Config) -> int:
             "if you don't need it."
         )
         print()
-    if not any(e.name == using[0] and e.voice(using[1]) for e in found.engines):
+    if not any(e.name == using[0] and e.voice(using[1], config) for e in found.engines):
         print(
             f"Your settings choose the voice {using[1]} of the engine {using[0]}, which isn't here."
         )
@@ -478,11 +502,20 @@ def _download(args: argparse.Namespace, config: Config) -> int:
         return 0
     _apply_voice_options(args, config)
     chosen = prepare_voice(config, _report)
-    print(f"The voice {chosen.voice.name} is ready to use offline.")
+    host = text_goes_to(chosen, config)
+    if host is None:
+        print(f"The voice {chosen.voice.name} is ready to use offline.")
+    else:
+        print(
+            f"The voice {chosen.voice.name} has nothing to download: it is spoken by a service "
+            f"at {host}, so it needs the internet, and sends the text it speaks there."
+        )
     return 0
 
 
 def _apply_voice_options(args: argparse.Namespace, config: Config) -> None:
+    if getattr(args, "allow_cloud", False):
+        config["voice"]["allow_cloud"] = True
     if getattr(args, "voice", None):
         choose_voice(config, args.voice)
     if getattr(args, "speed", None) is not None:

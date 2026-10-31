@@ -2,7 +2,8 @@
 
 Dogear speaks through voice engines. Kokoro comes with Dogear. Others are plugins: Python
 packages installed beside Dogear, which Dogear finds by themselves. This page records why
-Piper is the first plugin, then describes the interface for anyone writing one.
+Piper is the first plugin, and why the first cloud plugin speaks OpenAI's speech API, then
+describes the interface for anyone writing one.
 
 ## Decision: Piper is the first plugin (2026-10-30)
 
@@ -84,6 +85,36 @@ Open questions:
 [sherpa-pr]: https://github.com/k2-fsa/sherpa-onnx/pull/4055
 [sherpa-oov]: https://github.com/k2-fsa/sherpa-onnx/issues/4139
 
+## Decision: an OpenAI-compatible speech engine is the first cloud plugin (2026-10-30)
+
+The roadmap asks for cloud voices as opt-in plugins. Rather than one plugin per company,
+the first speaks the request shape most services and local servers share: OpenAI's
+`POST /v1/audio/speech`, a JSON body with `model`, `voice`, `input` (at most 4096
+characters at OpenAI), `response_format` (`mp3`, `opus`, `aac`, `flac`, `wav`, or `pcm`),
+`speed` (0.25 to 4.0), and, for `gpt-4o-mini-tts`, `instructions`. The answer is the audio
+itself; `pcm` is 24 kHz, 16-bit, little-endian samples with no header ([reference],
+[guide]). The plugin asks for WAV, which says its own sample rate, so Dogear can check it.
+
+Checked on 2026-10-30:
+
+- OpenAI says `tts-1`, `tts-1-hd`, and `gpt-4o-mini-tts` shut down on January 6, 2027, and
+  that their replacement works only through its Realtime API, not this endpoint
+  ([guide]). The plugin's default is OpenAI all the same, as the shape everyone copies;
+  its README says so.
+- The same requests work with [OpenRouter] (`mp3` or `pcm` only), Groq's Orpheus voices
+  ([groq]: `wav` only, at most 200 characters a request), and servers run at home:
+  [Kokoro-FastAPI] (port 8880), [Speaches] (port 8000, Kokoro and Piper models), and
+  [LocalAI]. Each has its own voice names, so the voices are a setting.
+- Python's own urllib is enough for the requests, so the plugin adds no HTTP library.
+
+[reference]: https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
+[guide]: https://developers.openai.com/api/docs/guides/text-to-speech
+[OpenRouter]: https://openrouter.ai/docs/guides/overview/multimodal/tts
+[groq]: https://console.groq.com/docs/text-to-speech/orpheus
+[Kokoro-FastAPI]: https://github.com/remsky/Kokoro-FastAPI
+[Speaches]: https://speaches.ai/usage/text-to-speech/
+[LocalAI]: https://localai.io/features/text-to-audio/
+
 ## Writing a voice engine plugin
 
 A plugin is a Python package that registers one object under the entry point group
@@ -117,6 +148,14 @@ Defined in `src/dogear/voice/engines.py` as `EnginePlugin`:
 | `prepare(config, voice, report)` | Make sure every file the voice needs is on disk and checked, downloading whatever is missing. `dogear download` calls it. |
 | `engine(config, voice, pronunciations, report)` | Prepare the voice, then load it: return a `VoiceEngine`. |
 | `pace(config, voice)` | The voice's sample rate and about how many words a minute it says at `config["voice"]["speed"]`, as a `VoicePace`, with nothing loaded or downloaded. `dogear make` uses it to work out the disk space a book needs before speaking it, so a generous estimate is better than a low one. Measure it on a real book with your engine's pauses. |
+| `sends_text_to(config, voice)` | Where the voice sends the text it speaks, with these settings: `None` if the text stays on this computer, or else the name of the computer it goes to, such as `"api.openai.com"`. A server on this computer counts as staying here. Answer from the settings alone: nothing may be sent to find out. See "Voices that send text off this computer" below. |
+
+Two more methods are optional:
+
+| Part | What it is |
+|---|---|
+| `configured_voices(config)` | For an engine whose voices are set in its settings table, as a speech service's are: the voices with these settings. `voices()` then gives the voices of its default settings. Dogear lists and finds voices with this whenever it has the settings, and checks them as it checks `voices()`. Nothing may be sent to list them. |
+| `pinned_files(config)` | Every file the engine downloads, for any of its voices, as `RemoteFile`s with where each lives on disk. `dogear download --check` hashes each one that is on disk against its pin, as it does Kokoro's, and downloads a damaged one again. Leave it out if the engine downloads nothing. |
 
 A `Voice` has a `name` (unique within the engine, with no colon or spaces), a `language`
 (a BCP 47 tag such as `en-GB`, so Dogear can later choose a voice per language), a
@@ -159,7 +198,27 @@ a `RemoteFile` (its URL, SHA-256, size in bytes, and where it goes, inside
 `ensure_downloaded(files, models_dir(config), config, report)`. It downloads only what's
 missing, checks each file against its SHA-256 before using it, says what it's doing in
 plain sentences, and lets one Dogear at a time download into the folder. Pin URLs to a
-fixed revision, so a file can't change under its pin.
+fixed revision, so a file can't change under its pin. List every voice's files in
+`pinned_files` as well, so `dogear download --check` checks them.
+
+### Voices that send text off this computer
+
+Dogear is offline by default, so an engine that sends the text it speaks to another
+computer (a cloud voice) says so in `sends_text_to`, and Dogear's core does the rest. A
+run whose voice sends text off this computer is refused, before anything is sent and
+before the book is read, unless the user allows it: `allow_cloud = true` under `[voice]`,
+or `--allow-cloud` for one run of `dogear make` or `dogear say`. When it is allowed,
+Dogear says once, in plain sentences, which computer the text goes to, that the service's
+own terms apply, and how to stop, before the engine is made. `dogear voices` marks these
+voices, and the web page lists them only when the setting allows them, marked the same
+way, and shows the same warning before a book with one starts.
+
+So an engine needs no opt-in or warning of its own. It must answer honestly from its
+settings: a server at `localhost`, `127.0.0.1`, or `[::1]` keeps the text here, and any
+other address doesn't, including one on the same network. It must not send anything
+before `engine()` is called, and must not follow a redirect to somewhere else. A secret
+such as an API key belongs in an environment variable that a setting names, never in a
+settings file, a cache key, or a message. `plugins/openai_speech/` is a complete example.
 
 ### Errors
 

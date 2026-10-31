@@ -101,6 +101,23 @@ class EnginePlugin(Protocol):
         generous one is better than a low one, as it sizes the disk space a book needs."""
         ...
 
+    def sends_text_to(self, config: Config, voice: Voice) -> str | None:
+        """Where the voice sends the text it speaks, with these settings: None if the text
+        stays on this computer (a server on this computer counts), or else the name of the
+        computer it goes to, such as "api.openai.com". Nothing is sent to find out.
+        Dogear's core, not the engine, refuses a voice that sends text off this computer
+        unless the user allows it, and says where the text goes first (cloud.py)."""
+        ...
+
+
+# Methods an engine may give as well, when it has what they ask for:
+#   configured_voices(config) -> Sequence[Voice]: the voices with these settings, for an
+#     engine whose voices are set in its settings table, as a speech service's are. Then
+#     `voices()` gives the voices of its default settings. Nothing is sent to list them.
+#   pinned_files(config) -> Sequence[RemoteFile]: every file it downloads (for any of its
+#     voices), pinned by SHA-256, where each lives on disk, for `dogear download --check`.
+OPTIONAL_METHODS = ("configured_voices", "pinned_files")
+
 
 @dataclass(frozen=True)
 class Engine:
@@ -120,8 +137,24 @@ class Engine:
     def title(self) -> str:
         return self.plugin.title
 
-    def voice(self, name: str) -> Voice | None:
-        return next((v for v in self.voices if v.name == name), None)
+    def voice(self, name: str, config: Config | None = None) -> Voice | None:
+        return next((v for v in self.voices_in(config) if v.name == name), None)
+
+    def voices_in(self, config: Config | None) -> tuple[Voice, ...]:
+        """The voices with these settings: `voices`, unless the engine's voices are set in
+        its settings (`configured_voices`). With no settings, the defaults' voices."""
+        configured = getattr(self.plugin, "configured_voices", None)
+        if config is None or configured is None:
+            return self.voices
+        voices = tuple(run_plugin(self, "listing its voices", lambda: configured(config)))
+        try:
+            _check_voices(voices)
+        except _NotAnEngine as e:
+            raise VoiceError(
+                f"The {self.title} voice engine can't use the voices its settings give. {e}",
+                hint=f"Check the voices in the [{self.name}] table of your settings file.",
+            ) from None
+        return voices
 
 
 @dataclass(frozen=True)
@@ -229,9 +262,12 @@ def _checked(
             raise _NotAnEngine(
                 f"It has no {attribute} ({kind.__name__}), so it isn't a voice engine."
             )
-    for method in ("voices", "prepare", "engine", "pace"):
+    for method in ("voices", "prepare", "engine", "pace", "sends_text_to"):
         if not callable(getattr(plugin, method, None)):
             raise _NotAnEngine(f"It has no {method} method, so it isn't a voice engine.")
+    for method in OPTIONAL_METHODS:
+        if hasattr(plugin, method) and not callable(getattr(plugin, method)):
+            raise _NotAnEngine(f"Its {method} isn't a method.")
     if plugin.name != entry.name:
         raise _NotAnEngine(f"It calls itself '{plugin.name}' but is registered as '{entry.name}'.")
     if not _ENGINE_NAME.fullmatch(entry.name):
@@ -326,19 +362,20 @@ def engine_named(name: str) -> Engine:
     )
 
 
-def find_voice(spec: str) -> ChosenVoice:
-    """The voice `spec` names: "engine:voice", or a voice name only one engine has."""
+def find_voice(spec: str, config: Config | None = None) -> ChosenVoice:
+    """The voice `spec` names: "engine:voice", or a voice name only one engine has. With
+    `config`, among the voices those settings give (see `Engine.voices_in`)."""
     engine_name, colon, voice_name = spec.strip().rpartition(":")
     if colon:
         engine = engine_named(engine_name)
-        voice = engine.voice(voice_name)
+        voice = engine.voice(voice_name, config)
         if voice is None:
             raise VoiceError(
                 f"The {engine.title} voice engine has no voice called '{voice_name}'.",
                 hint="Run `dogear voices` to list them.",
             )
         return ChosenVoice(engine, voice)
-    matches = [ChosenVoice(e, v) for e in installed().engines if (v := e.voice(voice_name))]
+    matches = [ChosenVoice(e, v) for e in installed().engines if (v := e.voice(voice_name, config))]
     if not matches:
         raise VoiceError(
             f"There's no voice called '{voice_name}'.", hint="Run `dogear voices` to list them."
@@ -356,10 +393,10 @@ def configured_voice(config: Config) -> ChosenVoice:
     """The voice the settings choose: [voice] engine and [voice] voice."""
     engine = engine_named(config["voice"]["engine"])
     name = config["voice"]["voice"]
-    voice = engine.voice(name)
+    voice = engine.voice(name, config)
     if voice is not None:
         return ChosenVoice(engine, voice)
-    elsewhere = [e for e in installed().engines if e.voice(name)]
+    elsewhere = [e for e in installed().engines if e.voice(name, config)]
     if elsewhere:
         other = elsewhere[0]
         raise VoiceError(
@@ -375,7 +412,7 @@ def configured_voice(config: Config) -> ChosenVoice:
 
 def choose_voice(config: Config, spec: str) -> ChosenVoice:
     """Find the voice `spec` names and set it, and its engine, in `config`."""
-    chosen = find_voice(spec)
+    chosen = find_voice(spec, config)
     config["voice"]["engine"] = chosen.engine.name
     config["voice"]["voice"] = chosen.voice.name
     return chosen

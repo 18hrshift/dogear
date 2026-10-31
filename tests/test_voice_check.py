@@ -1,5 +1,5 @@
-"""`dogear download --check`: every voice file on disk hashed against the catalog, and the
-damaged ones downloaded again.
+"""`dogear download --check`: every voice file on disk hashed against the catalog (or, for
+another engine, against what it pins), and the damaged ones downloaded again.
 
 The catalog is replaced by a small one whose files are served from `file://` URLs in
 tmp_path, so nothing here uses the network or the real voice.
@@ -12,13 +12,14 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from engine_fakes import FakePlugin, hum_voice
 
 from dogear import cli
-from dogear.errors import DogearError
+from dogear.errors import DogearError, VoiceError
 from dogear.voice import check as check_module
 from dogear.voice import downloads, spacy_model
 from dogear.voice.check import CHECK_AGAIN, REINSTALL, check_voice_files
-from dogear.voice.downloads import folder_sha256
+from dogear.voice.downloads import RemoteFile, folder_sha256
 
 # The module, not the function of the same name that dogear.voice gives.
 catalog_module = importlib.import_module("dogear.voice.catalog")
@@ -282,3 +283,55 @@ def test_check_and_voice_cant_be_given_together(capsys):
     with pytest.raises(SystemExit):
         cli.main(["download", "--check", "--voice", "bf_emma"])
     assert "not allowed with" in capsys.readouterr().err
+
+
+# Other engines' files: the ones each pins with `pinned_files`.
+
+PINNED = b"another engine's model"
+
+
+class PinningEngine(FakePlugin):
+    """An engine that pins one file of its own, in its folder of the models folder."""
+
+    def pinned_files(self, config):
+        models = Path(config["models"]["dir"])
+        url = (models.parent / "server" / "pinned.bin").as_uri()
+        return [RemoteFile(url, sha256(PINNED), len(PINNED), models / "pins" / "pinned.bin")]
+
+
+@pytest.fixture
+def pinning(installed_engines, server):
+    (server / "pinned.bin").write_bytes(PINNED)
+    plugin = PinningEngine("pins", "Pins", [hum_voice("one")])
+    installed_engines(plugin)
+    return plugin
+
+
+def test_another_engines_files_are_checked_and_downloaded_again(config, models, pinning):
+    install(models)
+    pinned = models / "pins" / "pinned.bin"
+    pinned.parent.mkdir()
+    pinned.write_bytes(b"not it")
+    lines = run_check(config)
+    assert lines[0].startswith(f"Checking 4 voice files in {models}, ")
+    assert "4. Damaged: the Pins file pinned.bin. It doesn't match its checksum." in lines
+    assert "Downloaded again, and good now: the Pins file pinned.bin." in lines
+    assert lines[-1] == "Every voice file is good now."
+    assert pinned.read_bytes() == PINNED
+
+
+def test_another_engines_files_not_on_disk_arent_listed(config, models, pinning):
+    install(models)
+    lines = run_check(config)
+    assert lines[0].startswith(f"Checking 3 voice files in {models}, ")
+    assert "pinned.bin" not in "\n".join(lines)
+
+
+def test_an_engine_that_pins_something_else_is_a_bug_in_it(config, models, installed_engines):
+    class Odd(FakePlugin):
+        def pinned_files(self, config):
+            return ["model.onnx"]
+
+    installed_engines(Odd("odd", "Odd", [hum_voice("one")]))
+    with pytest.raises(VoiceError, match="listed 'model.onnx' as a file it pins"):
+        run_check(config)

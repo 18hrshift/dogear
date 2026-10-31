@@ -299,6 +299,12 @@ voice = "af_heart"
 # about 190 words a minute; audiobook narrators average nearer 155, so the default is a
 # little slower. Players can change speed too.
 speed = 0.9
+# Some voice engines are speech services on another computer, such as one on the
+# internet (cloud voices): the text they speak is sent there, sentence by sentence, and
+# the service's own terms apply. Dogear uses such a voice only when this is true, or with
+# --allow-cloud for one run, and it says where the text goes before sending any. The web
+# page lists them only when this is true. A server on this computer doesn't count.
+allow_cloud = false
 
 # Each voice engine has a settings table of its own, named after it, such as [kokoro].
 # Its defaults come with the engine: Kokoro's are in voice/kokoro.toml, next to this file.
