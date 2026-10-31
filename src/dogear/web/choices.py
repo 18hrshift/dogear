@@ -126,7 +126,7 @@ def voice_options(config: Config, summary: BookSummary | None = None) -> list[Vo
             # Its settings are wrong: `dogear make` would say so too. The rest still work.
             log.warning("The %s voices aren't offered: %s %s", engine.title, e.message, e.hint)
     offered = {option.value: option for _, options in engines for option in options}
-    own = [c for c in language_voices(summary) if c.spec in offered] if summary else []
+    own = [c for c in language_voices(summary, config) if c.spec in offered] if summary else []
     groups = []
     if own and summary is not None:
         groups.append(
@@ -182,12 +182,12 @@ def book_in_english(summary: BookSummary) -> bool:
     return is_english(summary.language)
 
 
-def language_voices(summary: BookSummary) -> list[ChosenVoice]:
-    """The installed voices that speak the book's language, best first; none for a book
-    in English or one that doesn't say."""
+def language_voices(summary: BookSummary, config: Config) -> list[ChosenVoice]:
+    """The installed voices that speak the book's language with these settings, best
+    first; none for a book in English or one that doesn't say."""
     if is_english(summary.language):
         return []
-    return voices_for(summary.language or "")
+    return voices_for(summary.language or "", config)
 
 
 def asks_about_language(summary: BookSummary, config: Config) -> bool:
@@ -198,7 +198,7 @@ def asks_about_language(summary: BookSummary, config: Config) -> bool:
         return False
     if most_specific(mapped_voices(config), summary.language) is not None:
         return False
-    return not (other_languages(config) == BEST and language_voices(summary))
+    return not (other_languages(config) == BEST and language_voices(summary, config))
 
 
 def speaks_book_language(summary: BookSummary, config: Config, voice: str) -> bool:
@@ -234,7 +234,7 @@ def defaults(summary: BookSummary, config: Config, last: Choices | None) -> Pick
             as_english=last.as_english,
         )
     voice = _configured_voice(config)
-    own = language_voices(summary)
+    own = language_voices(summary, config)
     if own and asks_about_language(summary, config) and voice not in {c.spec for c in own}:
         voice = own[0].spec  # the best voice for the book's language
     return Picked(
@@ -265,7 +265,7 @@ def check(
     if picked.voice not in voice_values(config):
         errors["voice"] = "Choose a voice from the list."
     elif asks and not picked.as_english and not speaks_book_language(summary, config, picked.voice):
-        if language_voices(summary):
+        if language_voices(summary, config):
             errors["voice"] = (
                 f"The voice you chose doesn't speak {summary.language}, the language this "
                 "book says it is in. Choose one of the voices for it, listed first, or choose "

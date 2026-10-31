@@ -125,7 +125,9 @@ installed voice for it (the main voice's engine first, then the others as `dogea
 lists them, each engine's voices best first, a voice for the exact tag before one for
 the language); otherwise the main voice. `src/dogear/voice/language_voices.py` does the
 choosing, with nothing loaded; `voices_for_run` lists every voice a run's settings may
-use, before any book is read.
+use, before any book is read. Every voice it chooses among comes from
+`Engine.voices_in(config)`, so for an engine with `configured_voices`, such as the speech
+service plugin, the voices and languages are the ones its settings table gives.
 
 `dogear make` works out which voices the book needs, loads each once, through
 `dogear.voice.make_voice` like the main voice, and gives the renderer

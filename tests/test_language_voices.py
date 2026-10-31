@@ -4,11 +4,13 @@ stand-in engines beside Kokoro."""
 import pytest
 from engine_fakes import fake_engine, hum_voice
 
+from dogear.book_summary import BookSummary
 from dogear.config import load_config
 from dogear.errors import ConfigError
 from dogear.language_match import lookup_keys, most_specific, primary, same_language
 from dogear.voice.engines import find_voice
 from dogear.voice.language_voices import LanguageVoices, best_voice, voices_for, voices_for_run
+from dogear.web import choices as choices_page
 
 
 def lilt(**attributes):
@@ -116,7 +118,11 @@ def test_best_prefers_the_main_voices_engine(installed_engines, config):
     assert LanguageVoices.from_config(config, main).voice_for("fr").spec == "lilt:fr_one"
     # Otherwise the engines go in the order `dogear voices` lists them.
     assert best_voice("fr").spec == "alto:alto_fr"
-    assert [c.spec for c in voices_for("fr")] == ["alto:alto_fr", "lilt:fr_one", "lilt:fr_ca"]
+    assert [c.spec for c in voices_for("fr", config)] == [
+        "alto:alto_fr",
+        "lilt:fr_one",
+        "lilt:fr_ca",
+    ]
 
 
 def test_the_other_languages_setting_changes_who_reads(with_lilt, config):
@@ -235,3 +241,73 @@ def test_a_cloud_voice_named_for_a_language_is_one_the_run_may_use(installed_eng
     config = settings(tmp_path, '[voice.languages]\nfr = "away:fr_far"\n')
     assert spec(LanguageVoices.from_config(config), "fr") == "away:fr_far"
     assert "away:fr_far" in {c.spec for c in voices_for_run(config)}
+
+
+# Voices that come from an engine's own settings, as a speech service's do.
+
+
+class ServiceVoices:
+    """An engine whose voices, and their language, are set in its settings table."""
+
+    name, title, license = "service", "Service", "Apache-2.0"
+    settings = 'voices = ["alloy"]\nlanguage = "en-US"\n'
+    reads_misaki_phonemes, about_voices = False, "As your settings list them."
+
+    def voices(self):
+        return self.configured_voices({"service": {"voices": ["alloy"], "language": "en-US"}})
+
+    def configured_voices(self, config):
+        table = config["service"]
+        return [hum_voice(name, table["language"], description="") for name in table["voices"]]
+
+    def sends_text_to(self, config, voice):
+        return None  # a server on this computer
+
+    def prepare(self, config, voice, report):
+        pass
+
+    def engine(self, config, voice, pronunciations, report):
+        raise AssertionError("not made in these tests")
+
+    def pace(self, config, voice):
+        raise AssertionError("not asked in these tests")
+
+
+FRENCH_SERVICE = '[service]\nvoices = ["siwis"]\nlanguage = "fr-FR"\n'
+
+
+def french_book():
+    return BookSummary("Livre", (), "fr", "epub", 100, ())
+
+
+def test_a_language_can_have_a_voice_the_engines_settings_give(installed_engines, tmp_path):
+    """Before, only the engine's default voices counted, so these settings didn't load."""
+    installed_engines(ServiceVoices())
+    config = settings(tmp_path, FRENCH_SERVICE + '[voice.languages]\nfr = "service:siwis"\n')
+    choices = LanguageVoices.from_config(config)
+    assert spec(choices, "fr") == "service:siwis"
+    assert [c.spec for c in voices_for_run(config)] == ["kokoro:af_heart", "service:siwis"]
+    assert [c.spec for c in voices_for("fr", config)] == ["service:siwis"]
+    assert voices_for("fr", settings(tmp_path, "")) == []  # by default it speaks English
+    book = french_book()
+    assert [c.spec for c in choices_page.language_voices(book, config)] == ["service:siwis"]
+    assert not choices_page.asks_about_language(book, config)
+
+
+def test_the_language_an_engines_settings_give_is_checked(installed_engines, tmp_path):
+    installed_engines(ServiceVoices())
+    english = '[service]\nvoices = ["alloy"]\n[voice.languages]\nfr = "service:alloy"\n'
+    with pytest.raises(ConfigError, match="service:alloy, which speaks en-US") as err:
+        settings(tmp_path, english)
+    assert "No installed voice speaks fr" in err.value.hint
+    german = FRENCH_SERVICE + '[voice.languages]\nde = "service:siwis"\n'
+    with pytest.raises(ConfigError, match="service:siwis, which speaks fr-FR"):
+        settings(tmp_path, german)
+
+
+def test_best_finds_the_languages_an_engines_settings_give(installed_engines, tmp_path):
+    installed_engines(ServiceVoices())
+    config = settings(tmp_path, FRENCH_SERVICE + '[voice]\nother_languages = "best"\n')
+    assert spec(LanguageVoices.from_config(config), "fr") == "service:siwis"
+    assert "service:siwis" in {c.spec for c in voices_for_run(config)}
+    assert LanguageVoices.from_config(config).languages() == {"en", "fr"}

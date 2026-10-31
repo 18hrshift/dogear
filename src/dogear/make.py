@@ -189,7 +189,7 @@ def check_language(book: Book, choices: LanguageVoices) -> None:
     language = book.metadata.language
     if choices.speaks(language):
         return
-    found = voices_for(language or "")
+    found = voices_for(language or "", choices.config)
     if found:
         where = (
             f"To read it in {language}, choose one of its voices with --voice, such as "
@@ -247,7 +247,7 @@ def report_voices(
                 f"reads {_count(use.utterances, 'sentence')} in {languages}."
             )
     for language, count in sorted(unspoken_languages(narrations, choices).items()):
-        found = voices_for(language)
+        found = voices_for(language, config)
         offer = (
             f"Voices for {language}: {', '.join(c.spec for c in found)}. Give it one under "
             '[voice.languages] in your settings, or set other_languages = "best" under [voice].'
