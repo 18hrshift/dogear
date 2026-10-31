@@ -4,6 +4,7 @@ the file ends up."""
 import errno
 import os
 
+import lxml.html
 import pytest
 from web_samples import sample_app, sample_config, visitor
 
@@ -134,9 +135,18 @@ def test_a_file_just_under_the_limit_is_accepted(app):
 
 def test_the_upload_form_names_the_kinds_and_the_limit(app):
     page = visitor(app).get("/").text
-    assert 'accept=".azw,.azw3,.epub,.mobi,.pdf"' in page
-    assert "up to 1 MB" in page
+    assert "An EPUB, PDF, MOBI, or AZW3 file, up to 1 MB." in page
     assert '<label for="book-file">Book file (required)</label>' in page
+
+
+def test_the_file_picker_lets_every_kind_of_book_be_chosen(app):
+    """No accept list: iPhones grey out files whose extension iOS has no type for, such
+    as MOBI and AZW3, and the server checks the name instead."""
+    [picker] = lxml.html.fromstring(visitor(app).get("/").text).xpath("//input[@type='file']")
+    assert picker.get("accept") is None
+    for name in ("book.mobi", "book.azw3", "book.AZW"):
+        response = visitor(app).post("/books", files={"book": (name, b"ok", "")})
+        assert response.status_code == 200, name  # followed to the book's page
 
 
 class FailingFile:
