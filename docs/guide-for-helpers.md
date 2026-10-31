@@ -114,6 +114,11 @@ listener has the book, it is safe to delete. It is in a folder named `dogear`:
 To delete a book Dogear made, along with the file you uploaded, use "Delete this book" on
 its page.
 
+Before it starts on a book, Dogear checks that the computer has room for it. If it
+doesn't, the book's page says how much space the book needs and how much is free. Free up
+some space (the folder above is safe to empty), or choose fewer sections or kinds of book,
+then start it again.
+
 ## Using Dogear from a phone or tablet
 
 Dogear can also be used from a phone or tablet on the same Wi-Fi network as the

@@ -7,6 +7,10 @@
 base_url = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231"
 sample_rate = 24000
 max_phonemes = 510  # the model's context, not counting the start and end markers
+# About how many words a minute Kokoro says at speed 1.0, with Dogear's pauses: what Dogear
+# estimates a book's length from, before speaking it. Jekyll and Hyde (26,328 words) at
+# speed 0.9 came to 2 hours 33 minutes, 172 words a minute.
+words_per_minute = 190
 
 [kokoro.tokenizer]
 path = "tokenizer.json"

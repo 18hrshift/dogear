@@ -8,9 +8,16 @@ from conftest import require_tool
 from epub3_reader import Epub
 from fake_voice import HumEngine
 
-from dogear import cli, make
+from dogear import cli, disk_space, make
+from dogear.disk_space import Disk
 from dogear.document import Book, Heading, Metadata, Paragraph, Section
-from dogear.errors import DogearError, OutputFolderError, ToolNotFoundError, VoiceError
+from dogear.errors import (
+    DiskSpaceError,
+    DogearError,
+    OutputFolderError,
+    ToolNotFoundError,
+    VoiceError,
+)
 from dogear.make import (
     FORMATS,
     MakeRequest,
@@ -318,3 +325,16 @@ def test_cli_make_says_how_to_continue_after_ctrl_c(monkeypatch, capsys, tmp_pat
     monkeypatch.setattr(cli, "make_audiobook", interrupted)
     assert cli.main(["make", str(tmp_path / "b.epub")]) == 130
     assert "Run the same command again to continue." in capsys.readouterr().err
+
+
+def test_a_book_too_big_for_the_disk_stops_before_the_voice_loads(
+    setup, config, tmp_path, monkeypatch
+):
+    def no_voice(cfg, report):
+        raise AssertionError("the voice was loaded")
+
+    monkeypatch.setattr(make, "make_engine", no_voice)
+    monkeypatch.setattr(disk_space, "disk_of", lambda folder: Disk(1, 10**12, 1000))
+    with pytest.raises(DiskSpaceError, match="This book needs about"):
+        run(config, tmp_path, setup)
+    assert not (tmp_path / "out").exists()

@@ -336,6 +336,12 @@ edge_silence_keep_ms = 60
 # the text and the audio in step, for reading apps such as Thorium Reader), and "daisy"
 # (a DAISY 2.02 talking book, for DAISY players and apps).
 formats = ["m4b"]
+# Before speaking, `dogear make` estimates the disk space the book needs, and stops if a
+# disk doesn't have it: the speech cache and the run's work folder (on the disk that holds
+# render.cache_dir) and what it saves (on the output folder's disk). The estimate is raised
+# by this many percent, for voices and books that come out longer than average, and so a
+# disk is never filled to the last byte. 0 uses the estimate as it is.
+space_margin_percent = 20
 
 [web]
 # `dogear serve`: make books from a web browser, on this computer or (with --lan) from a

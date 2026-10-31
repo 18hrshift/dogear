@@ -73,6 +73,26 @@ def make_engine(config: Config, report: Report) -> VoiceEngine:
     )
 
 
+@dataclass(frozen=True)
+class VoicePace:
+    """What the configured voice's audio will be like, known without loading it."""
+
+    sample_rate: int  # of the audio it makes
+    words_per_minute: float  # about how many it says, at the configured speed
+
+
+def voice_pace(config: Config) -> VoicePace:
+    _check_engine(config)
+    speed = config["voice"]["speed"]
+    if speed <= 0:
+        raise VoiceError(
+            f"voice.speed is {speed}, but it must be more than 0.",
+            hint="Use a value from 0.5 to 2.0, such as 0.9 or 1.1.",
+        )
+    kokoro = catalog()["kokoro"]
+    return VoicePace(kokoro["sample_rate"], kokoro["words_per_minute"] * speed)
+
+
 def prepare_kokoro(config: Config, report: Report) -> KokoroSetup:
     """Check the voice settings and make sure every file the voice needs is on disk."""
     _check_engine(config)

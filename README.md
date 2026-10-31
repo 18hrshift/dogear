@@ -171,6 +171,15 @@ is safe**: press Ctrl+C, run the same command later, and it carries on where it 
 Every spoken sentence is kept, so fixing one word in a book re-speaks only the sentences
 that contain it.
 
+It needs disk space, too. The spoken sentences take about 170 MB for each hour of audio,
+in Dogear's speech cache (in your usual cache folder; `cache_dir` under `[render]` in a
+settings file moves it). While it works, it needs about twice that again, and then room for
+what it saves. Before speaking anything, Dogear estimates what the book needs on each disk.
+If a disk doesn't have it, Dogear stops at once and says how much is needed, how much is
+free, and what to do. The estimate counts every sentence as new, so carrying on after a stop
+may ask for more than it uses. `space_margin_percent` under `[output]` (20 at first) adds
+room to it.
+
 Useful options:
 
 ```bash

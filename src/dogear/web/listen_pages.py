@@ -19,8 +19,8 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from dogear.output.filenames import safe_filename
+from dogear.sizes import describe_size
 from dogear.web.books import ID_PATTERN as BOOK_ID
-from dogear.web.downloads import describe_size
 from dogear.web.forms import FormTooBig, first, read_form
 from dogear.web.library import Library
 from dogear.web.listening import ID_PATTERN, Listen, ListenError, Listens, clean_text

@@ -43,6 +43,10 @@ class VoiceError(DogearError):
     """The voice engine can't be set up as configured, or can't speak this book."""
 
 
+class DiskSpaceError(DogearError):
+    """A disk doesn't have the free space a book needs, so it wasn't started."""
+
+
 class OutputFolderError(DogearError):
     """The output folder holds files Dogear must not overwrite, such as another book's audio."""
 
