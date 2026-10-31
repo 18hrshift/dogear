@@ -206,7 +206,7 @@ def test_error_pages_sum_up_the_errors_and_mark_each_field(pages):
 
 def test_choices_sent_back_with_errors_are_kept(pages):
     page = pages["choose-errors"]
-    assert page.xpath("//select[@id='voice']/option[@selected]/@value") == ["af_heart"]
+    assert page.xpath("//select[@id='voice']//option[@selected]/@value") == ["kokoro:af_heart"]
     assert page.xpath("//input[@name='speed'][@checked]/@value") == ["0.9"]
     assert page.xpath("//input[@name='format'][@checked]") == []
 

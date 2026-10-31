@@ -4,6 +4,7 @@ checked."""
 from dataclasses import replace
 
 import pytest
+from engine_fakes import fake_engine, hum_voice
 from web_samples import CHOSEN, add_book, sample_app, sample_summary, visitor
 
 from dogear.make import FORMATS
@@ -11,7 +12,12 @@ from dogear.web import choices
 
 
 def fields(**values):
-    sent = {"format": ["m4b"], "voice": ["af_heart"], "speed": ["0.9"], "section": ["1", "2"]}
+    sent = {
+        "format": ["m4b"],
+        "voice": ["kokoro:af_heart"],
+        "speed": ["0.9"],
+        "section": ["1", "2"],
+    }
     sent.update(values)
     return [(name, value) for name, many in sent.items() for value in many]
 
@@ -26,7 +32,7 @@ def test_defaults_come_from_the_config(config):
     config["voice"]["speed"] = 1.1
     picked = choices.defaults(sample_summary(), config, None)
     assert picked.formats == {"mp3", "daisy"}
-    assert picked.voice == "bf_emma"
+    assert picked.voice == "kokoro:bf_emma"
     assert picked.speed == "1.1"
     assert picked.sections == {1, 2, 3, 4}
 
@@ -35,6 +41,15 @@ def test_a_book_made_before_keeps_its_choices(config):
     picked = choices.defaults(sample_summary(), config, CHOSEN)
     assert picked.formats == {"m4b", "mp3"}
     assert picked.sections == set(CHOSEN.sections)
+    # Saved before there were other engines, as the voice's name alone.
+    assert CHOSEN.voice == "af_heart"
+    assert picked.voice == "kokoro:af_heart"
+
+
+def test_a_voice_sent_by_name_alone_is_kept_with_its_engine(config):
+    _, chosen, errors = choices.check(fields(voice=["bf_emma"]), sample_summary(), config)
+    assert errors == {}
+    assert chosen.voice == "kokoro:bf_emma"
 
 
 def test_speeds_are_words_and_mark_the_usual_one(config):
@@ -51,10 +66,20 @@ def test_speeds_are_words_and_mark_the_usual_one(config):
     assert options[-1].label == "Your usual speed (1.25), the usual"
 
 
-def test_voices_are_best_rated_first():
-    voices = choices.voice_options()
-    assert voices[0].label == "af_heart: American English, female, grade A"
-    assert voices[-1].label.endswith("grade F+")
+def test_voices_are_grouped_by_engine_and_best_rated_first():
+    [kokoro] = choices.voice_options()
+    assert kokoro.label == "Kokoro voices"
+    assert kokoro.options[0] == choices.Option(
+        "kokoro:af_heart", "af_heart: American English, female, grade A"
+    )
+    assert kokoro.options[-1].label.endswith("grade F+")
+
+
+def test_each_installed_engine_has_its_own_group(installed_engines):
+    installed_engines(fake_engine("hum", "Hum", [hum_voice("low"), hum_voice("high")]))
+    groups = choices.voice_options()
+    assert [g.label for g in groups] == ["Hum voices", "Kokoro voices"]
+    assert [o.value for o in groups[0].options] == ["hum:low", "hum:high"]
 
 
 def test_good_choices_are_kept_in_format_order(config):

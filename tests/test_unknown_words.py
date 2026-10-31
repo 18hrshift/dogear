@@ -117,7 +117,7 @@ def fakes(monkeypatch, config, tmp_path):
     def no_network(*args, **kwargs):
         raise AssertionError("tests must not download anything")
 
-    monkeypatch.setattr("dogear.voice.ensure_files", fake_ensure_files)
+    monkeypatch.setattr("dogear.voice.kokoro_plugin.ensure_files", fake_ensure_files)
     monkeypatch.setattr(downloads.urllib.request, "urlopen", no_network)
     return requested
 

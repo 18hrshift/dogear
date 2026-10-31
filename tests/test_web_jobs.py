@@ -88,7 +88,12 @@ def wait_for(app, book_id: str, *states: str, timeout: float = 30) -> BookRecord
 
 
 def choose(client, book_id: str, **fields) -> None:
-    data = {"format": ["m4b"], "voice": "af_heart", "speed": "0.9", "section": ["1", "2", "3"]}
+    data = {
+        "format": ["m4b"],
+        "voice": "kokoro:af_heart",
+        "speed": "0.9",
+        "section": ["1", "2", "3"],
+    }
     data.update(fields)
     response = client.post(f"/books/{book_id}/choose", data=data, follow_redirects=False)
     assert response.status_code == 303, response.text
@@ -131,7 +136,7 @@ def test_a_book_is_read_chosen_made_and_downloaded(running, commands):
     assert outline[0] == "outline" and outline[2] == "--json"
     assert make[0] == "make"
     assert make[make.index("--format") + 1] == "m4b,mp3"
-    assert make[make.index("--voice") + 1] == "af_heart"
+    assert make[make.index("--voice") + 1] == "kokoro:af_heart"
     assert make[make.index("--speed") + 1] == "1"
     assert make[make.index("--sections") + 1] == "2-3"
     assert Path(make[make.index("-o") + 1]) == app.state.library.folder(book_id) / "made"
@@ -354,7 +359,7 @@ def test_stop_then_start_again(running):
     set_behaviour(app, book_id, "ok")
     client.post(f"/books/{book_id}/again")
     record = wait_for(app, book_id, "done")
-    assert record.choices == Choices(("m4b",), "af_heart", 0.9, (1, 2, 3))
+    assert record.choices == Choices(("m4b",), "kokoro:af_heart", 0.9, (1, 2, 3))
 
 
 @pytest.mark.parametrize("how", ["stop", "server closing"])

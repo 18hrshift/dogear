@@ -1,4 +1,4 @@
-"""The pinned list of files Dogear downloads for its built-in voice (`catalog.toml`).
+"""The pinned list of files Dogear downloads for Kokoro, its built-in voice (`catalog.toml`).
 
 Each file lives in the models folder, unless a standalone build carries the same file
 (same SHA-256): then that read-only copy is used and nothing is downloaded.
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from dogear import bundle
+from dogear.errors import VoiceError
 from dogear.voice.downloads import RemoteFile
 
 _GRADE_ORDER = "ABCDF"
@@ -53,9 +54,15 @@ def _grade_rank(grade: str) -> tuple[int, int]:
     return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
 
 
-def describe_voice(voice: VoiceInfo) -> str:
-    """'af_heart: American English, female, grade A'"""
-    return f"{voice.name}: {voice.accent} English, {voice.gender}, grade {voice.grade}"
+def kokoro_voice(name: str) -> VoiceInfo:
+    """The Kokoro voice called `name`."""
+    for voice in kokoro_voices():
+        if voice.name == name:
+            return voice
+    raise VoiceError(
+        f"The Kokoro voice engine has no voice called '{name}'.",
+        hint="Run `dogear voices` to list them.",
+    )
 
 
 def kokoro_file(kind: str, name: str, models_dir: Path) -> RemoteFile:

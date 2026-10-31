@@ -34,11 +34,15 @@
 
   <div class="field{% if errors.get('voice') %} has-error{% endif %}">
     <label for="voice">Voice</label>
-    <p class="hint" id="voice-hint">Best rated first. The grades are the voice makers' own, A best.</p>
+    <p class="hint" id="voice-hint">Grouped by the voice engine that speaks them, best first in each group. Grades are the voice makers' own, A best.</p>
     {{ error_message(errors, "voice", "voice-error") }}
     <select id="voice" name="voice" aria-describedby="{{ describedby('voice-hint', errors, 'voice', 'voice-error') }}">
-      {% for voice in voices %}
-      <option value="{{ voice.value }}"{% if voice.value == picked.voice %} selected{% endif %}>{{ voice.label }}</option>
+      {% for group in voices %}
+      <optgroup label="{{ group.label }}">
+        {% for voice in group.options %}
+        <option value="{{ voice.value }}"{% if voice.value == picked.voice %} selected{% endif %}>{{ voice.label }}</option>
+        {% endfor %}
+      </optgroup>
       {% endfor %}
     </select>
   </div>

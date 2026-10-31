@@ -7,8 +7,9 @@ from dataclasses import dataclass
 
 from dogear.book_summary import BookSummary
 from dogear.config import Config
+from dogear.errors import VoiceError
 from dogear.make import FORMATS, speaks_language
-from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
+from dogear.voice.engines import configured_voice, describe_voice, find_voice, installed
 from dogear.web.books import Choices
 from dogear.web.forms import every, first
 
@@ -68,6 +69,14 @@ class Option:
 
 
 @dataclass(frozen=True)
+class VoiceGroup:
+    """One engine's voices, shown together under its name."""
+
+    label: str
+    options: tuple[Option, ...]
+
+
+@dataclass(frozen=True)
 class Picked:
     """What the form shows as chosen: the defaults, or what was sent back."""
 
@@ -82,8 +91,20 @@ def format_options() -> list[FormatInfo]:
     return list(FORMAT_INFO.values())
 
 
-def voice_options() -> list[Option]:
-    return [Option(v.name, describe_voice(v)) for v in kokoro_voices_best_first()]
+def voice_options() -> list[VoiceGroup]:
+    """Each installed engine's voices, best first. A value names the engine as well as
+    the voice ("kokoro:af_heart"), so it stays clear whatever other engines have."""
+    return [
+        VoiceGroup(
+            f"{engine.title} voices",
+            tuple(Option(f"{engine.name}:{v.name}", describe_voice(v)) for v in engine.voices),
+        )
+        for engine in installed().engines
+    ]
+
+
+def voice_values() -> set[str]:
+    return {option.value for group in voice_options() for option in group.options}
 
 
 def speed_options(config: Config) -> list[Option]:
@@ -111,14 +132,14 @@ def defaults(summary: BookSummary, config: Config, last: Choices | None) -> Pick
     if last is not None:
         return Picked(
             formats=frozenset(last.formats),
-            voice=last.voice,
+            voice=_named_with_engine(last.voice),
             speed=_speed_text(last.speed),
             sections=frozenset(last.sections),
             as_english=last.as_english,
         )
     return Picked(
         formats=frozenset(f for f in config["output"]["formats"] if f in FORMATS),
-        voice=config["voice"]["voice"],
+        voice=_configured_voice(config),
         speed=_speed_text(float(config["voice"]["speed"])),
         sections=frozenset(s.number for s in summary.sections),
         as_english=False,
@@ -134,7 +155,7 @@ def check(
     sent_sections = [section_number(v) for v in every(fields, "section")]
     picked = Picked(
         formats=frozenset(f for f in every(fields, "format") if f in FORMATS),
-        voice=first(fields, "voice"),
+        voice=_named_with_engine(first(fields, "voice")),
         speed=first(fields, "speed"),
         sections=frozenset(n for n in sent_sections if n in numbers),
         as_english=first(fields, "english") == "yes",
@@ -147,7 +168,7 @@ def check(
         )
     if not picked.formats:
         errors["format"] = "Choose at least one thing to make."
-    if picked.voice not in {option.value for option in voice_options()}:
+    if picked.voice not in voice_values():
         errors["voice"] = "Choose a voice from the list."
     if picked.speed not in {option.value for option in speed_options(config)}:
         errors["speed"] = "Choose a speed."
@@ -166,6 +187,23 @@ def check(
         as_english=picked.as_english and asks_about_language(summary),
     )
     return picked, choices, {}
+
+
+def _named_with_engine(voice: str) -> str:
+    """A voice as the form's values name it, with its engine. Books chosen before there
+    were other engines saved the voice's name alone, such as "af_heart", and a page
+    opened before then sends it that way too."""
+    try:
+        return find_voice(voice).spec
+    except VoiceError:
+        return voice  # no longer installed: nothing in the list starts out chosen
+
+
+def _configured_voice(config: Config) -> str:
+    try:
+        return configured_voice(config).spec
+    except VoiceError:
+        return ""  # the settings name a voice that isn't installed
 
 
 def section_number(value: str) -> int | None:
