@@ -88,6 +88,13 @@ def wait_for(app, book_id: str, *states: str, timeout: float = 30) -> BookRecord
     raise AssertionError(f"book {book_id} is {record.state if record else 'gone'}, not {states}")
 
 
+def wait_until_idle(worker, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while worker.running() is not None:
+        assert time.monotonic() < deadline, f"the worker is still running {worker.running()}"
+        time.sleep(0.05)
+
+
 def choose(client, book_id: str, **fields) -> None:
     data = {
         "format": ["m4b"],
@@ -323,10 +330,12 @@ def test_a_bug_while_making_ends_the_child_before_the_job_ends(running, monkeypa
     maker = pids()
     record = wait_for(app, book_id, "failed")
     assert record.error == UNEXPECTED
-    assert app.state.library.maker.running() is None
+    # The child was ended before the job failed the book; the worker lets go of the job
+    # a moment after that, so it is waited for rather than caught mid-step.
     if os.name != "nt":
         with pytest.raises(ProcessLookupError):
             os.kill(maker, 0)  # ended, and waited for
+    wait_until_idle(app.state.library.maker)
 
     monkeypatch.setattr(making, "read_lines", child.read_lines)
     set_behaviour(app, book_id, "ok")
