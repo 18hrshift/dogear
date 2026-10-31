@@ -309,7 +309,10 @@ Settings, under `[ocr]`: `language` is the book's language as Tesseract names it
 `"eng"` (the default) or `"eng+fra"`. Each one needs its language pack (Debian, Ubuntu:
 `sudo apt install tesseract-ocr-fra`; macOS: `brew install tesseract-lang`), and Dogear
 says which is missing. `dpi` is how sharply pages are drawn for Tesseract (300). Changing
-either, or updating Tesseract, reads the book again. To have Dogear stop at a scanned PDF
+either, or updating Tesseract or a language pack, reads the book again. A page whose picture would be over
+`max_page_megapixels` (100) or `max_page_side_pixels` (32,767 pixels wide or tall) is
+drawn at a lower resolution; one that would need less than 70 dpi to fit, a page many feet
+across, isn't read at all, and Dogear says which page it is. To have Dogear stop at a scanned PDF
 and say so instead, set `auto_ocr = false` under `[pdf]`.
 
 `dogear ocr scanned.pdf` saves a copy of a scanned PDF with its words added as a text
@@ -539,7 +542,9 @@ or with `allow_cloud = true` under `[voice]` in your settings file, which also l
 web page offer cloud voices. Without it, Dogear stops before reading the book, says which
 computer the voice would send the text to, and sends nothing. With it, Dogear says once,
 in plain sentences, where the text is going and that the service's terms apply, before
-sending any; the web page shows the same words and asks before it starts. `dogear voices`
+sending any; the web page shows the same words and asks before it starts, naming every
+cloud voice the book may use, including one `[voice.languages]` gives another language.
+`dogear voices`
 marks every such voice with the computer it sends text to, such as "(sends the book's
 text to api.openai.com)". The service's key goes in an environment variable
 (`OPENAI_API_KEY` at first), never in a settings file.

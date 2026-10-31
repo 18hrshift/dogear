@@ -449,7 +449,9 @@ class EngineVoice:
     """An engine's VoiceEngine as the renderer uses it. Each plan's cache key is made to
     cover the engine's name and the voice's on top of what the engine's own key covers
     (its model, settings, and input), so two engines can never share a cached sentence.
-    The engine's own errors become VoiceErrors (see `run_plugin`)."""
+    The engine's own errors become VoiceErrors (see `run_plugin`), and so does anything
+    it gives that isn't what the interface asks for: a plan that isn't a SpeechPlan, or
+    audio that isn't one channel of finite samples."""
 
     chosen: ChosenVoice
     inner: VoiceEngine
@@ -458,15 +460,17 @@ class EngineVoice:
     def __post_init__(self) -> None:
         rate = getattr(self.inner, "sample_rate", None)
         if not isinstance(rate, int) or isinstance(rate, bool) or rate <= 0:
-            raise VoiceError(
-                f"The {self.chosen.engine.title} voice engine gave the sample rate {rate!r}.",
-                hint=f"This is a bug in {self.chosen.engine.package}. Please report it to "
-                f"{self.chosen.engine.report_to}.",
-            )
+            raise self._bug(f"gave the sample rate {_short(rate)}", "it is a whole number of Hz")
         self.sample_rate = rate
 
     def plan(self, text: str) -> SpeechPlan:
         plan = run_plugin(self.chosen.engine, "preparing a sentence", lambda: self.inner.plan(text))
+        if not isinstance(plan, SpeechPlan):
+            raise self._bug(f"gave {_short(plan)} as a sentence's plan", "plan gives a SpeechPlan")
+        if not isinstance(plan.key, str) or not isinstance(plan.payload, str):
+            raise self._bug(
+                "gave a plan whose key or payload isn't text", "a SpeechPlan holds two strings"
+            )
         identity = f"{self.chosen.engine.name}\n{self.chosen.voice.name}\n{plan.key}"
         return SpeechPlan(hashlib.sha256(identity.encode()).hexdigest(), plan.payload)
 
@@ -474,11 +478,33 @@ class EngineVoice:
         samples = run_plugin(
             self.chosen.engine, "speaking a sentence", lambda: self.inner.render(plan)
         )
-        audio = np.asarray(samples, dtype=np.float32)
+        try:
+            with np.errstate(over="ignore", invalid="ignore"):  # found just below instead
+                audio = np.asarray(samples, dtype=np.float32)
+        except Exception as e:  # an engine's audio could be anything at all
+            raise self._bug(
+                f"gave audio that isn't samples ({_one_line(e)})", "audio is a numpy array"
+            ) from None
         if audio.ndim != 1:
-            raise VoiceError(
-                f"The {self.chosen.engine.title} voice engine gave audio of shape {audio.shape}.",
-                hint=f"This is a bug in {self.chosen.engine.package}: audio is one channel of "
-                f"samples. Please report it to {self.chosen.engine.report_to}.",
+            raise self._bug(f"gave audio of shape {audio.shape}", "audio is one channel of samples")
+        if not np.isfinite(audio).all():
+            raise self._bug(
+                "gave audio with samples that aren't numbers (NaN) or are infinite",
+                "every sample is a number from -1 to 1",
             )
         return audio
+
+    def _bug(self, what: str, rule: str) -> VoiceError:
+        engine = self.chosen.engine
+        return VoiceError(
+            f"The {engine.title} voice engine {what}.",
+            hint=f"This is a bug in {engine.package}: {rule}. Please report it to "
+            f"{engine.report_to}.",
+        )
+
+
+def _short(value: object) -> str:
+    """A value an engine gave, for a message: None, a number, or else its type."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return repr(value)
+    return f"a {type(value).__name__}"

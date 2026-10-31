@@ -89,11 +89,19 @@ max_file_mb = 64
 [markdown]
 # Largest Markdown file Dogear reads, in megabytes. A long novel is under 3 MB.
 max_file_mb = 32
+# Most lines a Markdown file may have: reading one takes memory for each line, even a
+# blank one. A 3 MB novel hard-wrapped at 72 characters has under 60,000.
+max_lines = 500000
+# Most pieces a Markdown file may be read into, each paragraph, heading, list item,
+# table cell, line break, link, and stretch of text or emphasis being one or a few. The
+# same 3 MB novel is about 120,000. A table's rows are filled out to its header's width,
+# so without this a small file with a wide table could fill the memory.
+max_pieces = 1000000
 
 [ocr]
 # How scanned PDFs are read with OCR: by itself when [pdf] auto_ocr is true, and by
-# `dogear ocr`. Changing any of these, or updating Tesseract, reads a scanned PDF again
-# rather than using the text kept from an earlier read.
+# `dogear ocr`. Changing any of these, or updating Tesseract or a language pack, reads a
+# scanned PDF again rather than using the text kept from an earlier read.
 # Each page is drawn as a picture at this resolution for Tesseract. 300 suits print; 70
 # is the least Tesseract takes.
 dpi = 300
@@ -105,6 +113,11 @@ language = "eng"
 # one page. A book page at 300 dpi is about 8 megapixels; 100 is a page about 33 inches
 # (85 cm) square.
 max_page_megapixels = 100
+# So is a page whose picture would be wider or taller than this many pixels. 32767 is the
+# most Tesseract reads; at 300 dpi it is a page about 9 feet (2.8 m) long. A page that
+# would have to be drawn at less than 70 dpi, the least Tesseract reads, to fit both
+# limits isn't read at all: Dogear stops and says which page it is.
+max_page_side_pixels = 32767
 
 [speech]
 # Longest piece of text sent to a voice engine at once. Longer sentences are split at

@@ -6,13 +6,20 @@ the words Tesseract found, as invisible text where they are printed, without the
 picture of the page, which Dogear doesn't read. Each is written under a temporary name
 and renamed when complete. Once every page is read they are joined (pypdf) into
 `text-layer.pdf`, written the same way, and the page files are deleted. The key is the
-SHA-256 of the PDF's bytes together with the [ocr] settings and Tesseract's version, so
-changing any of them reads the book again.
+SHA-256 of the PDF's bytes together with the [ocr] settings, Tesseract's version, and
+the SHA-256 of each language's data file (tesseract.py), so changing any of them reads
+the book again.
 
 One run at a time works in a key's folder, holding the lock on its `in-use.lock`
 (file_lock.py) while it reads pages or joins them. Another run on the same file waits,
 saying so, then uses what the first one made. A run holding the lock first deletes the
 temporary files of runs that were killed part way.
+
+A kept `text-layer.pdf` is checked before it is used: it must open, with pdfplumber as
+the PDF reader will, and have a page for each of the PDF's. One that doesn't was damaged
+in the cache folder: a run holding the lock deletes it, says so, and makes it again from
+the page files still there, reading the rest with OCR again. `discard` does the same for
+one that opened but couldn't be read.
 """
 
 from __future__ import annotations
@@ -26,7 +33,10 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
+import pdfplumber
 import pypdfium2
+from pdfminer.psparser import PSException
+from pdfplumber.utils.exceptions import PdfminerException
 from pypdf import PdfWriter
 from pypdf.errors import PyPdfError
 
@@ -49,6 +59,10 @@ PARTIAL = ".part"
 FORMAT = 1
 WAIT_POLL_SECONDS = 1.0
 ALREADY_READ = "This PDF is scanned. Dogear read it with OCR before, so it uses that text."
+DAMAGED = (
+    "The text Dogear kept from reading this PDF with OCR before was damaged in its cache "
+    "folder ({problem}), so Dogear makes it again."
+)
 
 
 def text_layer(path: Path, config: Config, report: Report) -> Path:
@@ -59,23 +73,54 @@ def text_layer(path: Path, config: Config, report: Report) -> Path:
     tesseract = find_tesseract(config, settings)
     folder = cache_dir(config) / FOLDER / cache_key(path, settings, tesseract)
     joined = folder / TEXT_LAYER
-    if joined.is_file():  # complete: it's only ever renamed into place
-        report(ALREADY_READ)
-        return joined
     document = open_pdf(path)
     try:
         total = len(document)
+        if joined.is_file() and _problem(joined, total) is None:  # only renamed into place
+            report(ALREADY_READ)
+            return joined
         folder.mkdir(parents=True, exist_ok=True)
         with _working_in(folder, total, report):
-            if joined.is_file():  # made by a run this one waited for
-                report(ALREADY_READ)
-                return joined
+            if joined.is_file():  # made by a run this one waited for, or damaged
+                problem = _problem(joined, total)
+                if problem is None:
+                    report(ALREADY_READ)
+                    return joined
+                report(DAMAGED.format(problem=problem))
+                joined.unlink()
             _clear_leftovers(folder)
             _read_pages(document, folder, tesseract, settings, report)
             _join(folder, total, joined)
     finally:
         document.close()
     return joined
+
+
+def discard(layer: Path) -> bool:
+    """Delete `layer`, a text layer `text_layer` gave that turned out to be damaged, so
+    the next run makes it again. Only when no other run is working in its folder: one
+    that is may be making it again already. Whether it was deleted."""
+    lock = FileLock.try_acquire(layer.parent / LOCK_NAME)
+    if lock is None:
+        return False
+    try:
+        layer.unlink(missing_ok=True)
+        return True
+    finally:
+        lock.release()
+
+
+def _problem(joined: Path, total: int) -> str | None:
+    """What is wrong with a kept text layer, or None if it opens with a page for each of
+    the PDF's `total`."""
+    try:
+        with pdfplumber.open(joined) as pdf:
+            pages = len(pdf.pages)
+    except (PdfminerException, PSException, OSError) as e:
+        return f"it couldn't be opened: {e}"
+    if pages != total:
+        return f"it has {count(pages, 'page')}, not {total:,}"
+    return None
 
 
 def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
@@ -90,7 +135,9 @@ def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
         "language": settings.language,
         "dpi": settings.dpi,
         "max_page_pixels": settings.max_page_pixels,
+        "max_page_side": settings.max_page_side,
         "tesseract": tesseract.version,
+        "language_data": tesseract.language_data,
     }
     return hashlib.sha256(json.dumps(facts, sort_keys=True).encode("utf-8")).hexdigest()
 

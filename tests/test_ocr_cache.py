@@ -17,7 +17,7 @@ from reportlab.pdfgen.canvas import Canvas
 from dogear.errors import ExtractionError
 from dogear.file_lock import FileLock
 from dogear.ocr import cache
-from dogear.ocr.cache import ALREADY_READ, cache_key, text_layer
+from dogear.ocr.cache import ALREADY_READ, cache_key, discard, text_layer
 from dogear.ocr.settings import OcrSettings
 from dogear.ocr.tesseract import Tesseract
 
@@ -127,15 +127,23 @@ def test_the_cache_key_covers_the_file_the_ocr_settings_and_tesseract(scan, conf
         cache_key(scan, replace(settings, language="eng+fra"), TESSERACT),
         cache_key(scan, replace(settings, dpi=200), TESSERACT),
         cache_key(scan, replace(settings, max_page_pixels=1), TESSERACT),
+        cache_key(scan, replace(settings, max_page_side=1000), TESSERACT),
         cache_key(scan, settings, Tesseract("tesseract", "tesseract 5.4.0")),
+        cache_key(scan, settings, Tesseract("tesseract", "tesseract 5.3.4", "eng=a new pack")),
     ]
     other = scanned_words(tmp_path / "other.pdf", ["ONE", "TWO", "FOUR"], dpi=20)
     changed.append(cache_key(other, settings, TESSERACT))
-    assert len({key, *changed}) == 6
+    assert len({key, *changed}) == 8
 
 
 @pytest.mark.parametrize(
-    ("key", "value"), [("dpi", 200), ("language", "eng+fra"), ("max_page_megapixels", 50)]
+    ("key", "value"),
+    [
+        ("dpi", 200),
+        ("language", "eng+fra"),
+        ("max_page_megapixels", 50),
+        ("max_page_side_pixels", 20000),
+    ],
 )
 def test_changing_an_ocr_setting_reads_the_book_again(fake, scan, config, key, value):
     text_layer(scan, config, print)
@@ -164,7 +172,7 @@ def test_another_run_on_the_same_file_is_waited_for(fake, scan, config, monkeypa
             (folder / f"page-{n:05d}.pdf").write_bytes(b"%PDF")
         until(lambda: len(lines) == 2)
         assert lines[1] == "The other Dogear has read 10 of 12 pages with OCR."
-        shutil.copyfile(scan, folder / "text-layer.pdf")  # it finished
+        shutil.copyfile(big, folder / "text-layer.pdf")  # it finished: a page for each page
     finally:
         other.release()
     waiter.join(10)
@@ -203,3 +211,55 @@ def test_a_page_damaged_in_the_cache_is_read_again(fake, scan, config, tmp_path)
     layer = text_layer(scan, config, print)
     assert fake.read == [0, 2, 1]
     assert texts(layer)[1] == PAGE_TEXT.format(n=2)
+
+
+@pytest.mark.parametrize(
+    ("damage", "problem"),
+    [
+        (b"", "it couldn't be opened"),
+        (b"%PDF-1.4 and then nothing", "it couldn't be opened"),
+        ("one page", "it has 1 page, not 3"),
+    ],
+)
+def test_a_text_layer_damaged_in_the_cache_is_made_again(
+    fake, scan, config, tmp_path, damage, problem
+):
+    """Before, a damaged text-layer.pdf was used every time, and the error blamed the PDF."""
+    layer = text_layer(scan, config, print)
+    if damage == "one page":
+        shutil.copyfile(scanned_words(tmp_path / "one.pdf", ["ONE"], dpi=20), layer)
+    else:
+        layer.write_bytes(damage)
+    lines = []
+    assert text_layer(scan, config, lines.append) == layer
+    assert lines[0].startswith(
+        "The text Dogear kept from reading this PDF with OCR before was damaged in its cache "
+        f"folder ({problem}"
+    )
+    assert lines[0].endswith("), so Dogear makes it again.")
+    assert fake.read == [0, 1, 2, 0, 1, 2]
+    assert texts(layer) == [PAGE_TEXT.format(n=n) for n in (1, 2, 3)]
+
+
+def test_a_damaged_text_layer_is_made_again_from_the_pages_still_kept(fake, scan, config):
+    fake.stop_at = 2
+    with pytest.raises(KeyboardInterrupt):
+        text_layer(scan, config, print)
+    folder = folder_of(scan, config)
+    (folder / "text-layer.pdf").write_bytes(b"not a pdf")  # as if damaged after a join
+    fake.stop_at = None
+    layer = text_layer(scan, config, print)
+    assert fake.read == [0, 1, 2]  # pages 1 and 2 came from the cache folder
+    assert texts(layer) == [PAGE_TEXT.format(n=n) for n in (1, 2, 3)]
+
+
+def test_a_damaged_text_layer_is_discarded_unless_another_run_is_working(fake, scan, config):
+    layer = text_layer(scan, config, print)
+    other = FileLock.try_acquire(layer.parent / "in-use.lock")
+    try:
+        assert not discard(layer)  # it may be making it again already
+        assert layer.exists()
+    finally:
+        other.release()
+    assert discard(layer)
+    assert not layer.exists()

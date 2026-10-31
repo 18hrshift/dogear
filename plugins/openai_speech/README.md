@@ -140,7 +140,9 @@ files apply, because Dogear changes the text before sending it. Phoneme entries 
 ## What can go wrong
 
 Dogear stops with a message that says what to do: a key turned down (401: check the key in
-`OPENAI_API_KEY`), asked to slow down even after trying again (429: lower
+`OPENAI_API_KEY`), a key a request can't carry (one with a line break, a space, another
+control character, or a character outside Latin-1, such as two keys pasted together or a
+curly quote), asked to slow down even after trying again (429: lower
 `requests_per_minute`, or wait), an account out of credit, a service error (5xx: try again
 later), or audio that isn't what the settings say. The sentences spoken before the stop are
 kept, so running the same command again carries on.

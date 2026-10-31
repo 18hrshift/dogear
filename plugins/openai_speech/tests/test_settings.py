@@ -113,6 +113,34 @@ def test_the_key_comes_from_the_environment(table, monkeypatch):
     assert api_key(read_settings(config)) == "sk-test"
 
 
+@pytest.mark.parametrize(
+    ("key", "problem"),
+    [
+        ("sk-proj-FIRSTPART\nsk-proj-SECONDPART", "a line break"),
+        ("sk-proj-FIRSTPART\rSECONDPART", "a line break"),
+        ("sk-proj-FIRSTPART\x01SECONDPART", "a control character"),
+        ("sk-proj-FIRSTPART\tSECONDPART", "a control character"),
+        ("sk-proj-FIRSTPART\x85SECONDPART", "a control character"),
+        ("sk-proj-FIRSTPART SECONDPART", "a space"),
+        ("sk-proj-FIRSTPART’SECONDPART", "a character outside Latin-1"),
+    ],
+)
+def test_a_key_a_request_cant_carry_is_refused_without_showing_it(table, monkeypatch, key, problem):
+    config, _ = table
+    monkeypatch.setenv("OPENAI_API_KEY", key)
+    with pytest.raises(VoiceError) as error:
+        api_key(read_settings(config))
+    said = error.value.message + error.value.hint + str(error.value)
+    assert f"OPENAI_API_KEY has {problem} in it" in error.value.message
+    assert "FIRSTPART" not in said and "SECONDPART" not in said and "sk-proj" not in said
+
+
+def test_a_key_may_have_any_printable_latin_1_character(table, monkeypatch):
+    config, _ = table
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-AZaz09_-.~+/=é")
+    assert api_key(read_settings(config)) == "sk-AZaz09_-.~+/=é"
+
+
 def test_a_missing_key_for_another_computer_says_how_to_give_it(table):
     config, _ = table
     with pytest.raises(VoiceError, match="OPENAI_API_KEY has no key in it") as error:

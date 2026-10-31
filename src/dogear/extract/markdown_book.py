@@ -13,6 +13,8 @@ strikethrough, and footnotes (`[^1]`). The HTML then goes through the HTML extra
   mark an image decorative: that needs HTML, `<img src="rule.png" alt="">`.
 - YAML front matter gives the title, authors, and language (see `front_matter`).
   Without a title there, the title is the one level-1 heading, else the file name.
+- A file with more lines or pieces than [markdown] max_lines and max_pieces allow is
+  refused, so a small file can't fill the memory (see `markdown_limits`).
 
 Markdown files are read as UTF-8 (or UTF-16 with a byte order mark), the encoding
 Markdown tools expect.
@@ -38,6 +40,7 @@ from dogear.extract.front_matter import FrontMatter, NotFrontMatter, read_front_
 from dogear.extract.html_book import read_html
 from dogear.extract.html_parse import parse_html
 from dogear.extract.limited_read import read_limited
+from dogear.extract.markdown_limits import MarkdownLimits, check_lines, count_pieces
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +51,10 @@ MAX_NESTING = 100
 
 def extract(path: Path, config: Config) -> Book:
     """Read the Markdown file at `path`."""
+    limits = MarkdownLimits.from_config(config)
     text = _decode(read_limited(path, config, "markdown", "Markdown"), path.name)
-    front, body = _render(text, path.name)
+    check_lines(text, path.name, limits)
+    front, body = _render(text, path.name, limits)
     root = parse_html(_page(front, body), path.name)
     return read_html(root, path, source_format=path.suffix.lower().lstrip("."))
 
@@ -65,9 +70,9 @@ def _decode(data: bytes, what: str) -> str:
         ) from None
 
 
-def _render(text: str, what: str) -> tuple[FrontMatter, str]:
+def _render(text: str, what: str, limits: MarkdownLimits) -> tuple[FrontMatter, str]:
     """The front matter and the HTML for the rest of `text`."""
-    md = _markdown(front_matter=True)
+    md = _markdown(what, limits, front_matter=True)
     env: dict = {}
     tokens = md.parse(text, env)
     front = FrontMatter()
@@ -77,7 +82,8 @@ def _render(text: str, what: str) -> tuple[FrontMatter, str]:
             front = read_front_matter(found.content, what)
         except NotFrontMatter:
             log.info("%s opens with --- lines that aren't front matter; reading them.", what)
-            md, env = _markdown(front_matter=False), {}
+            tokens = []  # the first parse's, let go before the second is made
+            md, env = _markdown(what, limits, front_matter=False), {}
             tokens = md.parse(text, env)
     if any(t.level >= MAX_NESTING - 1 for t in tokens):
         raise ExtractionError(
@@ -88,12 +94,13 @@ def _render(text: str, what: str) -> tuple[FrontMatter, str]:
     return front, md.renderer.render(tokens, md.options, env)
 
 
-def _markdown(*, front_matter: bool) -> MarkdownIt:
+def _markdown(what: str, limits: MarkdownLimits, *, front_matter: bool) -> MarkdownIt:
     md = MarkdownIt("commonmark", {"html": True, "maxNesting": MAX_NESTING})
     md.enable(["table", "strikethrough"])
     if front_matter:
         md.use(front_matter_plugin)
     md.use(footnote_plugin)
+    count_pieces(md, what, limits)
     md.add_render_rule("image", _image)
     md.add_render_rule("footnote_ref", _footnote_ref)
     md.add_render_rule("footnote_block_open", _footnotes_open)

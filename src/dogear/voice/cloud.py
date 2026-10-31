@@ -80,9 +80,52 @@ def sends_text(host: str) -> str:
     return f"sends the book's text to {host}"
 
 
+def hosts_in_words(found: Iterable[CloudVoice]) -> str:
+    """Where the voices send text, each computer once: "a.example", "a.example and
+    b.example", or "a.example, b.example, and c.example"."""
+    hosts = list(dict.fromkeys(cloud.host for cloud in found))
+    if len(hosts) <= 2:
+        return " and ".join(hosts)
+    return f"{', '.join(hosts[:-1])}, and {hosts[-1]}"
+
+
+def run_warning(found: list[CloudVoice], main: ChosenVoice) -> list[str]:
+    """What a run would send where, for every cloud voice it may use (`found`, from
+    voices_for_run), in plain sentences: the web page shows them before a book starts.
+    For the main voice alone, the sentences `dogear make` says (`warning`)."""
+    if [cloud.chosen.spec for cloud in found] == [main.spec]:
+        return warning(found[0])
+    others = [cloud for cloud in found if cloud.chosen.spec != main.spec]
+    lines = [
+        f"The voice {cloud.chosen.voice.name} is spoken by a service at {cloud.host}, not on "
+        "this computer."
+        + (
+            ""
+            if cloud.chosen.spec == main.spec
+            else " Your settings have it read passages in another language."
+        )
+        for cloud in found
+    ]
+    return [
+        *lines,
+        f"Everything these voices say is sent to {hosts_in_words(found)} as text, one "
+        "sentence at a time, and comes back as audio. For a book, that is the text each "
+        "voice reads.",
+        "Each service's own terms and privacy policy apply to the text, and it may charge for it.",
+        "Stopping Dogear stops the sending. What was spoken so far is kept.",
+        "To keep text on this computer, choose another voice"
+        + (
+            ", and take the voices that send it out of [voice.languages] in your settings file."
+            if others
+            else "."
+        ),
+    ]
+
+
 def warning(cloud: CloudVoice) -> list[str]:
     """What will be sent where, in plain sentences, said once before any is sent. The web
-    page shows the same sentences before a book starts."""
+    page shows the same sentences before a book starts, when the main voice is the only
+    cloud voice a run may use."""
     name, host = cloud.chosen.voice.name, cloud.host
     return [
         f"The voice {name} is spoken by a service at {host}, not on this computer.",

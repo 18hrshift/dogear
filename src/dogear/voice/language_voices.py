@@ -11,7 +11,8 @@ or one that language detection found. Its voice is, in order:
    has.
 
 A passage with no language at all is the main voice's. Nothing here loads or downloads
-a voice: it only chooses among the voices the installed engines list.
+a voice: it only chooses among the voices the installed engines list with these settings
+(`Engine.voices_in`), so a speech service's voices are the ones its settings name.
 """
 
 from __future__ import annotations
@@ -36,9 +37,9 @@ class LanguageVoices:
     main: ChosenVoice
     mapped: dict[str, ChosenVoice]  # language tag, as lookup_keys writes it -> its voice
     best_for_others: bool
-    # The settings, for "best": a voice that sends text off this computer is never chosen
-    # that way, only when the settings name it.
-    config: Config | None = field(default=None, compare=False, repr=False)
+    # The settings: they give each engine's voices, and with "best", a voice that sends
+    # text off this computer is never chosen that way, only when the settings name it.
+    config: Config = field(compare=False, repr=False)
 
     @classmethod
     def from_config(cls, config: Config, main: ChosenVoice | None = None) -> LanguageVoices:
@@ -82,7 +83,7 @@ class LanguageVoices:
         if self.best_for_others:
             # A passage's tag picks the voice for that exact tag, else for its language,
             # so asking for every tag the voices have, and every language, finds them all.
-            tags = {v.language for e in installed().engines for v in e.voices}
+            tags = {v.language for e in installed().engines for v in e.voices_in(self.config)}
             for tag in sorted(tags | {primary(t) for t in tags}):
                 chosen = self.speaker(tag)
                 if chosen is not None:
@@ -121,9 +122,10 @@ def best_voice(
     return next(iter(exact + same), None)
 
 
-def voices_for(lang: str) -> list[ChosenVoice]:
-    """Every installed voice that speaks `lang`, best first, as `best_voice` ranks them."""
-    voices = [ChosenVoice(e, v) for e in installed().engines for v in e.voices]
+def voices_for(lang: str, config: Config) -> list[ChosenVoice]:
+    """Every installed voice that speaks `lang` with these settings, best first, as
+    `best_voice` ranks them."""
+    voices = [ChosenVoice(e, v) for e in installed().engines for v in e.voices_in(config)]
     exact = [c for c in voices if c.voice.language.lower() == lang.lower()]
     return exact + [c for c in voices if same_language(c.voice.language, lang) and c not in exact]
 
@@ -141,7 +143,8 @@ def other_languages(config: Config) -> str:
 
 
 def mapped_voices(config: Config) -> dict[str, ChosenVoice]:
-    """[voice.languages], each voice found and checked to speak its language."""
+    """[voice.languages], each voice found among those these settings give (so a speech
+    service's are the ones its own table lists) and checked to speak its language."""
     mapped: dict[str, ChosenVoice] = {}
     for tag, spec in config["voice"]["languages"].items():
         where = f"voice.languages.{tag}"
@@ -158,12 +161,12 @@ def mapped_voices(config: Config) -> dict[str, ChosenVoice]:
                 f"[voice.languages] lists the language {tag} twice, written two ways.",
                 hint="Keep one of them.",
             )
-        chosen = _found(where, spec)
+        chosen = _found(where, spec, config)
         if not same_language(chosen.voice.language, tag):
             raise ConfigError(
                 f"{where} is {chosen.spec}, which speaks {chosen.voice.language} "
                 f"({chosen.voice.description}), not {tag}.",
-                hint=_voices_hint(tag),
+                hint=_voices_hint(tag, config),
             )
         mapped[key] = chosen
     return mapped
@@ -176,7 +179,7 @@ def check_language_voices(config: Config) -> None:
     mapped_voices(config)
 
 
-def _found(where: str, spec: str) -> ChosenVoice:
+def _found(where: str, spec: str, config: Config) -> ChosenVoice:
     engine, colon, _ = spec.strip().rpartition(":")
     found = installed()
     if colon and found.get(engine) is None and found.broken_named(engine) is None:
@@ -186,13 +189,13 @@ def _found(where: str, spec: str) -> ChosenVoice:
             hint=f"Install it, or take this line out of your settings. Installed engines: {names}.",
         )
     try:
-        return find_voice(spec)
+        return find_voice(spec, config)
     except VoiceError as e:
         raise ConfigError(f"{where} is '{spec}'. {e.message}", hint=e.hint) from None
 
 
-def _voices_hint(tag: str) -> str:
-    found = voices_for(tag)
+def _voices_hint(tag: str, config: Config) -> str:
+    found = voices_for(tag, config)
     if not found:
         return f"No installed voice speaks {tag}. Run `dogear voices` to list them."
     return f"Voices for {tag}: {_names(found)}."

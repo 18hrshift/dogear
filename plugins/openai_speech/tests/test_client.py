@@ -7,7 +7,7 @@ import pytest
 from dogear.errors import VoiceError
 from fake_service import Reply, tone
 
-from dogear_openai_speech.client import MAX_WAIT_SECONDS, SpeechClient
+from dogear_openai_speech.client import MAX_WAIT_SECONDS, ClientBug, SpeechClient
 from dogear_openai_speech.settings import read_settings
 
 ENOUGH = 10_000_000
@@ -136,6 +136,73 @@ def test_a_turned_down_key_names_the_variable_and_never_repeats_the_key(
     said = error.value.message + error.value.hint
     assert "sk-sec" not in said and "OPENAI_API_KEY" in error.value.hint
     assert len(service.sent) == 1
+
+
+SECRET_PARTS = ("FIRSTPART", "SECONDPART", "sk-proj")
+
+
+def shows_no_key(*texts):
+    return not any(part in text for part in SECRET_PARTS for text in texts)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["sk-proj-FIRSTPART\nsk-proj-SECONDPART", "sk-proj-FIRSTPART’SECONDPART"],
+)
+def test_a_key_python_wont_send_is_an_error_that_doesnt_show_it(service, config, clock, lines, key):
+    # settings.api_key refuses these keys; this is what happens if one gets past it.
+    with pytest.raises(VoiceError, match="a header in it has a character") as error:
+        client(config, clock, lines, key=key).speak("marin", "Hello.", 1.0, ENOUGH)
+    assert shows_no_key(error.value.message, error.value.hint, str(error.value), *lines)
+    assert error.value.__cause__ is None and error.value.__suppress_context__
+    assert "OPENAI_API_KEY" in error.value.hint
+    assert service.sent == []
+
+
+def test_the_key_is_taken_out_of_any_error_that_leaves_the_client(
+    service, config, clock, lines, monkeypatch
+):
+    key = "sk-proj-FIRSTPART\nsk-proj-SECONDPART"
+
+    def fails(self, data, most_bytes):
+        try:
+            raise OSError(f"inner {key!r}")
+        except OSError:
+            raise RuntimeError(f"Header {key.encode()!r} or {key} or {key!r}") from None
+
+    monkeypatch.setattr(SpeechClient, "_send", fails)
+    with pytest.raises(ClientBug) as error:
+        client(config, clock, lines, key=key).speak("marin", "Hello.", 1.0, ENOUGH)
+    assert str(error.value).startswith("RuntimeError: Header b'(your key)' or")
+    assert shows_no_key(str(error.value))
+    assert error.value.__suppress_context__  # the errors it came from aren't shown
+
+    def says_it(self, data, most_bytes):
+        raise VoiceError(f"It said {key}.", hint=f"Not {key!r}.")
+
+    monkeypatch.setattr(SpeechClient, "_send", says_it)
+    with pytest.raises(VoiceError) as error:
+        client(config, clock, lines, key=key).speak("marin", "Hello.", 1.0, ENOUGH)
+    assert error.value.message == "It said (your key)." and error.value.hint == "Not '(your key)'."
+    assert shows_no_key(str(error.value))
+
+
+def test_an_error_without_the_key_in_it_is_left_as_it_was(config, clock, lines, monkeypatch):
+    def fails(self, data, most_bytes):
+        raise KeyError("no key here")
+
+    monkeypatch.setattr(SpeechClient, "_send", fails)
+    with pytest.raises(KeyError, match="no key here"):
+        client(config, clock, lines, key="sk-proj-FIRSTPART").speak("marin", "Hi.", 1.0, ENOUGH)
+
+
+def test_a_service_that_repeats_the_key_in_its_reason_never_shows_it(service, config, clock, lines):
+    key = "sk-proj-FIRSTPARTSECONDPART"
+    service.replies = [error_reply(400, f"Bad key {key} in\n the request.")]
+    with pytest.raises(VoiceError) as error:
+        client(config, clock, lines, key=key).speak("marin", "Hello.", 1.0, ENOUGH)
+    assert "Bad key (your key) in the request." in error.value.message
+    assert shows_no_key(error.value.message, error.value.hint)
 
 
 @pytest.mark.parametrize(

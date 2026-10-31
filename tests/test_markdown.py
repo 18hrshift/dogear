@@ -18,6 +18,7 @@ from dogear.document import (
     Table,
 )
 from dogear.errors import ConfigError, ExtractionError
+from dogear.extract import front_matter
 from dogear.extract.markdown_book import extract
 
 FRONT = """---
@@ -105,6 +106,45 @@ def test_front_matter_cant_build_objects(tmp_path, config):
     book = read(tmp_path, config, front)
     assert not marker.exists()
     assert book.metadata.title == "book"  # the value is a list, not text: ignored
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "[" * 400 + "]" * 400,  # a RecursionError before
+        "{a: " * 400 + "}" * 400,
+        "[" * 50 + "]" * 50,  # 51 deep, with the mapping around it
+        "\n" + "\n".join("  " * n + "- " for n in range(1, 60)) + "x",
+    ],
+)
+def test_front_matter_nested_too_deep_is_an_error(tmp_path, config, value):
+    with pytest.raises(ExtractionError, match="more than 50 levels deep") as e:
+        read(tmp_path, config, f"---\ntitle: {value}\n---\n\nText.\n")
+    assert "title, author, and language" in e.value.hint
+
+
+def test_running_out_of_recursion_in_yaml_is_an_error_too(tmp_path, config, monkeypatch):
+    def too_deep(*args, **kwargs):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(front_matter.yaml, "load", too_deep)
+    with pytest.raises(ExtractionError, match="more than 50 levels deep"):
+        read(tmp_path, config, "---\ntitle: Fine\n---\n\nText.\n")
+
+
+def test_front_matter_nested_a_little_is_read(tmp_path, config):
+    nested = "[" * 49 + "]" * 49  # 50 deep, with the mapping around it
+    book = read(tmp_path, config, f"---\ntitle: Shallow\nother: {nested}\n---\n\nText.\n")
+    assert book.metadata.title == "Shallow"
+
+
+def test_a_block_too_long_for_front_matter_is_read_as_text(tmp_path, config, caplog):
+    # 66,000 characters, which as YAML would be a mistake: "mapping values not allowed"
+    chapter = "A chapter after a rule: its words. " * 1_900
+    with caplog.at_level(logging.INFO):
+        found = blocks(tmp_path, config, f"---\n\n{chapter}\n\n---\n\nMore.\n")
+    assert found == [Paragraph(chapter.strip()), SceneBreak(), Paragraph("More.")]
+    assert "aren't front matter" in caplog.text
 
 
 def test_values_that_arent_text_are_ignored_with_a_warning(tmp_path, config, caplog):
@@ -224,6 +264,62 @@ def test_size_limit_is_a_setting(tmp_path):
 def test_size_limit_must_be_positive(tmp_path):
     config = load_config(_write(tmp_path / "dogear.toml", "[markdown]\nmax_file_mb = -1\n"))
     with pytest.raises(ConfigError, match="markdown.max_file_mb"):
+        read(tmp_path, config, "Text.\n")
+
+
+def wide_table(columns: int, rows: int) -> str:
+    """A header `columns` wide over `rows` rows of one short cell each, which markdown-it
+    fills out to the header's width: a small file with many cells."""
+    return "|" + "h|" * columns + "\n|" + "-|" * columns + "\n" + "x\n" * rows + "\n"
+
+
+def test_a_wide_table_is_refused_before_it_fills_the_memory(tmp_path, config):
+    """Before, a 1.6 MB table of 2,000 columns by 400 rows took over 1 GB to read."""
+    config["markdown"]["max_pieces"] = 5_000
+    small = wide_table(100, 10)  # 1,100 cells, about 3,300 pieces
+    assert read(tmp_path, config, small).sections
+    text = wide_table(100, 20)  # under 700 bytes, but 2,100 cells
+    assert len(text) < 700
+    with pytest.raises(ExtractionError, match="more than 5,000 pieces") as e:
+        read(tmp_path, config, text)
+    assert "filled out to its header's width" in e.value.hint
+    assert "markdown.max_pieces" in e.value.hint
+
+
+def test_pieces_inside_paragraphs_count_too(tmp_path, config):
+    config["markdown"]["max_pieces"] = 5_000
+    assert read(tmp_path, config, "*a* " * 1_000 + "\n").sections  # 3 pieces each
+    with pytest.raises(ExtractionError, match="more than 5,000 pieces"):
+        read(tmp_path, config, "*a* " * 2_000 + "\n")
+
+
+def test_tables_in_quotes_and_lists_count_too(tmp_path, config):
+    config["markdown"]["max_pieces"] = 5_000
+    quoted = "\n".join("> " + line for line in wide_table(100, 20).splitlines())
+    listed = "- " + "\n  ".join(wide_table(100, 20).splitlines())
+    for text in (quoted, listed):
+        with pytest.raises(ExtractionError, match="more than 5,000 pieces"):
+            read(tmp_path, config, text + "\n")
+
+
+def test_too_many_lines_are_refused_before_they_are_parsed(tmp_path, config):
+    config["markdown"]["max_lines"] = 1_000
+    assert read(tmp_path, config, "Text.\n" + "\n" * 998).sections  # 1,000 lines
+    with pytest.raises(ExtractionError, match="has 1,001 lines, more than the 1,000") as e:
+        read(tmp_path, config, "Text.\n" + "\n" * 999)
+    assert "markdown.max_lines" in e.value.hint
+
+
+def test_the_default_limits_read_a_long_novel(tmp_path, config):
+    paragraph = "A sentence of a novel, written out at some length, " * 4
+    novel = "".join(f"## Chapter {n}\n\n" + (paragraph + "*Now*.\n\n") * 100 for n in range(60))
+    assert len(read(tmp_path, config, novel).sections) == 60
+
+
+@pytest.mark.parametrize("name", ["max_lines", "max_pieces"])
+def test_the_work_limits_must_be_positive(tmp_path, name):
+    config = load_config(_write(tmp_path / "dogear.toml", f"[markdown]\n{name} = 0\n"))
+    with pytest.raises(ConfigError, match=f"markdown.{name}"):
         read(tmp_path, config, "Text.\n")
 
 

@@ -12,7 +12,8 @@ from dogear.book_summary import count, describe_section
 from dogear.config import Config
 from dogear.errors import DogearError
 from dogear.extract import format_names
-from dogear.voice.cloud import CloudVoice, warning
+from dogear.voice.cloud import CloudVoice, hosts_in_words, run_warning
+from dogear.voice.engines import find_voice
 from dogear.web import choices
 from dogear.web.books import ID_PATTERN, MADE, BookRecord
 from dogear.web.downloads import NotAvailable, downloads, media_type, output_path
@@ -158,11 +159,11 @@ async def choose_submit(request: Request) -> Response:
     picked, chosen, errors = choices.check(fields, record.summary, config)
     if chosen is None:
         return _choose(request, record, picked, errors, status_code=400)
-    cloud = choices.cloud_voice(chosen.voice, config)
-    if cloud is not None and first(fields, SEND) != "yes":
+    clouds = choices.cloud_voices_for_run(chosen.voice, config)
+    if clouds and first(fields, SEND) != "yes":
         if first(fields, SEND) == "no":  # "Choose another voice"
             return _choose(request, record, picked, {})
-        return _send_text(request, record, picked, cloud)
+        return _send_text(request, record, picked, clouds, config)
     try:
         _library(request).choose(record.id, chosen)
     except DogearError:
@@ -204,21 +205,30 @@ def _choose(
 
 
 def _send_text(
-    request: Request, record: BookRecord, picked: choices.Picked, cloud: CloudVoice
+    request: Request,
+    record: BookRecord,
+    picked: choices.Picked,
+    clouds: list[CloudVoice],
+    config: Config,
 ) -> Response:
-    """Before a book whose voice sends its text off this computer starts: where the text
-    goes, in the words `dogear make` uses, and a button to send it, which sends the same
-    choices again with send=yes."""
+    """Before a book that may send its text off this computer starts: which voices send
+    it where (every voice the run may use, not only the one chosen), in the words
+    `dogear make` uses, and a button to send it, which sends the same choices again with
+    send=yes."""
     summary = record.summary
     assert summary is not None
+    hosts = hosts_in_words(clouds)
+    main = find_voice(picked.voice, config)
     return render(
         request,
         "send_text.html",
-        f"Send the text of {summary.title} to {cloud.host}?",
+        f"Send the text of {summary.title} to {hosts}?",
         book_id=record.id,
         summary=summary,
-        host=cloud.host,
-        warning=warning(cloud),
+        hosts=hosts,
+        warning=run_warning(clouds, main),
+        # Listen says words with the chosen voice alone (`dogear say`).
+        listen_sends=any(cloud.chosen.spec == main.spec for cloud in clouds),
         fields=choices.form_fields(picked),
         send=SEND,
     )

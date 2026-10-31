@@ -8,7 +8,14 @@ from dogear import cli
 from dogear.config import default_config
 from dogear.errors import VoiceError
 from dogear.voice import make_engine, make_voice
-from dogear.voice.cloud import refuse_unless_allowed, text_goes_to, warning
+from dogear.voice.cloud import (
+    CloudVoice,
+    hosts_in_words,
+    refuse_unless_allowed,
+    run_warning,
+    text_goes_to,
+    warning,
+)
 from dogear.voice.engines import choose_voice, configured_voice, find_voice, installed
 
 HOST = "speech.example.com"
@@ -121,6 +128,27 @@ def test_every_voice_a_run_uses_is_checked(installed_engines, config):
     assert (found.chosen.spec, found.host) == ("cloud:nova", HOST)
     said = warning(found)[0]
     assert said == f"The voice nova is spoken by a service at {HOST}, not on this computer."
+
+
+def test_a_runs_warning_names_each_cloud_voice_and_each_computer_once(installed_engines):
+    installed_engines(
+        cloud(voices=[hum_voice("nova"), hum_voice("sage")]),
+        fake_engine("far", "Far", [hum_voice("hanna")], sends_to="far.example"),
+        fake_engine("hum", "Hum", [hum_voice("low")]),
+    )
+    nova, sage, hanna = (
+        CloudVoice(find_voice("cloud:nova"), HOST),
+        CloudVoice(find_voice("cloud:sage"), HOST),
+        CloudVoice(find_voice("far:hanna"), "far.example"),
+    )
+    assert run_warning([nova], find_voice("cloud:nova")) == warning(nova)  # as make says it
+    assert hosts_in_words([nova, sage]) == HOST
+    assert hosts_in_words([nova, hanna]) == f"{HOST} and far.example"
+    third = CloudVoice(find_voice("hum:low"), "c.example")
+    assert hosts_in_words([nova, hanna, third]) == f"{HOST}, far.example, and c.example"
+    said = run_warning([sage], find_voice("hum:low"))
+    assert said[0].endswith("Your settings have it read passages in another language.")
+    assert said[-1].endswith("out of [voice.languages] in your settings file.")
 
 
 def test_voices_marks_them_and_says_how_to_allow_them(cloud_installed, capsys):

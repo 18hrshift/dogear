@@ -1,8 +1,8 @@
 """Decode and parse an HTML file from a book without touching the network or the disk.
 
 Bytes are decoded the way browsers do: a byte order mark, else the character set the
-file declares in its first 1024 bytes, else UTF-8 if the bytes are valid UTF-8, else
-Windows-1252.
+file declares in its first 1024 bytes, if browsers know its label (html_encodings), else
+UTF-8 if the bytes are valid UTF-8, else Windows-1252.
 
 lxml's HTML parser (libxml2) then reads the text with the network off. HTML has no
 external entities: the parser knows HTML's named entities itself and never expands an
@@ -20,6 +20,7 @@ import re
 from lxml import etree
 
 from dogear.errors import ExtractionError
+from dogear.extract.html_encodings import codec_for_label
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +37,6 @@ _BOMS = (
 _META_CHARSET = re.compile(rb"""<meta\s[^>]*?charset\s*=\s*["']?\s*([A-Za-z0-9_.:-]+)""", re.I)
 _XML_ENCODING = re.compile(rb"""^\s*<\?xml\s[^>]*?encoding\s*=\s*["']([A-Za-z0-9_.:-]+)""", re.I)
 _XML_DECLARATION = re.compile(r"^\s*<\?xml[^>]*\?>")
-# Labels browsers read as Windows-1252, which they include (WHATWG Encoding standard).
-_READ_AS = {"ascii": "cp1252", "iso8859-1": "cp1252"}
 
 
 def decode_html(data: bytes, what: str) -> str:
@@ -89,21 +88,18 @@ def _declared_codec(head: bytes, what: str) -> str | None:
     if match is None:
         return None
     label = match.group(1).decode("ascii")
-    try:
-        codec = codecs.lookup(label).name
-    except LookupError:
+    codec = codec_for_label(label)
+    if codec is None:
         log.warning("%s says its text is in %r, which Dogear doesn't know; guessing.", what, label)
-        return None
-    if codec.startswith(("utf-16", "utf-32")):
-        # Wrong whenever it can be read: the declaration was just read as ASCII.
-        codec = "utf-8"
-    return _READ_AS.get(codec, codec)
+    return codec
 
 
 def _decode(data: bytes, codec: str, what: str) -> str:
+    """`data` decoded with `codec`, a text codec, with any bytes it can't read as
+    replacement characters."""
     try:
         return data.decode(codec)
-    except UnicodeDecodeError:
+    except UnicodeError:
         log.warning(
             "Some bytes in %s aren't valid %s text; they are read as replacement characters.",
             what,

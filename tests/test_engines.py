@@ -298,6 +298,45 @@ def test_audio_of_the_wrong_shape_is_a_bug_in_the_engine(hum_chosen, config):
         engine.render(SpeechPlan("key", "Hello."))
 
 
+@pytest.mark.parametrize(
+    ("audio", "problem"),
+    [
+        ("abc", "gave audio that isn't samples (ValueError: could not convert string"),
+        ([{}], "gave audio that isn't samples (TypeError"),
+        (None, "gave audio of shape ()"),
+        (np.array([0.1, np.nan, 0.2]), "samples that aren't numbers (NaN) or are infinite"),
+        (np.array([0.1, np.inf]), "samples that aren't numbers (NaN) or are infinite"),
+        (np.array([1e300, 0.0]), "samples that aren't numbers (NaN) or are infinite"),
+    ],
+)
+def test_audio_that_isnt_samples_is_a_bug_in_the_engine(hum_chosen, config, audio, problem):
+    """Before, these raised a traceback, or (NaN) were silently spoken as silence."""
+    engine = make_engine(config, print)
+    hum_chosen.engine_made.render = lambda plan: audio
+    with pytest.raises(VoiceError) as err:
+        engine.render(SpeechPlan("key", "Hello."))
+    assert err.value.message.startswith("The Hum voice engine ")
+    assert problem in err.value.message
+    assert "This is a bug in dogear-fake 1.0" in err.value.hint
+
+
+@pytest.mark.parametrize(
+    ("plan", "problem"),
+    [
+        (None, "gave None as a sentence's plan"),
+        ("key", "gave a str as a sentence's plan"),
+        (SpeechPlan(None, "Hello."), "gave a plan whose key or payload isn't text"),
+        (SpeechPlan("key", b"Hello."), "gave a plan whose key or payload isn't text"),
+    ],
+)
+def test_a_plan_that_isnt_a_speech_plan_is_a_bug_in_the_engine(hum_chosen, config, plan, problem):
+    engine = make_engine(config, print)
+    hum_chosen.engine_made.plan = lambda text: plan
+    with pytest.raises(VoiceError, match=problem) as err:
+        engine.plan("Hello.")
+    assert "This is a bug in dogear-fake 1.0" in err.value.hint
+
+
 def test_a_bug_while_loading_becomes_a_voice_error(hum_chosen, config):
     def broken(*args):
         raise RuntimeError("model file is empty")
