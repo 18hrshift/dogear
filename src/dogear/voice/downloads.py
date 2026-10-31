@@ -64,6 +64,20 @@ def download_lock(folder: Path, report: Report) -> Iterator[None]:
         lock.release()
 
 
+def ensure_downloaded(
+    files: list[RemoteFile], folder: Path, config: Config, report: Report
+) -> None:
+    """Make sure every one of `files` is on disk, downloading whatever isn't under the
+    lock on `folder` (the models folder), so two Dogears never download the same file at
+    once. When every file is there already, nothing is locked or written. This is what a
+    voice engine's `prepare` calls."""
+    if all(f.path.is_file() for f in files):
+        return
+    with download_lock(folder, report):
+        # Asked again inside: another Dogear may have downloaded them while this one waited.
+        ensure_files(files, config, report)
+
+
 def ensure_files(files: list[RemoteFile], config: Config, report: Report) -> None:
     """Download whichever of `files` aren't on disk yet. Call it holding `download_lock`
     when another Dogear could be downloading into the same folder."""

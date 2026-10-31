@@ -1,6 +1,8 @@
 """Load settings: packaged defaults, overridden by an optional user TOML file.
 
-`defaults.toml` is the only place a default value lives. Code reads settings from the
+`defaults.toml` is the only place Dogear's own default values live. Each installed voice
+engine adds the defaults of its own table, named after it (Kokoro's [kokoro] comes from
+`voice/kokoro.toml`), and they are checked the same way. Code reads settings from the
 dict this module returns instead of keeping its own copies.
 """
 
@@ -39,9 +41,21 @@ Config = dict[str, Any]
 CONFIG_ENV = "DOGEAR_CONFIG"
 
 
-def default_config() -> Config:
+def core_defaults() -> Config:
+    """Dogear's own defaults, from defaults.toml, without any voice engine's."""
     text = resources.files("dogear").joinpath("defaults.toml").read_text(encoding="utf-8")
     return tomllib.loads(text)
+
+
+def default_config() -> Config:
+    """Every default: Dogear's own, and each installed voice engine's table."""
+    # Imported here: the engines module reads core_defaults, and loads the plugins.
+    from dogear.voice.engines import engine_settings
+
+    config = core_defaults()
+    for name, settings in engine_settings().items():
+        config[name] = copy.deepcopy(settings)
+    return config
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -70,7 +84,23 @@ def load_config(path: Path | None = None) -> Config:
             f"Config file {path} is not valid TOML: {e}",
             hint="Check the line it names. Strings need quotes; tables look like [pdf].",
         ) from None
+    _check_engine_tables(config, user, path)
     return _merge(config, user, ())
+
+
+def _check_engine_tables(config: Config, user: Config, path: Path) -> None:
+    """A table for a voice engine that is installed but couldn't be loaded gets its own
+    message: "Unknown setting" would send the reader looking for a typing mistake."""
+    from dogear.voice.engines import installed
+
+    for key in user:
+        broken = None if key in config else installed().broken_named(key)
+        if broken is not None:
+            raise ConfigError(
+                f"{path} has settings for the voice engine '{key}' ({broken.package}), which "
+                f"is installed but couldn't be loaded. {broken.problem}",
+                hint=f"Reinstall it, or take the [{key}] table out of the file.",
+            )
 
 
 def _merge(base: Config, override: Config, where: tuple[str, ...]) -> Config:

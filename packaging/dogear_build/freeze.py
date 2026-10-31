@@ -24,6 +24,10 @@ CONTENTS = "_internal"
 # Packages PyInstaller can't follow by reading imports.
 COLLECT_DATA = ["dogear", "misaki"]  # defaults.toml, catalog.toml, epub3.css; dictionaries
 COLLECT_SUBMODULES = ["dogear"]
+# Package metadata to carry. Dogear finds its voice engines through entry points, which
+# live in a package's metadata, so Dogear's own is needed for Kokoro. Only Dogear's: a
+# voice engine plugin installed where the build runs is never carried.
+COPY_METADATA = ["dogear"]
 # Never needed at run time, but pulled in by hooks that collect whole packages.
 EXCLUDE = ["spacy.tests", "thinc.tests", "srsly.tests", "tkinter", "pytest"]
 
@@ -58,6 +62,8 @@ def arguments(work: Path, dist: Path) -> list[str]:
         args += ["--collect-data", package]
     for package in COLLECT_SUBMODULES:
         args += ["--collect-submodules", package]
+    for package in COPY_METADATA:
+        args += ["--copy-metadata", package]
     for module in EXCLUDE:
         args += ["--exclude-module", module]
     return args

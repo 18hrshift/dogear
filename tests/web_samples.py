@@ -192,11 +192,11 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
             pages[name] = client.get(path).text
         # Voice and speed always have a value; formats and sections can all be unticked.
         pages["choose-errors"] = client.post(
-            f"/books/{books['choose']}/choose", data={"voice": "af_heart", "speed": "0.9"}
+            f"/books/{books['choose']}/choose", data={"voice": "kokoro:af_heart", "speed": "0.9"}
         ).text
         pages["choose-language-errors"] = client.post(
             f"/books/{books['choose-language']}/choose",
-            data={"format": "m4b", "voice": "af_heart", "speed": "0.9", "section": "1"},
+            data={"format": "m4b", "voice": "kokoro:af_heart", "speed": "0.9", "section": "1"},
         ).text
         pages["delete"] = client.get(f"/books/{books['done']}/delete").text
         pages.update(_word_pages(app, client, folder))

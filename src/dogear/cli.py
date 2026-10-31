@@ -37,14 +37,15 @@ from dogear.ocr import default_output_path, ocr_pdf
 from dogear.pronunciations import dictionary_from_config
 from dogear.say import say_text
 from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
-from dogear.voice import find_voice, prepare_kokoro
-from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
+from dogear.voice import prepare_voice
+from dogear.voice.engines import choose_voice, describe_voice, installed
 from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
 
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
+VOICE_HELP = "voice name, from `dogear voices`, or engine:name such as kokoro:af_heart"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -159,7 +160,7 @@ def _parser() -> argparse.ArgumentParser:
         "MP3 files), epub (EPUB 3 talking book), daisy (DAISY 2.02 talking book), or all "
         "(default: from config)",
     )
-    make.add_argument("--voice", help="voice name, from `dogear voices`")
+    make.add_argument("--voice", help=VOICE_HELP)
     make.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
     make.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
     make.add_argument("--language", help="the book's language, if its own label is wrong")
@@ -202,7 +203,7 @@ def _parser() -> argparse.ArgumentParser:
     say.add_argument(
         "-o", "--output", type=Path, required=True, help="the WAV file to save, such as test.wav"
     )
-    say.add_argument("--voice", help="voice name, from `dogear voices`")
+    say.add_argument("--voice", help=VOICE_HELP)
     say.add_argument("--speed", type=float, help="speaking pace, such as 0.9 or 1.1")
     say.add_argument(
         "--phonemes",
@@ -215,7 +216,10 @@ def _parser() -> argparse.ArgumentParser:
         "voices",
         parents=[common],
         help="list the voices",
-        description="List the voices Dogear can use, best rated first.",
+        description=(
+            "List the voices Dogear can use: every installed voice engine's, best first. "
+            "Kokoro comes with Dogear; other engines are installed as plugins."
+        ),
     )
     voices.set_defaults(run=_voices)
 
@@ -228,7 +232,7 @@ def _parser() -> argparse.ArgumentParser:
             "`dogear make` does this by itself when needed."
         ),
     )
-    download.add_argument("--voice", help="voice name, from `dogear voices`")
+    download.add_argument("--voice", help=VOICE_HELP)
     download.set_defaults(run=_download)
 
     ocr = commands.add_parser(
@@ -422,28 +426,48 @@ def _use_word_files(args: argparse.Namespace, config: Config) -> None:
 
 
 def _voices(args: argparse.Namespace, config: Config) -> int:
-    default = config["voice"]["voice"]
-    ranked = kokoro_voices_best_first()
-    print(f"{count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
-    print()
-    for number, voice in enumerate(ranked, start=1):
-        note = " This is the one Dogear uses now." if voice.name == default else ""
-        print(f"{number}. {describe_voice(voice)}.{note}")
-    print()
-    print("To use another, add --voice NAME to `dogear make`, or set voice in your config.")
+    found = installed()
+    using = (config["voice"]["engine"], config["voice"]["voice"])
+    for engine in found.engines:
+        print(
+            f"{engine.title}, licensed {engine.plugin.license}: "
+            f"{count(len(engine.voices), 'voice')}. {engine.plugin.about_voices}"
+        )
+        print()
+        for number, voice in enumerate(engine.voices, start=1):
+            note = " This is the one Dogear uses now." if (engine.name, voice.name) == using else ""
+            print(f"{number}. {describe_voice(voice)}.{note}")
+        print()
+    for broken in found.broken:
+        print(
+            f"The voice engine {broken.name}, from {broken.package}, is installed but can't be "
+            f"used, so its voices aren't listed. {broken.problem} Reinstall it, or uninstall it "
+            "if you don't need it."
+        )
+        print()
+    if not any(e.name == using[0] and e.voice(using[1]) for e in found.engines):
+        print(
+            f"Your settings choose the voice {using[1]} of the engine {using[0]}, which isn't here."
+        )
+        print()
+    print(
+        "To use another voice, add --voice NAME to `dogear make`, or set voice and its engine "
+        "under [voice] in your config. If two engines have a voice of the same name, put the "
+        "engine's name and a colon first, such as kokoro:af_heart."
+    )
     return 0
 
 
 def _download(args: argparse.Namespace, config: Config) -> int:
     _apply_voice_options(args, config)
-    setup = prepare_kokoro(config, _report)
-    print(f"The voice {setup.voice.name} is ready to use offline.")
+    chosen = prepare_voice(config, _report)
+    print(f"The voice {chosen.voice.name} is ready to use offline.")
     return 0
 
 
 def _apply_voice_options(args: argparse.Namespace, config: Config) -> None:
     if getattr(args, "voice", None):
-        config["voice"]["voice"] = find_voice(args.voice).name
+        choose_voice(config, args.voice)
     if getattr(args, "speed", None) is not None:
         if not 0.5 <= args.speed <= 2.0:
             raise DogearError(

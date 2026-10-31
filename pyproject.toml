@@ -40,6 +40,11 @@ Issues = "https://github.com/18hrshift/dogear-app/issues"
 [project.scripts]
 dogear = "dogear.cli:main"
 
+# Voice engines. Kokoro registers here the way a plugin package registers its own engine:
+# see docs/voice-engines.md.
+[project.entry-points."dogear.engines"]
+kokoro = "dogear.voice.kokoro_plugin:ENGINE"
+
 [dependency-groups]
 dev = [
     "pytest>=8",

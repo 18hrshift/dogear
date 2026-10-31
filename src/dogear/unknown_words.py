@@ -4,7 +4,8 @@ These are the words misaki's dictionaries don't have, which the voice hands to t
 espeak-ng program to guess. Names and made-up words are the usual ones: worth a listen
 with `dogear say`, and an entry in a pronunciation file if they come out wrong. Words
 the user's files already cover aren't listed. This needs spaCy's English model (about
-13 MB) but not the Kokoro voice.
+13 MB) but not the Kokoro voice. It only applies to engines that read misaki's phonemes,
+as Kokoro does: another engine has its own way of saying words it doesn't know.
 """
 
 from __future__ import annotations
@@ -16,12 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from dogear.config import Config
+from dogear.errors import VoiceError
 from dogear.extract import extract_book
 from dogear.make import check_language, chosen_narrations
 from dogear.narration import narrate_book
 from dogear.pronunciations import dictionary_from_config
 from dogear.render.progress import Report
-from dogear.voice import find_voice, prepare_spacy
+from dogear.voice.engines import ChosenVoice, configured_voice
+from dogear.voice.kokoro_plugin import prepare_spacy
 
 _EDGES = re.compile(r"^\W+|\W+$")  # quotes, brackets, and punctuation around a word
 _POSSESSIVE = re.compile(r"(?<=\w)['’]s$", re.IGNORECASE)
@@ -42,12 +45,14 @@ class UnknownWord:
 
 def find_unknown_words(request: WordsRequest, config: Config, report: Report) -> list[UnknownWord]:
     """The book's unknown words, most frequent first, as the configured voice would meet them."""
+    chosen = configured_voice(config)
+    _check_reads_misaki(chosen)
     book = extract_book(request.book, config)
     if request.language:
         book.metadata.language = request.language
     check_language(book)
     narrations = chosen_narrations(narrate_book(book, config), request.sections, len(book.sections))
-    british = find_voice(config["voice"]["voice"]).british
+    british = chosen.voice.language.lower() == "en-gb"
     dictionary = dictionary_from_config(config)
     spacy_model = prepare_spacy(config, report)
 
@@ -55,6 +60,20 @@ def find_unknown_words(request: WordsRequest, config: Config, report: Report) ->
 
     spoken = [u.spoken for n in narrations for u in n.utterances if u.spoken]
     return rank_words(count_unknown_words(spoken, spacy_model, british, dictionary))
+
+
+def _check_reads_misaki(chosen: ChosenVoice) -> None:
+    """The words come from misaki's dictionaries, so they are only the words a voice
+    doesn't know if the voice reads misaki's phonemes, as Kokoro's do."""
+    if chosen.engine.plugin.reads_misaki_phonemes:
+        return
+    raise VoiceError(
+        f"Dogear can't list the words {chosen.voice.name} doesn't know: it lists the words "
+        f"missing from the Kokoro voice's dictionaries, and {chosen.voice.name} is a "
+        f"{chosen.engine.title} voice, which works out how to say words another way.",
+        hint="Listen to the book's names with the voice instead, or check its words with a "
+        "Kokoro voice, such as af_heart.",
+    )
 
 
 def rank_words(counts: Counter[str]) -> list[UnknownWord]:

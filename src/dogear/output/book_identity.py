@@ -6,6 +6,7 @@ import uuid
 
 from dogear.config import Config
 from dogear.document import Metadata
+from dogear.voice.engines import engine_named
 
 # Fixed, so the same book always gets the same identifier.
 _NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/18hrshift/dogear-app")
@@ -23,4 +24,5 @@ def book_uid(metadata: Metadata) -> str:
 
 def narrator(config: Config) -> str:
     """Who reads the book, said plainly: the voice is synthetic."""
-    return f"{config['voice']['voice']}, a synthetic {config['voice']['engine'].title()} voice"
+    engine = engine_named(config["voice"]["engine"])
+    return f"{config['voice']['voice']}, a synthetic {engine.title} voice"

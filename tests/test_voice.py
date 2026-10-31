@@ -9,16 +9,19 @@ import pytest
 from kokoro_fakes import use_fake_session, write_tokenizer, write_voice
 
 from dogear.errors import PronunciationError, ToolNotFoundError, VoiceError
-from dogear.voice import _check_engine, find_voice, make_engine, prepare_kokoro, prepare_spacy
 from dogear.voice import downloads as downloads_module
 from dogear.voice import g2p as g2p_module
+from dogear.voice import make_engine, prepare_voice
 from dogear.voice.catalog import (
     catalog,
     kokoro_file,
+    kokoro_voice,
     kokoro_voices,
     spacy_model_dir,
     spacy_wheel,
 )
+from dogear.voice.engines import configured_voice
+from dogear.voice.kokoro_plugin import prepare_kokoro, prepare_spacy
 
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -61,15 +64,16 @@ def test_kokoro_files_come_from_one_pinned_revision():
 
 
 def test_default_voice_is_in_the_catalog(config):
-    assert find_voice(config["voice"]["voice"]).name == config["voice"]["voice"]
+    assert kokoro_voice(config["voice"]["voice"]).name == config["voice"]["voice"]
 
 
 def test_default_model_build_is_in_the_catalog(config):
     assert config["kokoro"]["model"] in catalog()["kokoro"]["models"]
 
 
-def test_default_engine_is_known(config):
-    _check_engine(config)
+def test_default_voice_is_a_kokoro_voice(config):
+    chosen = configured_voice(config)
+    assert (chosen.engine.name, chosen.voice.name) == ("kokoro", config["voice"]["voice"])
 
 
 def test_kokoro_file_locations(tmp_path):
@@ -144,19 +148,19 @@ def fake_downloads(monkeypatch):
             else:
                 remote.path.write_bytes(b"stand-in")
 
-    monkeypatch.setattr("dogear.voice.ensure_files", fake_ensure_files)
+    monkeypatch.setattr("dogear.voice.kokoro_plugin.ensure_files", fake_ensure_files)
     return requested
 
 
-def test_find_voice():
-    voice = find_voice("bf_emma")
+def test_kokoro_voice():
+    voice = kokoro_voice("bf_emma")
     assert (voice.name, voice.accent, voice.british) == ("bf_emma", "British", True)
-    assert not find_voice("af_heart").british
+    assert not kokoro_voice("af_heart").british
 
 
 def test_unknown_voice_has_a_hint():
     with pytest.raises(VoiceError, match="no voice called 'af_nobody'") as err:
-        find_voice("af_nobody")
+        kokoro_voice("af_nobody")
     assert "dogear voices" in err.value.hint
 
 
@@ -173,7 +177,7 @@ def test_bad_voice_settings_fail_before_any_download(
 ):
     config[section][key] = value
     with pytest.raises(VoiceError, match=message) as err:
-        prepare_kokoro(config, print)
+        prepare_voice(config, print)
     assert hint in err.value.hint
     assert fake_downloads == []
 

@@ -256,19 +256,17 @@ ebook_convert = ""
 espeak_ng = ""
 
 [voice]
-engine = "kokoro"  # the only engine so far
-voice = "af_heart"  # run `dogear voices` to list them
+# The voice engine, and one of its voices. `dogear voices` lists every installed engine
+# and its voices. Kokoro comes with Dogear; others are installed as plugins.
+engine = "kokoro"
+voice = "af_heart"
 # Speaking pace: 1.0 is the voice's natural pace. Kokoro at 1.0 read a test chapter at
 # about 190 words a minute; audiobook narrators average nearer 155, so the default is a
 # little slower. Players can change speed too.
 speed = 0.9
 
-[kokoro]
-# Which build of the Kokoro model to use. "full" (325 MB) sounds best. "quantized" (92 MB)
-# rendered about 25% faster on a test laptop CPU, at slightly lower quality.
-model = "full"
-# CPU threads to use while speaking. 0 means all of them.
-threads = 0
+# Each voice engine has a settings table of its own, named after it, such as [kokoro].
+# Its defaults come with the engine: Kokoro's are in voice/kokoro.toml, next to this file.
 
 [models]
 # Where downloaded voice files are kept. Empty means the usual per-user data folder.
