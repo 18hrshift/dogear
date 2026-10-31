@@ -13,11 +13,11 @@ def test_every_extension_is_lower_case_with_its_dot_and_listed_once():
 
 
 def test_format_names():
-    assert format_names("or") == "EPUB, PDF, HTML, MOBI, or AZW3"
+    assert format_names("or") == "EPUB, PDF, HTML, Markdown, MOBI, or AZW3"
     assert format_names("and").endswith("MOBI, and AZW3")
 
 
-@pytest.mark.parametrize("name", ["book.EPUB", "page.HTM"])
+@pytest.mark.parametrize("name", ["book.EPUB", "book.MD", "page.HTM"])
 def test_extensions_match_in_any_case(tmp_path, capsys, name):
     path = tmp_path / name
     path.write_bytes(b"")

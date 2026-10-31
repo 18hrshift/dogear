@@ -66,13 +66,13 @@ def test_only_books_dogear_reads_are_accepted(app, name):
     response = visitor(app).post("/books", files={"book": (name, b"ok", "text/plain")})
     assert response.status_code == 400
     assert "<title>Error: Your books - Dogear</title>" in response.text
-    assert "Choose an EPUB, PDF, HTML, MOBI, or AZW3 file." in response.text
+    assert "Choose an EPUB, PDF, HTML, Markdown, MOBI, or AZW3 file." in response.text
     assert 'aria-describedby="book-file-hint book-file-error"' in response.text
     assert books(app) == []
     assert incoming(app) == []
 
 
-@pytest.mark.parametrize("name", ["Story.MOBI", "page.html", "page.htm", "doc.xhtml"])
+@pytest.mark.parametrize("name", ["Story.MOBI", "page.html", "page.htm", "doc.xhtml", "a.md"])
 def test_every_kind_dogear_reads_is_accepted(app, name):
     response = visitor(app).post("/books", files={"book": (name, b"ok", "")})
     assert response.status_code == 200  # followed to the book's page
@@ -82,7 +82,7 @@ def test_every_kind_dogear_reads_is_accepted(app, name):
 
 def test_the_help_page_names_every_kind(app):
     page = visitor(app).get("/help").text
-    assert "Dogear reads EPUB, PDF, HTML, MOBI, and AZW3 files." in page
+    assert "Dogear reads EPUB, PDF, HTML, Markdown, MOBI, and AZW3 files." in page
 
 
 def test_no_file_chosen_is_an_error(app):
@@ -147,8 +147,8 @@ def test_a_file_just_under_the_limit_is_accepted(app):
 
 def test_the_upload_form_names_the_kinds_and_the_limit(app):
     page = visitor(app).get("/").text
-    assert 'accept=".azw,.azw3,.epub,.htm,.html,.mobi,.pdf,.xhtml"' in page
-    assert "An EPUB, PDF, HTML, MOBI, or AZW3 file, up to 1 MB" in page
+    assert 'accept=".azw,.azw3,.epub,.htm,.html,.markdown,.md,.mobi,.pdf,.xhtml"' in page
+    assert "An EPUB, PDF, HTML, Markdown, MOBI, or AZW3 file, up to 1 MB" in page
     assert "up to 1 MB" in page
     assert '<label for="book-file">Book file (required)</label>' in page
 

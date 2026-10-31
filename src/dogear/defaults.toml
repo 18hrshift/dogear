@@ -67,13 +67,17 @@ max_member_mb = 64
 # section per file.
 toc_depth = 2
 
-# HTML books have no table of contents, so each is cut into sections
+# HTML and Markdown books have no table of contents, so each is cut into sections
 # at its top heading level: the highest level used more than once. A title heading used
 # once above the chapters gets a short section of its own, and each chapter gets one.
 
 [html]
 # Largest HTML file Dogear reads, in megabytes. A long novel is under 5 MB of HTML.
 max_file_mb = 64
+
+[markdown]
+# Largest Markdown file Dogear reads, in megabytes. A long novel is under 3 MB.
+max_file_mb = 32
 
 [ocr]
 dpi = 300
