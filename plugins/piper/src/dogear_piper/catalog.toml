@@ -77,8 +77,8 @@ data = "LibriVox recordings, public domain. Fine-tuned from en_US-kristin-medium
 model = { sha256 = "789c6c875726e627ddee93d51d8727859abe9c091c3d141591f4b83c2072e988", size = 63531379 }
 config = { sha256 = "af60f177b6b550f3d7a302720c0fb89e7f94a82b5dca464775ef63b1c69ba09a", size = 4965 }
 
-# The voices below are ready for when Dogear reads other languages. Until then it reads
-# English books only. The French and German voices were trained on many speakers; Piper
+# The voices below read books and passages in their languages ([voice.languages] in
+# Dogear's settings). The French and German voices were trained on many speakers; Piper
 # speaks with the first of them.
 
 [voices.fr_FR-mls-medium]

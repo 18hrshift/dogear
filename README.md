@@ -263,6 +263,7 @@ one, please tell us how it went.
 dogear outline mybook.epub                # title, authors, and every section
 dogear text mybook.epub --section 3       # the text Dogear found in section 3
 dogear text mybook.epub --spoken          # every line exactly as the voice will say it
+dogear text mybook.epub --spoken --voice fr_FR-mls-medium  # ...with another main voice
 dogear download                           # fetch the voice now, before going offline
 dogear download --check                   # check the voice files, and fix damaged ones
 ```
@@ -339,6 +340,10 @@ Lanyon = { phonemes = "lˈænjən" }  # exact phonemes, for experts (see below)
   to Z (such as "Zoë").
 - When entries overlap, the longest wins: with entries for "John" and "St. John",
   "St. John" uses its own.
+- Entries apply to English text. In a book with passages in another language read by a
+  voice of their own (see "Books with more than one language"), an entry for that
+  language lists it: `Mme = { sounds_like = "madame", languages = ["fr"] }`, or
+  `languages = ["en", "fr"]` for both.
 
 Use the file for one run with `--words` (`make`, `text`, `words`, and `say` all take
 it), or list it in your settings so every book uses it:
@@ -511,6 +516,75 @@ skipped (they're written in Kokoro's symbols), and `dogear words` doesn't apply.
 [`plugins/piper/README.md`](plugins/piper/README.md) has the details, and
 [`docs/voice-engines.md`](docs/voice-engines.md) explains why Piper, and how to write a
 plugin for another engine.
+
+### Books with more than one language
+
+Kokoro speaks English only. Piper adds voices in French, German, and Spanish. With Piper
+installed, Dogear can read:
+
+- **A whole book in French, German, or Spanish.** Choose a voice in its language:
+  `dogear make roman.epub --voice fr_FR-mls-medium`. On the web page, "Choose what to
+  make" lists the voices for the book's language first and picks the best of them. A book
+  that doesn't say its language is taken to be in the language of the voice you chose,
+  and one marked with the wrong language is read as another with `--language`, such as
+  `--language en`. A book in a language no voice speaks stops before anything is spoken,
+  and says which voices could read it.
+- **A French quotation in an English book.** Say in your settings which voice reads each
+  language. Kokoro then reads the English, and Piper the French:
+
+  ```toml
+  [voice.languages]
+  fr = "piper:fr_FR-mls-medium"
+  ```
+
+  A language is written as a short code: `fr` is every kind of French, `fr-CA` only
+  Canadian French, and the most exact one that fits wins. Each voice must speak its
+  language, which Dogear checks when it starts. To let Dogear pick the best installed
+  voice for any language you haven't listed, set `other_languages = "best"` under
+  `[voice]`.
+
+Without these settings, one voice reads the whole book, as it always has: an English
+voice reads a French paragraph as best it can, and `dogear make` says how many sentences
+that was and which voices could read them. That is the default on purpose: a voice that
+changes in the middle of a chapter is jarring, and books are sometimes marked with the
+wrong language.
+
+Which passages are in another language? Dogear goes by what the book marks: EPUB, HTML,
+Markdown, and Word books can mark a paragraph or a chapter as French. Many books mark
+nothing. To have Dogear guess, turn on language detection, which runs on your computer:
+
+```toml
+[language_detection]
+enabled = true
+```
+
+It only looks for languages it has a voice for, never changes a language the book marks,
+and guesses carefully: a paragraph needs at least 30 letters ("Oui, monsieur." is too
+short to tell) and a sure guess, and a long paragraph is also checked a sentence at a
+time. `defaults.toml` has the settings. To see what it found, and which voice reads each
+part, before making anything:
+
+```bash
+dogear text mybook.epub --spoken
+```
+
+Lines such as `[In fr, read by piper:fr_FR-mls-medium.]` say where each language starts.
+
+What changes with the language:
+
+- **Words Dogear adds**, such as "Image", "Note", and "Page", are said in French, German,
+  or Spanish for passages in those languages, and in English for any other, which
+  `dogear make` says once. Change them, or add another language's, under
+  `[narration.words.fr]` and so on in your settings.
+- **Numbers and abbreviations** in English text are spelled out by Dogear. In another
+  language they go to the voice as written: Piper reads "3 500" in French as "trois mille
+  cinq cents".
+- **Pronunciation files** apply to English text. For an entry in another language, list
+  its languages: `Mme = { sounds_like = "madame", languages = ["fr"] }`.
+- **Talking books** mark each passage and sentence with its language, so a reading app
+  or screen reader reading the text switches too, and their details name every voice.
+- **A second voice may sound quieter or louder** than the first: Dogear evens out the
+  volume once per chapter.
 
 ## Get involved
 

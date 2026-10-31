@@ -168,9 +168,15 @@ Dogear says what went wrong and what to do next. The most common problems:
   heading, and Word marks headings with its Heading styles. In Word, give each chapter's
   title the Heading 1 style (on the Home tab, under Styles), save, and upload it again.
   The same goes for HTML and Markdown files: each chapter needs a heading.
-- **"Dogear's voice speaks only English":** the book is marked as being in another
-  language. If it really is in English (books are sometimes marked wrongly), check "Read
-  it as English". Dogear's voice can't read other languages yet.
+- **"None of Dogear's voices speaks this book's language":** the book is marked as
+  being in another language, and the voices that come with Dogear speak English only.
+  If it really is in English (books are sometimes marked wrongly), check "Read it as
+  English". Voices in French, German, and Spanish come with the Piper plugin, for Dogear
+  installed with Python (the README says how). With one installed, "Choose what to make"
+  lists the voices for the book's language first and picks the best of them.
+- **"The voice you chose doesn't speak" the book's language:** choose one of the voices
+  listed first, under "Voices for this book's language", or check "Read it as English"
+  if the book is really in English.
 - **A name or word is said wrong:** on the book's page (or on "Choose what to make",
   before making it), follow "check how words are said". Dogear lists the words the voice
   doesn't know, most frequent first; they are usually names. It shows the 50 that come up

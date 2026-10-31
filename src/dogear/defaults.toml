@@ -164,7 +164,9 @@ roman_numeral_keywords = [
 "fig." = "figure"
 "Fig." = "figure"
 
-# The rest of [speech] is English only, and leaves other languages' text as written.
+# Every table in [speech], above and below, is English only: Dogear spells out numbers,
+# abbreviations, and symbols in English text only, and leaves other languages' text for
+# their voices to read as written.
 
 # What follows a clock time ("3:30 pm", "10 a.m."), matched in any case, and how to say it.
 [speech.time_suffixes]
@@ -332,9 +334,9 @@ enabled = false
 # Each paragraph, list, note, table, and heading is checked as a whole, if it has at
 # least this many letters. Shorter text ("Oui, monsieur.") is too easily mistaken.
 min_letters = 30
-# A guess is used only when the identifier is at least this sure of it, from 0 to 1.
-# Tested on Jekyll and Hyde, every English paragraph was guessed English; French
-# sentences of 25 letters or more mostly came out above 0.95.
+# A guess is used only when the identifier is at least this sure of it, from 0 to 1. On
+# Jekyll and Hyde, nothing of 30 letters or more was guessed to be in another language;
+# French sentences of 39 to 66 letters came out French at 0.99 or more.
 min_confidence = 0.9
 # A paragraph or note with at least this many letters is also checked a sentence at a
 # time, so a quotation inside it is found. Each sentence needs min_letters as well.
