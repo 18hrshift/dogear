@@ -8,7 +8,7 @@ from typing import Any
 
 from fake_voice import HumEngine
 
-from dogear.voice.engines import Voice
+from dogear.voice.engines import Voice, VoicePace
 
 
 def hum_voice(name: str, language: str = "en-US", **fields: str) -> Voice:
@@ -40,6 +40,9 @@ class FakePlugin:
         self.made.append({"config": config, "voice": voice, "pronunciations": pronunciations})
         self.engine_made = HumEngine()
         return self.engine_made
+
+    def pace(self, config, voice) -> VoicePace:
+        return VoicePace(HumEngine.sample_rate, 150 * config["voice"]["speed"])
 
 
 def fake_engine(name: str, title: str, voices: list[Voice], **attributes: Any) -> FakePlugin:

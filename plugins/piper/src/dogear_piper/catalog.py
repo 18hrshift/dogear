@@ -54,14 +54,19 @@ def piper_voices() -> list[Voice]:
     ]
 
 
+def sample_rate(name: str) -> int:
+    """The sample rate of the voice `name`'s audio, as its config file gives it."""
+    return _entry(name)["sample_rate"]
+
+
+def words_per_minute() -> float:
+    """About how many words a minute Piper's voices say at speed 1.0."""
+    return catalog()["words_per_minute"]
+
+
 def voice_files(name: str, models_dir: Path) -> PiperFiles:
     """The model and config files of the voice `name`, where they live in `models_dir`."""
-    entry = catalog()["voices"].get(name)
-    if entry is None:
-        raise VoiceError(
-            f"The Piper voice engine has no voice called '{name}'.",
-            hint="Run `dogear voices` to list them.",
-        )
+    entry = _entry(name)
     base = f"{catalog()['base_url']}/{entry['path']}"
     folder = models_dir / FOLDER
     return PiperFiles(
@@ -72,3 +77,13 @@ def voice_files(name: str, models_dir: Path) -> PiperFiles:
 
 def _remote(url: str, pin: dict[str, Any], path: Path) -> RemoteFile:
     return RemoteFile(url=url, sha256=pin["sha256"], size=pin["size"], path=path)
+
+
+def _entry(name: str) -> dict[str, Any]:
+    entry = catalog()["voices"].get(name)
+    if entry is None:
+        raise VoiceError(
+            f"The Piper voice engine has no voice called '{name}'.",
+            hint="Run `dogear voices` to list them.",
+        )
+    return entry

@@ -353,12 +353,23 @@ edge_silence_keep_ms = 60
 # the text and the audio in step, for reading apps such as Thorium Reader), and "daisy"
 # (a DAISY 2.02 talking book, for DAISY players and apps).
 formats = ["m4b"]
+# Before speaking, `dogear make` estimates the disk space the book needs, and stops if a
+# disk doesn't have it: the speech cache and the run's work folder (on the disk that holds
+# render.cache_dir) and what it saves (on the output folder's disk). The estimate is raised
+# by this many percent, for voices and books that come out longer than average, and so a
+# disk is never filled to the last byte. 0 uses the estimate as it is.
+space_margin_percent = 20
 
 [web]
 # `dogear serve`: make books from a web browser, on this computer or (with --lan) from a
 # phone or another computer on the same network.
 # The port the page is served on. --port changes it for one run.
 port = 8765
+# With --lan, also show a link for phones and other computers, with this computer's address
+# on the network as Dogear finds it. Inside a container (Docker), the address it finds is
+# the container's own, which other devices can't reach: set this to false there, and Dogear
+# says to use this computer's network address in place of 127.0.0.1 instead.
+show_network_address = true
 # Largest book file the page accepts, in megabytes. Most EPUB and Kindle books are under
 # 20 MB, and a long PDF with pictures can reach 100 to 200 MB. 200 lets nearly any book
 # in while keeping one upload from filling the disk.
@@ -386,3 +397,7 @@ max_pronunciations = 1000
 max_word_chars = 80
 # ...and each spelling (such as "utter son" for Utterson) at most this many characters.
 max_spelling_chars = 160
+# A book's "Check how words are said" page lists the 50 words the voice doesn't know that
+# come up most often, with a link to the rest: at most this many, most frequent first.
+# Each is a field with a Listen button, so a longer list makes a longer page.
+max_words_listed = 500

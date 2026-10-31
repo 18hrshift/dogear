@@ -116,6 +116,7 @@ Defined in `src/dogear/voice/engines.py` as `EnginePlugin`:
 | `voices()` | Every voice, best first, as `Voice` objects. |
 | `prepare(config, voice, report)` | Make sure every file the voice needs is on disk and checked, downloading whatever is missing. `dogear download` calls it. |
 | `engine(config, voice, pronunciations, report)` | Prepare the voice, then load it: return a `VoiceEngine`. |
+| `pace(config, voice)` | The voice's sample rate and about how many words a minute it says at `config["voice"]["speed"]`, as a `VoicePace`, with nothing loaded or downloaded. `dogear make` uses it to work out the disk space a book needs before speaking it, so a generous estimate is better than a low one. Measure it on a real book with your engine's pauses. |
 
 A `Voice` has a `name` (unique within the engine, with no colon or spaces), a `language`
 (a BCP 47 tag such as `en-GB`, so Dogear can later choose a voice per language), a

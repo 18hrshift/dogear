@@ -38,6 +38,7 @@ from dogear.pronunciations import dictionary_from_config
 from dogear.say import say_text
 from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
 from dogear.voice import prepare_voice
+from dogear.voice.check import check_voice_files
 from dogear.voice.engines import choose_voice, describe_voice, installed
 from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
@@ -227,13 +228,21 @@ def _parser() -> argparse.ArgumentParser:
     download = commands.add_parser(
         "download",
         parents=[common],
-        help="download the voice now",
+        help="download the voice now, or check the voice files",
         description=(
             "Download the configured voice ahead of time, for example before going offline. "
-            "`dogear make` does this by itself when needed."
+            "`dogear make` does this by itself when needed. With --check, check every voice "
+            "file Dogear has against its checksum instead, and download again any that are "
+            "damaged."
         ),
     )
-    download.add_argument("--voice", help=VOICE_HELP)
+    download_what = download.add_mutually_exclusive_group()
+    download_what.add_argument("--voice", help=VOICE_HELP)
+    download_what.add_argument(
+        "--check",
+        action="store_true",
+        help="check every voice file on disk, and download again any that are damaged",
+    )
     download.set_defaults(run=_download)
 
     ocr = commands.add_parser(
@@ -464,6 +473,9 @@ def _voices(args: argparse.Namespace, config: Config) -> int:
 
 
 def _download(args: argparse.Namespace, config: Config) -> int:
+    if args.check:
+        check_voice_files(config, lambda line: print(line, flush=True), _report)
+        return 0
     _apply_voice_options(args, config)
     chosen = prepare_voice(config, _report)
     print(f"The voice {chosen.voice.name} is ready to use offline.")

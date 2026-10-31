@@ -120,6 +120,11 @@ listener has the book, it is safe to delete. It is in a folder named `dogear`:
 To delete a book Dogear made, along with the file you uploaded, use "Delete this book" on
 its page.
 
+Before it starts on a book, Dogear checks that the computer has room for it. If it
+doesn't, the book's page says how much space the book needs and how much is free. Free up
+some space (the folder above is safe to empty), or choose fewer sections or kinds of book,
+then start it again.
+
 ## Using Dogear from a phone or tablet
 
 Dogear can also be used from a phone or tablet on the same Wi-Fi network as the
@@ -163,13 +168,18 @@ Dogear says what went wrong and what to do next. The most common problems:
   it as English". Dogear's voice can't read other languages yet.
 - **A name or word is said wrong:** on the book's page (or on "Choose what to make",
   before making it), follow "check how words are said". Dogear lists the words the voice
-  doesn't know, most frequent first; they are usually names. Choose Listen beside a word
+  doesn't know, most frequent first; they are usually names. It shows the 50 that come up
+  most, and "Show all" lists the rest. The list stays with the book, even after Dogear is
+  closed and started again. Choose Listen beside a word
   to hear it. If it sounds wrong, type how it sounds in "Say it like", using ordinary
   words or parts of words (Utterson as "utter son"), choose Save, and Listen again. Then
   make the book again: only the sentences with those words are spoken again. Your
   spellings are used for every book, and the Pronunciations page, in the list at the top
   of every page, lets you change or remove them, add a word, and listen to any short
   text.
+- **"The file may be damaged":** one of the voice's files on the computer is damaged.
+  Reinstalling Dogear fixes it. Or, in a terminal, `dogear download --check` checks every
+  voice file and downloads the damaged ones again (it needs the internet).
 - **"This page needs Dogear's access link":** open the link shown in Dogear's window,
   which logs this browser in. It looks like `http://127.0.0.1:8765/start?key=...`.
 - **"Port 8765 is in use already":** Dogear is probably running in another window. Use

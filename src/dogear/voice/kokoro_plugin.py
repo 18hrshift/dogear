@@ -33,7 +33,7 @@ from dogear.voice.catalog import (
 )
 from dogear.voice.downloads import RemoteFile, Report, download_lock, ensure_files
 from dogear.voice.engine import VoiceEngine
-from dogear.voice.engines import Voice
+from dogear.voice.engines import Voice, VoicePace
 from dogear.voice.spacy_model import unpack_spacy_model
 
 _LANGUAGES = {"American": "en-US", "British": "en-GB"}
@@ -64,6 +64,12 @@ class KokoroPlugin:
 
     def prepare(self, config: Config, voice: Voice, report: Report) -> None:
         prepare_kokoro(config, report, voice.name)
+
+    def pace(self, config: Config, voice: Voice) -> VoicePace:
+        kokoro = catalog()["kokoro"]
+        return VoicePace(
+            kokoro["sample_rate"], kokoro["words_per_minute"] * config["voice"]["speed"]
+        )
 
     def engine(
         self,

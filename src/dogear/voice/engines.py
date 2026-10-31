@@ -55,6 +55,15 @@ class Voice:
     quality: str = ""  # the engine's own grade, as words: "grade A", "high quality"
 
 
+@dataclass(frozen=True)
+class VoicePace:
+    """What a voice's audio will be like, known without loading or downloading anything:
+    enough to work out how much disk space a book needs before it is spoken."""
+
+    sample_rate: int  # of the audio it makes
+    words_per_minute: float  # about how many it says, at the configured speed
+
+
 class EnginePlugin(Protocol):
     """What an engine's entry point gives Dogear."""
 
@@ -84,6 +93,12 @@ class EnginePlugin(Protocol):
         report: Report,
     ) -> VoiceEngine:
         """The voice, ready to speak: prepare it, then load it."""
+        ...
+
+    def pace(self, config: Config, voice: Voice) -> VoicePace:
+        """The voice's sample rate, and about how many words a minute it says at
+        `[voice] speed`, with nothing loaded or downloaded. An estimate is fine; a
+        generous one is better than a low one, as it sizes the disk space a book needs."""
         ...
 
 
@@ -214,7 +229,7 @@ def _checked(
             raise _NotAnEngine(
                 f"It has no {attribute} ({kind.__name__}), so it isn't a voice engine."
             )
-    for method in ("voices", "prepare", "engine"):
+    for method in ("voices", "prepare", "engine", "pace"):
         if not callable(getattr(plugin, method, None)):
             raise _NotAnEngine(f"It has no {method} method, so it isn't a voice engine.")
     if plugin.name != entry.name:

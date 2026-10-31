@@ -2,8 +2,9 @@
 
 Every book has its own folder under the web folder's `books`, named by a random id. It
 holds `book.json` (the record), the uploaded file (`book.epub` or similar), `made` (what
-was made from it), `zips` (folders zipped for download, by make run), and
-`progress.json` (the lines of its latest read or make, progress.py). The record is saved on
+was made from it), `zips` (folders zipped for download, by make run),
+`progress.json` (the lines of its latest read or make, progress.py), and `word-check.json`
+(its latest word check, word_check.py). The record is saved on
 every change, so a restarted server lists every book. One that was waiting or being
 made when the server stopped shows as stopped.
 

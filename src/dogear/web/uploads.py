@@ -27,7 +27,6 @@ FIELD = "book"
 # Room for the form's own boundaries and headers on top of the file.
 FORM_OVERHEAD_BYTES = 64 * 1024
 NOT_A_FORM = "The upload wasn't a form Dogear understands. Try again."
-ACCEPT = ",".join(sorted(EXTRACTORS))  # ".azw,.azw3,.epub,.mobi,.pdf", for <input accept>
 
 
 # Status codes for a book that couldn't be written to disk.

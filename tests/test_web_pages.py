@@ -26,7 +26,7 @@ ERROR_PAGES = {
 # or an error in one form or another.
 SAME_PAGE = [
     {"home-empty", "home-books", "home-deleted"},
-    {"words-list", "words-saved"},
+    {"words-list", "words-saved", "words-many"},
     {"words-errors", "words-changed"},
     {"pronunciations-empty", "pronunciations-full", "pronunciations-added"},
     {
@@ -40,6 +40,8 @@ SAME_PAGE = [
 WORD_PAGES = {
     "words-list",
     "words-saved",
+    "words-many",
+    "words-all",
     "words-errors",
     "words-changed",
     "pronunciations-full",
@@ -97,6 +99,8 @@ def test_every_state_has_a_page(pages):
         "words-checking",
         "words-list",
         "words-saved",
+        "words-many",
+        "words-all",
         "words-empty",
         "words-errors",
         "words-changed",

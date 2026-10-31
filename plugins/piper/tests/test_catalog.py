@@ -74,3 +74,9 @@ def test_an_unknown_voice_has_a_hint(tmp_path):
     with pytest.raises(VoiceError, match="no voice called 'en_US-nobody-high'") as err:
         voice_files("en_US-nobody-high", tmp_path)
     assert "dogear voices" in err.value.hint
+
+
+def test_every_voice_says_its_sample_rate_and_the_pace_is_plausible():
+    for name, entry in catalog()["voices"].items():
+        assert entry["sample_rate"] in (16000, 22050), name
+    assert 100 <= catalog()["words_per_minute"] <= 300

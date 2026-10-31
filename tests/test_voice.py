@@ -14,7 +14,10 @@ from dogear.voice import g2p as g2p_module
 from dogear.voice import make_engine, prepare_voice
 from dogear.voice.catalog import (
     catalog,
+    downloaded_kokoro_file,
+    downloaded_spacy_model_dir,
     kokoro_file,
+    kokoro_files,
     kokoro_voice,
     kokoro_voices,
     spacy_model_dir,
@@ -421,3 +424,28 @@ def test_prepare_spacy_downloads_only_the_spacy_model(config, models, fake_downl
     assert fake_downloads == [["en_core_web_sm-3.8.0-py3-none-any.whl"]]
     assert prepare_spacy(config, print) == folder
     assert len(fake_downloads) == 1  # nothing more to fetch
+
+
+def test_spacys_unpacked_model_is_pinned_too():
+    assert SHA256.fullmatch(catalog()["spacy"]["model_sha256"])
+
+
+def test_kokoro_files_lists_every_build_the_tokenizer_and_every_voice():
+    kokoro = catalog()["kokoro"]
+    listed = kokoro_files()
+    assert [name for kind, name in listed if kind == "model"] == list(kokoro["models"])
+    assert ("tokenizer", "") in listed
+    assert [name for kind, name in listed if kind == "voice"] == list(kokoro["voices"])
+
+
+def test_downloaded_files_are_never_the_bundled_copies(tmp_path, standalone_build):
+    voice = catalog()["kokoro"]["voices"]["af_heart"]["sha256"]
+    bundled = standalone_build.add_model("kokoro/voices/af_heart.bin", voice)
+    assert kokoro_file("voice", "af_heart", tmp_path).path == bundled
+    downloaded = downloaded_kokoro_file("voice", "af_heart", tmp_path)
+    assert downloaded.path == tmp_path / "kokoro" / "voices" / "af_heart.bin"
+    folder = standalone_build.add_model_folder(
+        "spacy/en_core_web_sm-3.8.0", catalog()["spacy"]["sha256"]
+    )
+    assert spacy_model_dir(tmp_path) == folder
+    assert downloaded_spacy_model_dir(tmp_path) == tmp_path / "spacy" / "en_core_web_sm-3.8.0"

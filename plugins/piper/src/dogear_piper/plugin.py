@@ -9,13 +9,20 @@ from __future__ import annotations
 from importlib import resources
 
 from dogear.config import Config
+from dogear.errors import VoiceError
 from dogear.paths import models_dir
 from dogear.pronunciations import PronunciationDictionary
 from dogear.voice.downloads import Report, ensure_downloaded
 from dogear.voice.engine import VoiceEngine
-from dogear.voice.engines import Voice
+from dogear.voice.engines import Voice, VoicePace
 
-from dogear_piper.catalog import PiperFiles, piper_voices, voice_files
+from dogear_piper.catalog import (
+    PiperFiles,
+    piper_voices,
+    sample_rate,
+    voice_files,
+    words_per_minute,
+)
 
 
 class PiperPlugin:
@@ -50,13 +57,23 @@ class PiperPlugin:
 
         from dogear_piper.engine import PiperEngine
 
-        return PiperEngine(
+        engine = PiperEngine(
             model=files.model.path,
             config=files.config.path,
             speed=config["voice"]["speed"],
             threads=config["piper"]["threads"],
             identity=f"piper|{files.model.sha256}|{files.config.sha256}",
         )
+        if engine.sample_rate != sample_rate(voice.name):
+            raise VoiceError(
+                f"The Piper voice {voice.name} makes audio at {engine.sample_rate} Hz, but "
+                f"this plugin's catalog says {sample_rate(voice.name)} Hz.",
+                hint="This is a bug in the Piper plugin's catalog.toml. Please report it.",
+            )
+        return engine
+
+    def pace(self, config: Config, voice: Voice) -> VoicePace:
+        return VoicePace(sample_rate(voice.name), words_per_minute() * config["voice"]["speed"])
 
 
 ENGINE = PiperPlugin()

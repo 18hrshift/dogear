@@ -102,9 +102,10 @@ On the page:
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
 3. To fix names the voice says wrong, follow "check how words are said" on that page
-   (or on a finished book's page). Dogear lists the words the voice doesn't know, most
-   frequent first, each with a Listen button and a "Say it like" field. Write "utter son"
-   for Utterson, say, choose Save, and Listen again. Save changes only the words you
+   (or on a finished book's page). Dogear lists the 50 words the voice doesn't know that
+   come up most, each with a Listen button and a "Say it like" field, and a link to show
+   the rest. Write "utter son" for Utterson, say, choose Save, and Listen again. The list
+   is kept with the book, so it is still there after Dogear restarts. Save changes only the words you
    changed, so a page left open in another tab never undoes a change made since; if one
    of your words was also changed there, Dogear saves nothing and says so beside it. The
    Pronunciations page lists every word you have fixed, and can say any short text. The
@@ -151,14 +152,18 @@ dogear serve --lan
 
 Dogear shows a second link, with the computer's address on the network. Open it on the
 phone. Anyone on the network who has the link can use Dogear, and the connection isn't
-encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
+encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi. Where the
+address Dogear finds would be wrong, as in a container, `show_network_address = false`
+under `[web]` leaves the second link out, and Dogear says to use the first one with this
+computer's network address in place of `127.0.0.1`.
 
 Other options: `--port 8766` uses another port (if another program has 8765), and
 `--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
 the page accepts (200 MB at first), how long reading a book (or checking its words, or
 saying something for Listen) may go without any progress before Dogear takes it to be
-stuck and stops it (15 minutes at first), the folder where books are kept, and how many
-words the page's pronunciation file holds and how long each word and spelling may be.
+stuck and stops it (15 minutes at first), the folder where books are kept, how many
+words the page's pronunciation file holds and how long each word and spelling may be, and
+how many of a book's words "check how words are said" keeps and lists (500 at first).
 
 ## Make an audiobook
 
@@ -176,6 +181,15 @@ prints a plain progress line now and then, with an estimate of the time left. **
 is safe**: press Ctrl+C, run the same command later, and it carries on where it stopped.
 Every spoken sentence is kept, so fixing one word in a book re-speaks only the sentences
 that contain it.
+
+It needs disk space, too. The spoken sentences take about 170 MB for each hour of audio,
+in Dogear's speech cache (in your usual cache folder; `cache_dir` under `[render]` in a
+settings file moves it). While it works, it needs about twice that again, and then room for
+what it saves. Before speaking anything, Dogear estimates what the book needs on each disk.
+If a disk doesn't have it, Dogear stops at once and says how much is needed, how much is
+free, and what to do. The estimate counts every sentence as new, so carrying on after a stop
+may ask for more than it uses. `space_margin_percent` under `[output]` (20 at first) adds
+room to it.
 
 Useful options:
 
@@ -250,6 +264,7 @@ dogear outline mybook.epub                # title, authors, and every section
 dogear text mybook.epub --section 3       # the text Dogear found in section 3
 dogear text mybook.epub --spoken          # every line exactly as the voice will say it
 dogear download                           # fetch the voice now, before going offline
+dogear download --check                   # check the voice files, and fix damaged ones
 ```
 
 Everything Dogear prints is plain text, written to read well with a screen reader. A
@@ -454,6 +469,16 @@ an open model small enough to run on a CPU. It has 28 English voices, American a
 best rated. Pronunciation comes from the dictionaries Kokoro was trained with
 ([misaki](https://github.com/hexgrad/misaki)), with eSpeak NG for words they don't have.
 Your own pronunciation files come first.
+
+Every voice file Dogear downloads is checked against a checksum pinned in Dogear before it
+is used, and the files that come with an installer were checked when it was built. If a
+file is damaged later, by a failing disk, say, Dogear may stop with an error that says
+so. `dogear download --check` checks every Kokoro voice file Dogear has against its
+checksum, including the ones that came with an installer, lists each as good or damaged, and
+downloads the damaged ones again. Files that came with an installer can't be downloaded
+again in place: reinstall Dogear to fix one. The command exits with status 1 if a file is
+still damaged at the end. The model alone is 325 MB, so the check takes a few seconds,
+with a progress line now and then.
 
 ### More voices: Piper
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dogear.config import Config
+from dogear.disk_space import check_space, space_needed
 from dogear.document import Book
 from dogear.errors import DogearError, OutputFolderError, VoiceError
 from dogear.extract import extract_book
@@ -25,7 +26,7 @@ from dogear.readalong import build_readalong
 from dogear.render import render_book
 from dogear.render.progress import Progress, Report
 from dogear.render.work import work_folder
-from dogear.voice import make_engine
+from dogear.voice import make_engine, voice_pace
 
 # m4b: one audiobook file with chapters. mp3: a folder of MP3 files with a playlist.
 # epub: an EPUB 3 talking book, text and audio in step. daisy: a DAISY 2.02 talking book.
@@ -66,6 +67,16 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
         f"{title_track}, about {_count(progress.total_words, 'word')}, "
         f"voice {config['voice']['voice']}."
     )
+    # Before the voice loads (or downloads), so a book that won't fit stops at once.
+    needs = space_needed(
+        progress.total_words,
+        formats,
+        cache_dir(config),
+        request.output_dir,
+        voice_pace(config),
+        config,
+    )
+    check_space(needs, config)
     engine = make_engine(config, report)
     with work_folder(cache_dir(config) / "work") as work:
         chapters = render_book(narrations, engine, config, work, report, progress)

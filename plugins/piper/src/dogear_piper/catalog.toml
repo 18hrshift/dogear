@@ -13,11 +13,18 @@
 # Voices are listed best first: Piper's own quality levels, high before medium before
 # x_low, then English first. Piper has no ratings of its own.
 
+# About how many words a minute Piper's voices say at speed 1.0, with Dogear's pauses:
+# what Dogear estimates a book's length and disk space from before speaking it. Sections 2
+# to 6 of Jekyll and Hyde (8,038 words) with en_US-ljspeech-high came to 44.8 minutes, 179
+# words a minute.
+words_per_minute = 180
+
 # One revision of the repository, so a file can't change under its pin.
 base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/b4e358ffcb232591bf73a540e70f7de528e4174a"
 
 [voices.en_US-ljspeech-high]
 path = "en/en_US/ljspeech/high"
+sample_rate = 22050
 language = "en-US"
 description = "American English"
 gender = "female"
@@ -28,6 +35,7 @@ config = { sha256 = "7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0
 
 [voices.en_GB-cori-high]
 path = "en/en_GB/cori/high"
+sample_rate = 22050
 language = "en-GB"
 description = "British English"
 gender = "female"
@@ -38,6 +46,7 @@ config = { sha256 = "9e7fb5b5671612c22f3c81cbe46c1ae87b031a4632bcb509e499dad6f1e
 
 [voices.en_US-kristin-medium]
 path = "en/en_US/kristin/medium"
+sample_rate = 22050
 language = "en-US"
 description = "American English"
 gender = "female"
@@ -48,6 +57,7 @@ config = { sha256 = "5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428
 
 [voices.en_US-norman-medium]
 path = "en/en_US/norman/medium"
+sample_rate = 22050
 language = "en-US"
 description = "American English"
 gender = "male"
@@ -58,6 +68,7 @@ config = { sha256 = "6c2db7f558a4a8deb9fe822583c1c5105f6c4e834dd0f9de8ad17a888ee
 
 [voices.en_US-john-medium]
 path = "en/en_US/john/medium"
+sample_rate = 22050
 language = "en-US"
 description = "American English"
 gender = "male"
@@ -72,6 +83,7 @@ config = { sha256 = "af60f177b6b550f3d7a302720c0fb89e7f94a82b5dca464775ef63b1c69
 
 [voices.fr_FR-mls-medium]
 path = "fr/fr_FR/mls/medium"
+sample_rate = 22050
 language = "fr-FR"
 description = "French"
 quality = "medium"
@@ -81,6 +93,7 @@ config = { sha256 = "252b0b0a6e4cc4949e23eccb956f9c779986c32f934f2f7e2191e5fdc2e
 
 [voices.de_DE-mls-medium]
 path = "de/de_DE/mls/medium"
+sample_rate = 22050
 language = "de-DE"
 description = "German"
 quality = "medium"
@@ -90,6 +103,7 @@ config = { sha256 = "b0af1c89ddfdc72d32e015729b0e89b99eec13c2c8caa1db7488d98e9e5
 
 [voices.es_ES-carlfm-x_low]
 path = "es/es_ES/carlfm/x_low"
+sample_rate = 16000
 language = "es-ES"
 description = "Spanish (Spain)"
 quality = "x_low"

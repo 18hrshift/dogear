@@ -7,12 +7,12 @@ from dogear import cli
 from dogear.config import load_config
 from dogear.errors import ConfigError, VoiceError
 from dogear.unknown_words import WordsRequest, find_unknown_words
-from dogear.voice import downloads, make_engine, prepare_voice
+from dogear.voice import VoicePace, downloads, make_engine, prepare_voice, voice_pace
 from dogear.voice.engines import choose_voice, find_voice, installed
 from dogear.web import choices
 from piper_fakes import write_voice_config
 
-from dogear_piper.catalog import voice_files
+from dogear_piper.catalog import voice_files, words_per_minute
 
 VOICE = "en_US-ljspeech-high"
 
@@ -130,3 +130,20 @@ def test_words_says_why_it_doesnt_apply(config, tmp_path):
 def test_kokoro_is_still_the_default(config):
     assert config["voice"]["engine"] == "kokoro"
     assert find_voice("af_heart").engine.name == "kokoro"
+
+
+def test_its_pace_comes_from_the_catalog_with_nothing_downloaded(config, models):
+    choose_voice(config, VOICE)
+    config["voice"]["speed"] = 0.9
+    assert voice_pace(config) == VoicePace(22050, words_per_minute() * 0.9)
+    choose_voice(config, "piper:es_ES-carlfm-x_low")
+    assert voice_pace(config).sample_rate == 16000
+    assert not any(models.rglob("*.onnx*"))
+
+
+def test_a_voice_whose_config_disagrees_with_the_catalog_is_refused(
+    config, models, fetched, fake_session
+):
+    choose_voice(config, "piper:es_ES-carlfm-x_low")  # the stand-in config says 22050
+    with pytest.raises(VoiceError, match="catalog says 16000 Hz"):
+        make_engine(config, print)

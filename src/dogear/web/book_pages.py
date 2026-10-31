@@ -20,7 +20,7 @@ from dogear.web.progress import LEFT_OUT_MANY, LEFT_OUT_ONE, MAX_KEPT, left_out_
 from dogear.web.settings import WebSettings
 from dogear.web.status import Status, describe
 from dogear.web.templating import message, render
-from dogear.web.uploads import ACCEPT, UploadError, disk_problem, receive_book
+from dogear.web.uploads import UploadError, disk_problem, receive_book
 
 DELETED = "The book was deleted."
 STATUS_LINES = 20  # the latest progress lines sent with each status update
@@ -65,7 +65,6 @@ def _home(
         current="books",
         books=books,
         notice=notice,
-        accept=ACCEPT,
         max_upload=f"{settings.max_upload_bytes // (1024 * 1024):,} MB",
     )
 

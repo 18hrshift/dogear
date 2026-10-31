@@ -9,10 +9,19 @@ the settings choose, whatever its engine.
 from __future__ import annotations
 
 from dogear.config import Config
+from dogear.errors import VoiceError
 from dogear.pronunciations import PronunciationDictionary, dictionary_from_config
 from dogear.voice.downloads import Report
 from dogear.voice.engine import VoiceEngine
-from dogear.voice.engines import ChosenVoice, EngineVoice, configured_voice, run_plugin
+from dogear.voice.engines import (
+    ChosenVoice,
+    EngineVoice,
+    VoicePace,
+    configured_voice,
+    run_plugin,
+)
+
+__all__ = ["VoicePace", "make_engine", "prepare_voice", "voice_pace"]
 
 
 def make_engine(config: Config, report: Report) -> VoiceEngine:
@@ -38,6 +47,23 @@ def prepare_voice(config: Config, report: Report) -> ChosenVoice:
         lambda: chosen.engine.plugin.prepare(config, chosen.voice, report),
     )
     return chosen
+
+
+def voice_pace(config: Config) -> VoicePace:
+    """The configured voice's sample rate and about how many words a minute it says,
+    known without loading or downloading anything."""
+    speed = config["voice"]["speed"]
+    if speed <= 0:
+        raise VoiceError(
+            f"voice.speed is {speed}, but it must be more than 0.",
+            hint="Use a value from 0.5 to 2.0, such as 0.9 or 1.1.",
+        )
+    chosen = configured_voice(config)
+    return run_plugin(
+        chosen.engine,
+        "estimating how long its audio will be",
+        lambda: chosen.engine.plugin.pace(config, chosen.voice),
+    )
 
 
 def _say_if_phoneme_entries_are_skipped(
