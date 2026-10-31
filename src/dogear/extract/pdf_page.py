@@ -72,6 +72,24 @@ def read_page(plumber_page: Any, index: int, label: str, settings: ReadSettings)
         lines=lines,
         has_images=bool(plumber_page.images),
         figures=_figures(plumber_page, lines, settings.image_min_page_share),
+        image_page_share=_image_page_share(plumber_page),
+    )
+
+
+def _image_page_share(page: Any) -> float:
+    """The largest raster image's share of the visible page, ignoring off-page parts."""
+    x0, top, x1, bottom = page.bbox
+    area = (x1 - x0) * (bottom - top)
+    if area <= 0:
+        return 0
+    return max(
+        (
+            max(0, min(image["x1"], x1) - max(image["x0"], x0))
+            * max(0, min(image["bottom"], bottom) - max(image["top"], top))
+            / area
+            for image in page.images
+        ),
+        default=0,
     )
 
 
