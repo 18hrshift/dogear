@@ -136,7 +136,12 @@ Goal: a helper with no Python experience can make a book.
       says yes, and names the host first. The first plugin speaks the OpenAI-compatible
       speech API (`plugins/openai_speech/`), which local servers speak too. Its default is
       OpenAI, whose speech models shut down on 2027-01-06: change the default before then.
-- [ ] Language detection per section, so a French quote in an English book gets a French voice.
+- [x] Language detection per section, so a French quote in an English book gets a French voice.
+      Built per passage: `[voice.languages]` gives each language a voice, the book's own
+      language marks come first, and `[language_detection]` (py3langid, off by default)
+      guesses the rest. Narration words in French, German, and Spanish. Known limits: the
+      volume is evened per chapter, not per voice, and no native speaker has checked the
+      word tables yet.
 - [x] More inputs: DOCX, HTML, Markdown, MOBI/AZW3 via Calibre, automatic OCR for scanned PDFs.
       Known limits: a PDF with only some pages scanned isn't OCR'd, and the installers
       don't include Tesseract (the Docker image does).
