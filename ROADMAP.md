@@ -125,12 +125,17 @@ Goal: a helper with no Python experience can make a book.
 
 ## Phase 4: More voices and languages
 
-- [ ] Voice engines as plugins. Candidates checked 2026-10-24 (re-check before building):
-      Piper (fastest on CPU, many languages, GPL-3.0, so it ships as a separate optional
-      package), OmniVoice (Apache-2.0, 600+ languages), Qwen3-TTS (Apache-2.0), Chatterbox (MIT).
+- [x] Voice engines as plugins, through the `dogear.engines` entry points, Kokoro included.
+      The first plugin is Piper (`plugins/piper/`, GPL-3.0, so a separate package), with
+      voices trained only on recordings anyone may use. Candidates re-checked 2026-10-30
+      (see [`docs/voice-engines.md`](docs/voice-engines.md)): OmniVoice's weights turned
+      out to be non-commercial, and Qwen3-TTS and Chatterbox are too slow on a CPU. Pocket
+      TTS (MIT code, CC BY weights) is the best candidate for a second plugin.
 - [ ] Cloud voices as opt-in plugins with a clear privacy warning.
 - [ ] Language detection per section, so a French quote in an English book gets a French voice.
-- [ ] More inputs: DOCX, HTML, Markdown, MOBI/AZW3 via Calibre, automatic OCR for scanned PDFs.
+- [x] More inputs: DOCX, HTML, Markdown, MOBI/AZW3 via Calibre, automatic OCR for scanned PDFs.
+      Known limits: a PDF with only some pages scanned isn't OCR'd, and the installers
+      don't include Tesseract (the Docker image does).
 
 ## Ground rules for every phase
 
