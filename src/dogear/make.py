@@ -250,7 +250,8 @@ def report_voices(
             else f"No installed voice speaks {language}."
         )
         report(
-            f"{_count(count, 'sentence')} in {language} are read by {choices.main.voice.name}, "
+            f"{_count(count, 'sentence')} in {language} {'is' if count == 1 else 'are'} read by "
+            f"{choices.main.voice.name}, "
             f"which speaks {choices.main.voice.description}. {offer}"
         )
     used = {primary(u.lang) for n in narrations for u in n.utterances if u.spoken}

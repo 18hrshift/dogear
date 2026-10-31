@@ -105,7 +105,7 @@ def test_without_a_voice_for_it_the_main_voice_reads_french_and_says_so(setup, c
     assert list(setup["voices"]) == ["kokoro:af_heart"]
     assert FRENCH in rendered(setup, "kokoro:af_heart")
     assert (
-        "1 sentence in fr are read by af_heart, which speaks American English. Voices for fr: "
+        "1 sentence in fr is read by af_heart, which speaks American English. Voices for fr: "
         "lilt:fr_one. Give it one under [voice.languages] in your settings, or set "
         'other_languages = "best" under [voice].'
     ) in setup["lines"]

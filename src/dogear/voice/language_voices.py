@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from dogear.config import Config
 from dogear.errors import ConfigError, VoiceError
-from dogear.language_match import most_specific, primary, same_language
+from dogear.language_match import lookup_keys, most_specific, primary, same_language
 from dogear.output.language_tag import language_tag
 from dogear.voice.engines import ChosenVoice, Engine, configured_voice, find_voice, installed
 
@@ -33,7 +33,7 @@ OTHER_LANGUAGES = (MAIN, BEST)
 @dataclass(frozen=True)
 class LanguageVoices:
     main: ChosenVoice
-    mapped: dict[str, ChosenVoice]  # lowercase language tag -> its voice
+    mapped: dict[str, ChosenVoice]  # language tag, as lookup_keys writes it -> its voice
     best_for_others: bool
 
     @classmethod
@@ -141,9 +141,10 @@ def mapped_voices(config: Config) -> dict[str, ChosenVoice]:
                 hint="Name each entry after the language its voice reads, such as "
                 'fr = "piper:fr_FR-mls-medium".',
             )
-        if tag.lower() in mapped:
+        key = lookup_keys(tag)[0]  # "FR" and "fra" are both "fr"
+        if key in mapped:
             raise ConfigError(
-                f"[voice.languages] lists the language {tag} twice, in different capitals.",
+                f"[voice.languages] lists the language {tag} twice, written two ways.",
                 hint="Keep one of them.",
             )
         chosen = _found(where, spec)
@@ -153,7 +154,7 @@ def mapped_voices(config: Config) -> dict[str, ChosenVoice]:
                 f"({chosen.voice.description}), not {tag}.",
                 hint=_voices_hint(tag),
             )
-        mapped[tag.lower()] = chosen
+        mapped[key] = chosen
     return mapped
 
 

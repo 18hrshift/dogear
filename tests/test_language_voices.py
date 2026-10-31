@@ -52,6 +52,18 @@ def test_tags_match_most_specific_first():
     assert same_language("EN-gb", "en") and not same_language("fr", "de")
 
 
+def test_three_letter_codes_and_underscores_match_their_language():
+    assert primary("eng") == "en" and primary("fra-CA") == "fr" and primary("en_US") == "en"
+    assert lookup_keys("en_US") == ["en-us", "en"]
+    assert most_specific({"fr": 1}, "fra") == 1
+    assert most_specific({"FR": 1}, "fr-BE") == 1
+    assert primary("kab") == "kab"  # no two-letter code: as it is
+
+
+def test_a_book_marked_eng_is_english(config):
+    assert LanguageVoices.from_config(config).speaks("eng")
+
+
 # Choosing.
 
 
