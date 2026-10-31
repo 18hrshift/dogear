@@ -67,7 +67,9 @@ device, please tell us (see "Getting help" below).
    choose "Upload the book". Dogear reads it to find its chapters. This usually takes
    less than a minute.
 2. **Choose what to make.** Check one or more kinds of book. Choose a voice: the list
-   starts with the best rated. Choose a speed: "a little slower" suits most listeners,
+   starts with the best rated. If someone has added more voices (such as Piper's: see
+   Dogear's README), each set is grouped under its engine's name, such as "Kokoro
+   voices". Choose a speed: "a little slower" suits most listeners,
    and players can change the speed later. Then choose which sections to read; all of
    them are checked to start with.
 3. **Try a short piece first.** For your first book, check only one or two short

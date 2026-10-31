@@ -334,7 +334,8 @@ option: `dogear say -o test.wav -- "-ing words"`.
 written in the symbols of misaki, the voice's pronunciation dictionary
 ([the list of symbols](https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md)).
 `dogear say "Lanyon" -o test.wav --phonemes` shows the phonemes the voice uses now, a
-good place to start. Phoneme entries work with the Kokoro voice only, and only for plain
+good place to start. Phoneme entries work with Kokoro's voices only (with another engine's,
+Dogear skips them and says so), and only for plain
 words (letters, spaces, hyphens, and apostrophes): Dogear spells out abbreviations and
 numbers before the voice reads them, so write "Saint John", not "St. John". A symbol the
 voice doesn't have stops Dogear with an error that names it.
@@ -367,7 +368,9 @@ announce_pages = true          # say "Page 42" where each print page begins
 ```
 
 The full list, with what each one does, is in
-[`src/dogear/defaults.toml`](src/dogear/defaults.toml).
+[`src/dogear/defaults.toml`](src/dogear/defaults.toml). Each voice engine has a table of
+its own: Kokoro's `[kokoro]` (which build of the model, and how many CPU threads) is in
+[`src/dogear/voice/kokoro.toml`](src/dogear/voice/kokoro.toml).
 
 To use the same settings file for every command without typing `--config` each time, set
 the `DOGEAR_CONFIG` environment variable to its full path. `--config` still wins when given.
@@ -405,6 +408,29 @@ an open model small enough to run on a CPU. It has 28 English voices, American a
 best rated. Pronunciation comes from the dictionaries Kokoro was trained with
 ([misaki](https://github.com/hexgrad/misaki)), with eSpeak NG for words they don't have.
 Your own pronunciation files come first.
+
+### More voices: Piper
+
+Other voice engines can be added to Dogear as plugins. The first is
+[Piper](plugins/piper/README.md): eight more voices, quick on an ordinary computer, five of
+them English. It's a separate package because Piper's license is the GPL. The installers
+and the Docker image can't take plugins yet, so this is for Dogear installed with Python.
+To install Dogear with Piper, run this one command (it works whether or not Dogear is
+installed already):
+
+```bash
+uv tool install git+https://github.com/18hrshift/dogear-app \
+  --with "dogear-piper @ git+https://github.com/18hrshift/dogear-app#subdirectory=plugins/piper"
+```
+
+Then `dogear voices` lists Piper's voices after Kokoro's, and you choose one by its name,
+such as `dogear make mybook.epub --voice en_US-ljspeech-high`. The web page lists them
+too, in a group of their own. Kokoro stays the voice Dogear uses unless you choose another.
+With a Piper voice, spellings in your pronunciation files work, but phoneme entries are
+skipped (they're written in Kokoro's symbols), and `dogear words` doesn't apply.
+[`plugins/piper/README.md`](plugins/piper/README.md) has the details, and
+[`docs/voice-engines.md`](docs/voice-engines.md) explains why Piper, and how to write a
+plugin for another engine.
 
 ## Get involved
 
