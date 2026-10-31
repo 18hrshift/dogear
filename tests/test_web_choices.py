@@ -100,17 +100,67 @@ def test_each_problem_is_named_by_its_field(config):
     assert picked.voice == "nobody"  # shown again as sent, though not in the list
 
 
-def test_a_book_in_another_language_must_be_read_as_english(config):
+def test_a_book_in_a_language_no_voice_speaks_must_be_read_as_english(config):
     french = replace(sample_summary(), language="fr-FR")
-    assert choices.asks_about_language(french)
-    assert not choices.asks_about_language(sample_summary())
-    assert not choices.asks_about_language(replace(sample_summary(), language=None))
+    assert choices.asks_about_language(french, config)
+    assert not choices.asks_about_language(sample_summary(), config)
+    assert not choices.asks_about_language(replace(sample_summary(), language=None), config)
     _, chosen, errors = choices.check(fields(), french, config)
     assert chosen is None
-    assert errors["english"].startswith("Dogear's voice speaks only English.")
+    assert errors["english"].startswith("None of Dogear's voices speaks this book's language.")
     _, chosen, errors = choices.check(fields(english=["yes"]), french, config)
     assert errors == {}
     assert chosen.as_english
+
+
+def lilt():
+    voices = [
+        hum_voice("fr_one", "fr-FR", description="French"),
+        hum_voice("de_one", "de-DE", description="German"),
+    ]
+    return fake_engine("lilt", "Lilt", voices)
+
+
+def test_a_french_book_offers_the_french_voices_first_and_picks_the_best(config, installed_engines):
+    installed_engines(lilt())
+    french = replace(sample_summary(), language="fr-FR")
+    groups = choices.voice_options(french)
+    assert groups[0].label == "Voices for this book's language (fr-FR)"
+    assert [o.value for o in groups[0].options] == ["lilt:fr_one"]
+    assert groups[0].options[0].label == "fr_one: French (Lilt)"
+    # It isn't listed twice: the Lilt group has the rest.
+    assert [o.value for o in groups[-1].options] == ["lilt:de_one"]
+    assert choices.defaults(french, config, None).voice == "lilt:fr_one"
+    assert choices.defaults(sample_summary(), config, None).voice == "kokoro:af_heart"
+
+
+def test_a_french_book_with_a_french_voice_needs_no_read_as_english(config, installed_engines):
+    installed_engines(lilt())
+    french = replace(sample_summary(), language="fr")
+    assert choices.asks_about_language(french, config)  # optional, with the voices first
+    _, chosen, errors = choices.check(fields(voice=["lilt:fr_one"]), french, config)
+    assert errors == {} and not chosen.as_english
+    _, chosen, errors = choices.check(fields(), french, config)
+    assert chosen is None
+    assert errors == {
+        "voice": "The voice you chose doesn't speak fr, the language this book says it is in. "
+        "Choose one of the voices for it, listed first, or choose Read it as English."
+    }
+    _, chosen, errors = choices.check(fields(english=["yes"]), french, config)
+    assert errors == {} and chosen.as_english
+
+
+def test_a_language_the_settings_give_a_voice_asks_nothing(config, installed_engines):
+    installed_engines(lilt())
+    french = replace(sample_summary(), language="fr")
+    config["voice"]["languages"] = {"fr": "lilt:fr_one"}
+    assert not choices.asks_about_language(french, config)
+    _, chosen, errors = choices.check(fields(), french, config)  # Kokoro, with fr mapped
+    assert errors == {} and not chosen.as_english
+    config["voice"]["languages"] = {}
+    config["voice"]["other_languages"] = "best"
+    assert not choices.asks_about_language(french, config)
+    assert choices.asks_about_language(replace(french, language="ja"), config)
 
 
 def test_read_as_english_is_only_kept_when_asked(config):

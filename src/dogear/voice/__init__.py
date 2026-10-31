@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dogear.config import Config
 from dogear.errors import VoiceError
+from dogear.language_match import is_english
 from dogear.pronunciations import PronunciationDictionary, dictionary_from_config
 from dogear.voice.downloads import Report
 from dogear.voice.engine import VoiceEngine
@@ -21,12 +22,16 @@ from dogear.voice.engines import (
     run_plugin,
 )
 
-__all__ = ["VoicePace", "make_engine", "prepare_voice", "voice_pace"]
+__all__ = ["VoicePace", "make_engine", "make_voice", "prepare_voice", "voice_pace"]
 
 
 def make_engine(config: Config, report: Report) -> VoiceEngine:
     """The configured voice, downloading its files first if needed."""
-    chosen = configured_voice(config)
+    return make_voice(config, configured_voice(config), report)
+
+
+def make_voice(config: Config, chosen: ChosenVoice, report: Report) -> VoiceEngine:
+    """The voice `chosen`, downloading its files first if needed."""
     # Read first, so a mistake in a pronunciation file is reported before a long download.
     pronunciations = dictionary_from_config(config)
     _say_if_phoneme_entries_are_skipped(chosen, pronunciations, report)
@@ -49,16 +54,16 @@ def prepare_voice(config: Config, report: Report) -> ChosenVoice:
     return chosen
 
 
-def voice_pace(config: Config) -> VoicePace:
-    """The configured voice's sample rate and about how many words a minute it says,
-    known without loading or downloading anything."""
+def voice_pace(config: Config, chosen: ChosenVoice | None = None) -> VoicePace:
+    """A voice's sample rate and about how many words a minute it says, known without
+    loading or downloading anything. The voice is `chosen`, or the configured one."""
     speed = config["voice"]["speed"]
     if speed <= 0:
         raise VoiceError(
             f"voice.speed is {speed}, but it must be more than 0.",
             hint="Use a value from 0.5 to 2.0, such as 0.9 or 1.1.",
         )
-    chosen = configured_voice(config)
+    chosen = chosen or configured_voice(config)
     return run_plugin(
         chosen.engine,
         "estimating how long its audio will be",
@@ -70,9 +75,14 @@ def _say_if_phoneme_entries_are_skipped(
     chosen: ChosenVoice, pronunciations: PronunciationDictionary, report: Report
 ) -> None:
     """Phoneme entries are written in misaki's symbols, which only some engines read.
-    Sounds-like entries are applied before any engine sees the text, so they always work."""
+    Sounds-like entries are applied before any engine sees the text, so they always work.
+    Phoneme entries are English, so a voice of another language never needed them."""
     entries = pronunciations.with_phonemes().entries
-    if not entries or chosen.engine.plugin.reads_misaki_phonemes:
+    if (
+        not entries
+        or chosen.engine.plugin.reads_misaki_phonemes
+        or not is_english(chosen.voice.language)
+    ):
         return
     count = "1 phoneme entry" if len(entries) == 1 else f"{len(entries)} phoneme entries"
     report(

@@ -183,13 +183,14 @@ def _choose(
         summary=summary,
         about=f"{count(len(summary.sections), 'section')} and {count(summary.words, 'word')}",
         formats=choices.format_options(),
-        voices=choices.voice_options(),
+        voices=choices.voice_options(summary),
         speeds=choices.speed_options(config),
         sections=[
             {"number": s.number, "description": describe_section(s)} for s in summary.sections
         ],
         picked=picked,
-        ask_language=choices.asks_about_language(summary),
+        ask_language=choices.asks_about_language(summary, config),
+        language_voices=bool(choices.language_voices(summary)),
     )
 
 

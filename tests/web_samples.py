@@ -14,17 +14,21 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import lxml.html
+from engine_fakes import entry_point_for, fake_engine, hum_voice
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from dogear.book_summary import BookSummary, SectionSummary
 from dogear.config import Config, default_config
 from dogear.unknown_words import UnknownWord
+from dogear.voice import engines
 from dogear.web.access_key import AccessKey
 from dogear.web.app import STATIC, create_app
 from dogear.web.books import Choices, Output
@@ -136,7 +140,7 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
     script beside them in OUT_DIR/static. Returns the files by name."""
     out_dir.mkdir(parents=True, exist_ok=True)
     pages: dict[str, str] = {}
-    with tempfile.TemporaryDirectory() as temporary:
+    with _engines(), tempfile.TemporaryDirectory() as temporary:
         folder = Path(temporary)
         app = sample_app(folder)
         library: Library = app.state.library
@@ -216,6 +220,7 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
             data={"format": "m4b", "voice": "kokoro:af_heart", "speed": "0.9", "section": "1"},
         ).text
         pages["delete"] = client.get(f"/books/{books['done']}/delete").text
+        pages.update(_language_voice_pages(library, client, folder))
         pages.update(_word_pages(app, client, folder))
         pages.update(_listen_pages(app, client))
         pages.update(_pronunciation_pages(app, client))
@@ -255,6 +260,35 @@ def keep_listen(listens: Listens, listen: Listen) -> None:
     listens._listens[listen.id] = listen
     if listen.state == "done":
         (listens.folder / f"{listen.id}.wav").write_bytes(b"RIFF" + bytes(44_000))
+
+
+@contextmanager
+def _engines(*extra) -> Iterator[None]:
+    """Only Dogear's own voice engines, and `extra` stand-ins, whatever is installed where
+    the pages are made: an installed plugin would change what the pages offer."""
+    own = [e for e in engines._entry_points() if e.dist and e.dist.name == engines.OWN_PACKAGE]
+    with patch.object(engines, "_entry_points", lambda: [*own, *extra]):
+        engines.installed.cache_clear()
+        try:
+            yield
+        finally:
+            engines.installed.cache_clear()
+
+
+def _language_voice_pages(library: Library, client: TestClient, folder: Path) -> dict[str, str]:
+    """The choose page for a French book with a French voice installed (a stand-in engine):
+    its voices come first, and choosing an English voice is an error."""
+    voices = [hum_voice("fr_one", "fr-FR", description="French")]
+    pages = {}
+    with _engines(entry_point_for(fake_engine("lilt", "Lilt", voices))):
+        roman = replace(sample_summary("Le Roman"), language="fr")
+        book = add_book(library, folder, "roman.epub", state="ready", summary=roman)
+        pages["choose-language-voices"] = client.get(f"/books/{book}/choose").text
+        pages["choose-language-voices-errors"] = client.post(
+            f"/books/{book}/choose",
+            data={"format": "m4b", "voice": "kokoro:af_heart", "speed": "0.9", "section": "1"},
+        ).text
+    return pages
 
 
 def _word_pages(app: Starlette, client: TestClient, folder: Path) -> dict[str, str]:

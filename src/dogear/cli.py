@@ -31,7 +31,15 @@ from dogear.document import (
 )
 from dogear.errors import DogearError
 from dogear.extract import extract_book, format_names
-from dogear.make import MakeRequest, make_audiobook, parse_formats, parse_sections
+from dogear.language_match import primary
+from dogear.make import (
+    MakeRequest,
+    guesser_for,
+    make_audiobook,
+    parse_formats,
+    parse_sections,
+    settle_language,
+)
 from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
 from dogear.pronunciations import dictionary_from_config
@@ -40,6 +48,7 @@ from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
 from dogear.voice import prepare_voice
 from dogear.voice.check import check_voice_files
 from dogear.voice.engines import choose_voice, describe_voice, installed
+from dogear.voice.language_voices import LanguageVoices
 from dogear.web.child import UTF8_OUTPUT_ENV
 from dogear.web.server_watch import stop_with_server_when_asked
 
@@ -136,8 +145,10 @@ def _parser() -> argparse.ArgumentParser:
     text.add_argument(
         "--spoken",
         action="store_true",
-        help="show each sentence the way the voice will say it",
+        help="show each sentence the way the voice will say it, and which voice says it",
     )
+    text.add_argument("--voice", help=f"with --spoken: the main voice; {VOICE_HELP}")
+    text.add_argument("--language", help="the book's language, if its own label is wrong")
     text.set_defaults(run=_text)
 
     make = commands.add_parser(
@@ -304,9 +315,12 @@ def _outline(args: argparse.Namespace, config: Config) -> int:
 
 
 def _text(args: argparse.Namespace, config: Config) -> int:
+    _apply_voice_options(args, config)
     if args.spoken or args.words:
         _use_word_files(args, config)
     book = extract_book(args.book, config, _report)
+    if args.language:
+        book.metadata.language = args.language
     sections = _chosen_sections(book, args.section)
     if args.spoken:
         _print_spoken(book, config, {number for number, _ in sections})
@@ -322,20 +336,45 @@ def _text(args: argparse.Namespace, config: Config) -> int:
 
 
 def _print_spoken(book: Book, config: Config, wanted: set[int]) -> None:
-    """Each section the way the voice will read it, one utterance per line."""
-    narrated = {n.number: n for n in narrate_book(book, config)}
+    """Each section the way the voices will read it, one utterance per line. In a book
+    with more than one language or voice, a line in brackets says where each starts."""
+    choices = LanguageVoices.from_config(config)
+    settle_language(book, choices, _report)
+    guesser = guesser_for(config, choices, _report)
+    narrated = {n.number: n for n in narrate_book(book, config, guesser)}
     paragraph_ms = config["narration"]["pauses"]["paragraph_ms"]
+    readers = {
+        (primary(u.lang), choices.voice_for(u.lang).spec)
+        for n in narrated.values()
+        for u in n.utterances
+        if u.spoken
+    }
     for number in sorted(wanted):
         print(f"Section {number}: {book.sections[number - 1].title}")
         print()
         if number not in narrated:
             print("Not read aloud: its notes are read where the text refers to them.")
+        reading = None
         for utterance in narrated[number].utterances if number in narrated else []:
-            if utterance.spoken:
-                print(utterance.spoken)
-                if utterance.pause_ms >= paragraph_ms:
-                    print()
+            if not utterance.spoken:
+                continue
+            reader = (primary(utterance.lang), choices.voice_for(utterance.lang).spec)
+            if len(readers) > 1 and reader != reading:
+                print(_reader_line(utterance.lang, choices))
+                reading = reader
+            print(utterance.spoken)
+            if utterance.pause_ms >= paragraph_ms:
+                print()
         print()
+
+
+def _reader_line(lang: str | None, choices: LanguageVoices) -> str:
+    """'[In fr, read by piper:fr_FR-mls-medium.]'"""
+    voice = choices.voice_for(lang)
+    language = primary(lang)
+    if choices.speaks(lang):
+        return f"[In {language}, read by {voice.spec}.]"
+    return f"[In {language}, read by {voice.spec}, which doesn't speak it.]"
 
 
 def _chosen_sections(book: Book, wanted: int | None) -> list[tuple[int, Section]]:

@@ -8,8 +8,22 @@ from dataclasses import dataclass
 from dogear.book_summary import BookSummary
 from dogear.config import Config
 from dogear.errors import VoiceError
-from dogear.make import FORMATS, speaks_language
-from dogear.voice.engines import configured_voice, describe_voice, find_voice, installed
+from dogear.language_match import is_english, most_specific
+from dogear.make import FORMATS
+from dogear.voice.engines import (
+    ChosenVoice,
+    configured_voice,
+    describe_voice,
+    find_voice,
+    installed,
+)
+from dogear.voice.language_voices import (
+    BEST,
+    LanguageVoices,
+    mapped_voices,
+    other_languages,
+    voices_for,
+)
 from dogear.web.books import Choices
 from dogear.web.forms import every, first
 
@@ -91,20 +105,64 @@ def format_options() -> list[FormatInfo]:
     return list(FORMAT_INFO.values())
 
 
-def voice_options() -> list[VoiceGroup]:
+def voice_options(summary: BookSummary | None = None) -> list[VoiceGroup]:
     """Each installed engine's voices, best first. A value names the engine as well as
-    the voice ("kokoro:af_heart"), so it stays clear whatever other engines have."""
-    return [
-        VoiceGroup(
-            f"{engine.title} voices",
-            tuple(Option(f"{engine.name}:{v.name}", describe_voice(v)) for v in engine.voices),
+    the voice ("kokoro:af_heart"), so it stays clear whatever other engines have. For a
+    book in another language than English, the voices that speak it come first, in a
+    group of their own."""
+    own = language_voices(summary) if summary is not None else []
+    first = {c.spec for c in own}
+    groups = []
+    if own and summary is not None:
+        groups.append(
+            VoiceGroup(
+                f"Voices for this book's language ({summary.language})",
+                tuple(Option(c.spec, f"{describe_voice(c.voice)} ({c.engine.title})") for c in own),
+            )
         )
-        for engine in installed().engines
-    ]
+    for engine in installed().engines:
+        options = tuple(
+            Option(f"{engine.name}:{v.name}", describe_voice(v))
+            for v in engine.voices
+            if f"{engine.name}:{v.name}" not in first
+        )
+        if options:
+            groups.append(VoiceGroup(f"{engine.title} voices", options))
+    return groups
 
 
 def voice_values() -> set[str]:
     return {option.value for group in voice_options() for option in group.options}
+
+
+def book_in_english(summary: BookSummary) -> bool:
+    """Whether the book is in English, as far as it says: a book that doesn't say is."""
+    return is_english(summary.language)
+
+
+def language_voices(summary: BookSummary) -> list[ChosenVoice]:
+    """The installed voices that speak the book's language, best first; none for a book
+    in English or one that doesn't say."""
+    if is_english(summary.language):
+        return []
+    return voices_for(summary.language or "")
+
+
+def asks_about_language(summary: BookSummary, config: Config) -> bool:
+    """Whether the form asks about the book's language: it says it's in another language
+    than English, and the settings don't give that language a voice of its own (a voice
+    under [voice.languages], or other_languages = "best" with one installed)."""
+    if is_english(summary.language):
+        return False
+    if most_specific(mapped_voices(config), summary.language) is not None:
+        return False
+    return not (other_languages(config) == BEST and language_voices(summary))
+
+
+def speaks_book_language(summary: BookSummary, config: Config, voice: str) -> bool:
+    """Whether the book, in its own language, is read by a voice that speaks it, when
+    `voice` is the main voice."""
+    return LanguageVoices.from_config(config, main=find_voice(voice)).speaks(summary.language)
 
 
 def speed_options(config: Config) -> list[Option]:
@@ -122,12 +180,6 @@ def speed_options(config: Config) -> list[Option]:
     ]
 
 
-def asks_about_language(summary: BookSummary) -> bool:
-    """Whether the book says it's in a language the voice doesn't speak. Books are often
-    marked wrongly, so the form then asks whether to read it as English anyway."""
-    return not speaks_language(summary.language)
-
-
 def defaults(summary: BookSummary, config: Config, last: Choices | None) -> Picked:
     if last is not None:
         return Picked(
@@ -137,9 +189,13 @@ def defaults(summary: BookSummary, config: Config, last: Choices | None) -> Pick
             sections=frozenset(last.sections),
             as_english=last.as_english,
         )
+    voice = _configured_voice(config)
+    own = language_voices(summary)
+    if own and asks_about_language(summary, config) and voice not in {c.spec for c in own}:
+        voice = own[0].spec  # the best voice for the book's language
     return Picked(
         formats=frozenset(f for f in config["output"]["formats"] if f in FORMATS),
-        voice=_configured_voice(config),
+        voice=voice,
         speed=_speed_text(float(config["voice"]["speed"])),
         sections=frozenset(s.number for s in summary.sections),
         as_english=False,
@@ -161,15 +217,23 @@ def check(
         as_english=first(fields, "english") == "yes",
     )
     errors: dict[str, str] = {}
-    if asks_about_language(summary) and not picked.as_english:
-        errors["english"] = (
-            "Dogear's voice speaks only English. To make this book anyway, choose Read it "
-            "as English."
-        )
-    if not picked.formats:
-        errors["format"] = "Choose at least one thing to make."
+    asks = asks_about_language(summary, config)
     if picked.voice not in voice_values():
         errors["voice"] = "Choose a voice from the list."
+    elif asks and not picked.as_english and not speaks_book_language(summary, config, picked.voice):
+        if language_voices(summary):
+            errors["voice"] = (
+                f"The voice you chose doesn't speak {summary.language}, the language this "
+                "book says it is in. Choose one of the voices for it, listed first, or choose "
+                "Read it as English."
+            )
+        else:
+            errors["english"] = (
+                "None of Dogear's voices speaks this book's language. To make it anyway, "
+                "choose Read it as English."
+            )
+    if not picked.formats:
+        errors["format"] = "Choose at least one thing to make."
     if picked.speed not in {option.value for option in speed_options(config)}:
         errors["speed"] = "Choose a speed."
     if any(n not in numbers for n in sent_sections):
@@ -184,7 +248,7 @@ def check(
         voice=picked.voice,
         speed=float(picked.speed),
         sections=tuple(sorted(picked.sections)),
-        as_english=picked.as_english and asks_about_language(summary),
+        as_english=picked.as_english and asks,
     )
     return picked, choices, {}
 
