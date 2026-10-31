@@ -43,7 +43,7 @@ class MakeRequest:
 def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list[Path]:
     """Make the configured outputs for one book. Returns what was saved, in order."""
     formats = _formats(config)
-    book = extract_book(request.book, config)
+    book = extract_book(request.book, config, report)
     if request.language:
         book.metadata.language = request.language
     check_language(book)

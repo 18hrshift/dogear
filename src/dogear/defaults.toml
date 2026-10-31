@@ -15,6 +15,12 @@ heading_size_ratio = 1.4
 subheading_size_ratio = 1.15
 # If pages average fewer text characters than this, the PDF is treated as scanned.
 min_chars_per_page = 25
+# true: a scanned PDF is read with OCR first, with Tesseract on this computer (see [ocr]),
+# which takes a while: often a few seconds a page. The pages read are kept in the cache
+# folder ([render] cache_dir), so stopping part way loses nothing, and reading the same
+# file again needs no OCR. Tesseract must be installed: Dogear's installers don't include
+# it, and the Docker image does. false: Dogear stops at a scanned PDF and says so.
+auto_ocr = true
 # A page's top or bottom line is a running header or footer (and removed) when the same
 # text, ignoring digits and case, opens or closes at least this many pages...
 running_line_min_pages = 3
@@ -68,8 +74,20 @@ max_member_mb = 64
 toc_depth = 2
 
 [ocr]
+# How scanned PDFs are read with OCR: by itself when [pdf] auto_ocr is true, and by
+# `dogear ocr`. Changing any of these, or updating Tesseract, reads a scanned PDF again
+# rather than using the text kept from an earlier read.
+# Each page is drawn as a picture at this resolution for Tesseract. 300 suits print; 70
+# is the least Tesseract takes.
 dpi = 300
-language = "eng"  # Tesseract language code(s), such as "eng" or "eng+fra"
+# Tesseract language code(s), such as "eng" or "eng+fra". Each needs Tesseract's language
+# pack for it; `tesseract --list-langs` lists the ones installed.
+language = "eng"
+# A page whose picture at that resolution would be bigger than this many megapixels is
+# drawn at a lower resolution, so a PDF can't make Dogear fill the computer's memory with
+# one page. A book page at 300 dpi is about 8 megapixels; 100 is a page about 33 inches
+# (85 cm) square.
+max_page_megapixels = 100
 
 [speech]
 # Longest piece of text sent to a voice engine at once. Longer sentences are split at
@@ -319,8 +337,9 @@ by = "By"  # the title track: "By Robert Louis Stevenson."
 and = "and"  # "By Ann Smith and Bob Jones."
 
 [render]
-# Where rendered sentences are kept so later runs reuse them. Empty means the usual
-# per-user cache folder. Safe to delete; the next run just takes longer.
+# Where rendered sentences, and the text read from scanned PDFs with OCR, are kept so
+# later runs reuse them. Empty means the usual per-user cache folder. Safe to delete; the
+# next run just takes longer.
 cache_dir = ""
 # Longest gap, in seconds, between progress lines while a long section is being spoken.
 progress_every_seconds = 120

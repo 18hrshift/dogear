@@ -7,12 +7,16 @@ and nothing is unpacked to disk.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
 from dogear.config import Config
 from dogear.document import Book
-from dogear.errors import UnsupportedFormatError
+from dogear.errors import ScannedPdfError, UnsupportedFormatError
+from dogear.render.progress import Report
+
+log = logging.getLogger(__name__)
 
 Extractor = Callable[[Path, Config], Book]
 
@@ -44,7 +48,9 @@ EXTRACTORS: dict[str, Extractor] = {
 }
 
 
-def extract_book(path: Path, config: Config) -> Book:
+def extract_book(path: Path, config: Config, report: Report | None = None) -> Book:
+    """The book in `path`. A scanned PDF is read with OCR first if pdf.auto_ocr is on,
+    which can take many minutes: `report` hears how that goes (else it is logged)."""
     if not path.is_file():
         raise UnsupportedFormatError(
             f"No such file: {path}", hint="Check the file name and the folder it is in."
@@ -56,4 +62,11 @@ def extract_book(path: Path, config: Config) -> Book:
             f"Dogear can't read {path.suffix or 'files without an extension'} files yet.",
             hint=f"Supported formats: {supported}.",
         )
-    return extractor(path, config)
+    try:
+        return extractor(path, config)
+    except ScannedPdfError:
+        if not config["pdf"]["auto_ocr"]:
+            raise
+    from dogear.extract import pdf
+
+    return pdf.extract_scanned(path, config, report or log.info)

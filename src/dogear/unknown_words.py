@@ -42,7 +42,7 @@ class UnknownWord:
 
 def find_unknown_words(request: WordsRequest, config: Config, report: Report) -> list[UnknownWord]:
     """The book's unknown words, most frequent first, as the configured voice would meet them."""
-    book = extract_book(request.book, config)
+    book = extract_book(request.book, config, report)
     if request.language:
         book.metadata.language = request.language
     check_language(book)
