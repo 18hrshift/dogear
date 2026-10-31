@@ -21,6 +21,7 @@ from dogear.document import (
 )
 from dogear.errors import ConfigError, ExtractionError
 from dogear.extract.html_book import extract
+from dogear.extract.html_encodings import CODECS, codec_for_label
 
 
 def page(body: str, *, head: str = "<title>A Page</title>", html_attrs: str = "") -> str:
@@ -351,6 +352,44 @@ def test_unreadable_file_is_an_extraction_error(tmp_path, config, monkeypatch):
     monkeypatch.setattr(Path, "open", refuse)
     with pytest.raises(ExtractionError, match="Permission denied"):
         extract(path, config)
+
+
+@pytest.mark.parametrize(
+    "label", ["base64", "uu", "zlib", "rot13", "rot-13", "hex", "bz2", "punycode", "utf-7"]
+)
+def test_a_codec_that_isnt_a_browsers_character_set_is_ignored(tmp_path, config, caplog, label):
+    """Python's codecs include ones that aren't text at all, and UTF-7, which browsers
+    refuse. Before, each of these stopped Dogear with a traceback or read nothing."""
+    data = f'<meta charset="{label}"><p>Café text.</p>'.encode()
+    with caplog.at_level(logging.WARNING):
+        book = read(tmp_path, config, data)
+    assert book.sections[0].blocks == [Paragraph("Café text.")]  # guessed: UTF-8
+    assert f"says its text is in '{label}', which Dogear doesn't know" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("label", "data", "expected"),
+    [
+        ("UTF8", "naïve".encode(), "naïve"),
+        ("us-ascii", b"caf\xe9 \x93q\x94", "café “q”"),  # read as Windows-1252
+        ("latin1", b"\x80uro", "€uro"),
+        ("utf-16", "naïve".encode(), "naïve"),  # a <meta> read as ASCII can't be UTF-16
+        ("koi8-r", "мир".encode("koi8_r"), "мир"),
+        ("shift_jis", "日本".encode("cp932"), "日本"),
+        ("gbk", "中文".encode("gbk"), "中文"),
+        ("iso-8859-8-i", "שלום".encode("iso8859_8"), "שלום"),
+    ],
+)
+def test_browsers_character_set_labels(tmp_path, config, label, data, expected):
+    page_bytes = f'<meta charset="{label}"><p>'.encode() + data + b"</p>"
+    [block] = read(tmp_path, config, page_bytes).sections[0].blocks
+    assert block == Paragraph(expected)
+
+
+def test_every_label_is_a_text_codec():
+    for label, codec in CODECS.items():
+        assert codecs.lookup(codec)._is_text_encoding, label
+    assert codec_for_label(" UTF-8 ") == "utf-8" and codec_for_label("base64") is None
 
 
 def test_unknown_declared_charset_is_reported(tmp_path, config, caplog):
