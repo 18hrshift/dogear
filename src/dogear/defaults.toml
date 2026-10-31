@@ -100,8 +100,8 @@ max_pieces = 1000000
 
 [ocr]
 # How scanned PDFs are read with OCR: by itself when [pdf] auto_ocr is true, and by
-# `dogear ocr`. Changing any of these, or updating Tesseract, reads a scanned PDF again
-# rather than using the text kept from an earlier read.
+# `dogear ocr`. Changing any of these, or updating Tesseract or a language pack, reads a
+# scanned PDF again rather than using the text kept from an earlier read.
 # Each page is drawn as a picture at this resolution for Tesseract. 300 suits print; 70
 # is the least Tesseract takes.
 dpi = 300

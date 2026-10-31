@@ -6,8 +6,9 @@ the words Tesseract found, as invisible text where they are printed, without the
 picture of the page, which Dogear doesn't read. Each is written under a temporary name
 and renamed when complete. Once every page is read they are joined (pypdf) into
 `text-layer.pdf`, written the same way, and the page files are deleted. The key is the
-SHA-256 of the PDF's bytes together with the [ocr] settings and Tesseract's version, so
-changing any of them reads the book again.
+SHA-256 of the PDF's bytes together with the [ocr] settings, Tesseract's version, and
+the SHA-256 of each language's data file (tesseract.py), so changing any of them reads
+the book again.
 
 One run at a time works in a key's folder, holding the lock on its `in-use.lock`
 (file_lock.py) while it reads pages or joins them. Another run on the same file waits,
@@ -92,6 +93,7 @@ def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
         "max_page_pixels": settings.max_page_pixels,
         "max_page_side": settings.max_page_side,
         "tesseract": tesseract.version,
+        "language_data": tesseract.language_data,
     }
     return hashlib.sha256(json.dumps(facts, sort_keys=True).encode("utf-8")).hexdigest()
 

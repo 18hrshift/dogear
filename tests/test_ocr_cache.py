@@ -129,10 +129,11 @@ def test_the_cache_key_covers_the_file_the_ocr_settings_and_tesseract(scan, conf
         cache_key(scan, replace(settings, max_page_pixels=1), TESSERACT),
         cache_key(scan, replace(settings, max_page_side=1000), TESSERACT),
         cache_key(scan, settings, Tesseract("tesseract", "tesseract 5.4.0")),
+        cache_key(scan, settings, Tesseract("tesseract", "tesseract 5.3.4", "eng=a new pack")),
     ]
     other = scanned_words(tmp_path / "other.pdf", ["ONE", "TWO", "FOUR"], dpi=20)
     changed.append(cache_key(other, settings, TESSERACT))
-    assert len({key, *changed}) == 7
+    assert len({key, *changed}) == 8
 
 
 @pytest.mark.parametrize(

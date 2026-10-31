@@ -3,6 +3,9 @@ with Tesseract, the checks before it, and the progress sentences."""
 
 import copy
 import logging
+import re
+from hashlib import sha256
+from pathlib import Path
 
 import pdfplumber
 import pytest
@@ -24,7 +27,13 @@ from dogear.ocr import default_output_path, ocr_pdf, page
 from dogear.ocr.page import open_pdf, page_dpi, page_pixels
 from dogear.ocr.progress import OcrProgress
 from dogear.ocr.settings import MIN_DPI, OcrSettings
-from dogear.ocr.tesseract import find_tesseract
+from dogear.ocr.tesseract import (
+    NO_FOLDER,
+    LanguageListing,
+    find_tesseract,
+    language_data,
+    read_listing,
+)
 
 WORDS = ["ACCESSIBLE BOOKS", "LISTEN CLOSELY"]
 
@@ -106,6 +115,42 @@ def test_the_installed_languages_pass(config):
     require_tool("tesseract")
     tesseract = find_tesseract(config, OcrSettings.from_config(config))
     assert tesseract.version.startswith("tesseract")
+    assert re.fullmatch(r"eng=[0-9a-f]{64}", tesseract.language_data)
+
+
+def test_the_language_listing_names_its_folder_when_tesseract_says():
+    five = 'List of available languages in "/usr/share/tessdata/" (2):\neng\nosd\n'
+    assert read_listing(five) == LanguageListing(Path("/usr/share/tessdata/"), {"eng", "osd"})
+    older = "List of available languages (2):\neng\nosd\n"
+    assert read_listing(older) == LanguageListing(None, {"eng", "osd"})
+
+
+def test_the_language_data_is_each_files_sha256(tmp_path):
+    (tmp_path / "eng.traineddata").write_bytes(b"one")
+    (tmp_path / "script").mkdir()
+    (tmp_path / "script" / "Latin.traineddata").write_bytes(b"two")
+    listing = LanguageListing(tmp_path, {"eng", "script/Latin", "fra"})
+    found = language_data(listing, ["eng", "script/Latin"])
+    assert found == f"eng={sha256(b'one').hexdigest()}+script/Latin={sha256(b'two').hexdigest()}"
+    (tmp_path / "eng.traineddata").write_bytes(b"a newer pack")
+    assert language_data(listing, ["eng", "script/Latin"]) != found
+    assert language_data(listing, ["fra"]) == "fra=unreadable"
+    assert language_data(LanguageListing(None, {"eng"}), ["eng"]) == NO_FOLDER
+
+
+def test_another_language_data_folder_changes_what_tesseract_is_keyed_by(
+    config, tmp_path, monkeypatch
+):
+    """A new eng.traineddata, or TESSDATA_PREFIX naming another folder, reads a scanned
+    book again: before, only `tesseract --version` was in the cache key."""
+    require_tool("tesseract")
+    settings = OcrSettings.from_config(config)
+    usual = find_tesseract(config, settings).language_data
+    (tmp_path / "eng.traineddata").write_bytes(b"not really a language pack")
+    monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path))
+    other = find_tesseract(config, settings).language_data
+    assert other == f"eng={sha256(b'not really a language pack').hexdigest()}"
+    assert other != usual
 
 
 @pytest.mark.parametrize(

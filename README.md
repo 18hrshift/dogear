@@ -309,7 +309,7 @@ Settings, under `[ocr]`: `language` is the book's language as Tesseract names it
 `"eng"` (the default) or `"eng+fra"`. Each one needs its language pack (Debian, Ubuntu:
 `sudo apt install tesseract-ocr-fra`; macOS: `brew install tesseract-lang`), and Dogear
 says which is missing. `dpi` is how sharply pages are drawn for Tesseract (300). Changing
-either, or updating Tesseract, reads the book again. A page whose picture would be over
+either, or updating Tesseract or a language pack, reads the book again. A page whose picture would be over
 `max_page_megapixels` (100) or `max_page_side_pixels` (32,767 pixels wide or tall) is
 drawn at a lower resolution; one that would need less than 70 dpi to fit, a page many feet
 across, isn't read at all, and Dogear says which page it is. To have Dogear stop at a scanned PDF
