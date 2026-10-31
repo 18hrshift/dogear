@@ -11,6 +11,12 @@ Front matter is the block between a first line of `---` and the next `---` (or `
 It is parsed with PyYAML's BaseLoader, which makes only text, lists, and mappings: no tag
 can build any other object, and every value stays text as written, so `lang: no`
 (Norwegian) is "no", not false. Other keys are for other programs and are ignored.
+
+Front matter is a few lines. A block longer than MAX_CHARACTERS isn't read as YAML at all:
+it is the text after a --- rule. One that nests lists and mappings deeper than MAX_DEPTH
+is refused, since PyYAML builds nested values by recursion and a few hundred levels
+exhaust it. The depth is found first from PyYAML's stream of events, which it reads
+without recursion, so nothing deep is ever built.
 """
 
 from __future__ import annotations
@@ -25,14 +31,17 @@ from dogear.errors import ExtractionError
 
 log = logging.getLogger(__name__)
 
+MAX_CHARACTERS = 64 * 1024  # the front matter of a book is a few hundred
+MAX_DEPTH = 50  # lists and mappings inside each other: other programs' settings nest a few
 TITLE_KEYS = ("title",)
 AUTHOR_KEYS = ("author", "authors")
 LANGUAGE_KEYS = ("lang", "language")
 
 
 class NotFrontMatter(Exception):
-    """The block parsed, but as something other than key: value pairs, so it isn't front
-    matter: a Markdown file can open with a `---` rule, too."""
+    """The block parsed, but as something other than key: value pairs, or is far too long
+    for front matter, so it isn't front matter: a Markdown file can open with a `---`
+    rule, too."""
 
 
 @dataclass(frozen=True)
@@ -44,8 +53,13 @@ class FrontMatter:
 
 def read_front_matter(source: str, what: str) -> FrontMatter:
     """The metadata in `source`, the text between the `---` lines of the file `what`."""
+    if len(source) > MAX_CHARACTERS:
+        raise NotFrontMatter  # far longer than any: a --- rule, and the text after it
     try:
+        _check_depth(source, what)
         data = yaml.load(source, Loader=yaml.BaseLoader)  # text, lists, and mappings only
+    except RecursionError:
+        raise _too_deep(what) from None
     except yaml.YAMLError as e:
         raise ExtractionError(
             f"The front matter at the top of {what} isn't valid YAML ({_problem(e)}).",
@@ -63,6 +77,29 @@ def read_front_matter(source: str, what: str) -> FrontMatter:
         title=_text(fields, TITLE_KEYS, what),
         authors=_names(fields, AUTHOR_KEYS, what),
         language=_text(fields, LANGUAGE_KEYS, what),
+    )
+
+
+def _check_depth(source: str, what: str) -> None:
+    """Raise ExtractionError if lists and mappings nest more than MAX_DEPTH deep in
+    `source`, read as PyYAML's events. A YAML mistake raises yaml.YAMLError, as
+    yaml.load would."""
+    depth = 0
+    for event in yaml.parse(source, Loader=yaml.BaseLoader):
+        if isinstance(event, yaml.CollectionStartEvent):
+            depth += 1
+            if depth > MAX_DEPTH:
+                raise _too_deep(what)
+        elif isinstance(event, yaml.CollectionEndEvent):
+            depth -= 1
+
+
+def _too_deep(what: str) -> ExtractionError:
+    return ExtractionError(
+        f"The front matter at the top of {what} nests lists or mappings more than "
+        f"{MAX_DEPTH} levels deep, more than Dogear reads.",
+        hint="Front matter needs only the title, author, and language, as text or lists. "
+        "The file may be damaged or built to exhaust memory.",
     )
 
 

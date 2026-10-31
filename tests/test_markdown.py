@@ -18,6 +18,7 @@ from dogear.document import (
     Table,
 )
 from dogear.errors import ConfigError, ExtractionError
+from dogear.extract import front_matter
 from dogear.extract.markdown_book import extract
 
 FRONT = """---
@@ -105,6 +106,45 @@ def test_front_matter_cant_build_objects(tmp_path, config):
     book = read(tmp_path, config, front)
     assert not marker.exists()
     assert book.metadata.title == "book"  # the value is a list, not text: ignored
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "[" * 400 + "]" * 400,  # a RecursionError before
+        "{a: " * 400 + "}" * 400,
+        "[" * 50 + "]" * 50,  # 51 deep, with the mapping around it
+        "\n" + "\n".join("  " * n + "- " for n in range(1, 60)) + "x",
+    ],
+)
+def test_front_matter_nested_too_deep_is_an_error(tmp_path, config, value):
+    with pytest.raises(ExtractionError, match="more than 50 levels deep") as e:
+        read(tmp_path, config, f"---\ntitle: {value}\n---\n\nText.\n")
+    assert "title, author, and language" in e.value.hint
+
+
+def test_running_out_of_recursion_in_yaml_is_an_error_too(tmp_path, config, monkeypatch):
+    def too_deep(*args, **kwargs):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(front_matter.yaml, "load", too_deep)
+    with pytest.raises(ExtractionError, match="more than 50 levels deep"):
+        read(tmp_path, config, "---\ntitle: Fine\n---\n\nText.\n")
+
+
+def test_front_matter_nested_a_little_is_read(tmp_path, config):
+    nested = "[" * 49 + "]" * 49  # 50 deep, with the mapping around it
+    book = read(tmp_path, config, f"---\ntitle: Shallow\nother: {nested}\n---\n\nText.\n")
+    assert book.metadata.title == "Shallow"
+
+
+def test_a_block_too_long_for_front_matter_is_read_as_text(tmp_path, config, caplog):
+    # 66,000 characters, which as YAML would be a mistake: "mapping values not allowed"
+    chapter = "A chapter after a rule: its words. " * 1_900
+    with caplog.at_level(logging.INFO):
+        found = blocks(tmp_path, config, f"---\n\n{chapter}\n\n---\n\nMore.\n")
+    assert found == [Paragraph(chapter.strip()), SceneBreak(), Paragraph("More.")]
+    assert "aren't front matter" in caplog.text
 
 
 def test_values_that_arent_text_are_ignored_with_a_warning(tmp_path, config, caplog):
