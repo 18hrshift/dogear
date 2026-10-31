@@ -64,3 +64,6 @@ url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_s
 sha256 = "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85"
 size = 12806118
 model_dir = "en_core_web_sm/en_core_web_sm-3.8.0"
+# The model folder once unpacked, for `dogear download --check`: the SHA-256 of a line per
+# file, "<SHA-256>  <path in the folder>", sorted by path (downloads.folder_sha256).
+model_sha256 = "c5f8f24316f1ae15179131e1fab8bf23cf39488a9b7620478a7535c4d8b654cc"

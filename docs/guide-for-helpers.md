@@ -154,6 +154,9 @@ Dogear says what went wrong and what to do next. The most common problems:
   spellings are used for every book, and the Pronunciations page, in the list at the top
   of every page, lets you change or remove them, add a word, and listen to any short
   text.
+- **"The file may be damaged":** one of the voice's files on the computer is damaged.
+  Reinstalling Dogear fixes it. Or, in a terminal, `dogear download --check` checks every
+  voice file and downloads the damaged ones again (it needs the internet).
 - **"This page needs Dogear's access link":** open the link shown in Dogear's window,
   which logs this browser in. It looks like `http://127.0.0.1:8765/start?key=...`.
 - **"Port 8765 is in use already":** Dogear is probably running in another window. Use
