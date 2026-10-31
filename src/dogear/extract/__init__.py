@@ -33,6 +33,12 @@ def _pdf(path: Path, config: Config) -> Book:
     return pdf.extract(path, config)
 
 
+def _html(path: Path, config: Config) -> Book:
+    from dogear.extract import html_book
+
+    return html_book.extract(path, config)
+
+
 def _kindle(path: Path, config: Config) -> Book:
     from dogear.extract import calibre
 
@@ -50,6 +56,7 @@ class Format:
 FORMATS: tuple[Format, ...] = (
     Format("EPUB", (".epub",), _epub),
     Format("PDF", (".pdf",), _pdf),
+    Format("HTML", (".html", ".htm", ".xhtml"), _html),
     Format("MOBI", (".mobi",), _kindle),
     Format("AZW3", (".azw3", ".azw"), _kindle),
 )
