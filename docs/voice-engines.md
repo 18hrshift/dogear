@@ -268,6 +268,10 @@ Defined in `src/dogear/voice/engine.py`. The renderer gives it one sentence at a
   Use only `plan.payload`, not `plan.key`. Leave the level as the model makes it: Dogear
   evens out the volume across each chapter.
 
+Dogear checks what each method gives: a plan that isn't a `SpeechPlan` of two strings, or
+audio that isn't one channel of numbers (NaN or infinite samples included), stops the run
+with an error that names your engine and says to report it to you.
+
 Book text is untrusted. If your engine reads markup of its own in text (Piper reads
 `[[ ]]` as phonemes), give it the text another way.
 
