@@ -1,5 +1,7 @@
 """`dogear download --check`: hash every voice file Dogear has on disk against the SHA-256
-pinned in catalog.toml, and download again the ones in the models folder that don't match.
+pinned for it, and download again the ones in the models folder that don't match. Kokoro's
+and spaCy's are pinned in catalog.toml; another engine's are the ones its `pinned_files`
+lists.
 
 Starting Dogear never hashes the voice files (the model alone is 325 MB): a download is
 checked before it is renamed into place, and a standalone build's own files when it was
@@ -7,7 +9,8 @@ built. This is for when a file may have changed since: a failing disk, an edit b
 or an older Dogear, whose overlapping downloads could leave a model with the wrong bytes.
 
 Every file of the catalog that is on disk is checked, whichever voice it belongs to, in
-the models folder and in a standalone build's bundled folder. spaCy's unpacked model is
+the models folder and in a standalone build's bundled folder, and so is every file another
+installed engine pins that is on disk. spaCy's unpacked model is
 checked as one folder (`folder_sha256`), and its downloaded wheel, if one is left, as a
 file. A bad file in the models folder is downloaded again. A bundled one can't be: the
 app's own folder isn't Dogear's to change, and its files are used before any download.
@@ -18,12 +21,13 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from dogear import bundle
 from dogear.book_summary import count
 from dogear.config import Config
-from dogear.errors import DogearError
+from dogear.errors import DogearError, VoiceError
 from dogear.paths import models_dir
 from dogear.voice.catalog import (
     catalog,
@@ -41,6 +45,7 @@ from dogear.voice.downloads import (
     folder_sha256,
     megabytes,
 )
+from dogear.voice.engines import installed, run_plugin
 from dogear.voice.spacy_model import unpack_spacy_model
 
 Say = Callable[[str], None]
@@ -82,7 +87,7 @@ def check_voice_files(config: Config, say: Say, report: Report) -> None:
     downloaded again. Raises DogearError if any file is still bad at the end."""
     models = models_dir(config)
     shipped = bundled_files(models)
-    downloaded = [f for f in downloaded_files(models) if f.path.exists()]
+    downloaded = [f for f in [*downloaded_files(models), *engine_files(config)] if f.path.exists()]
     if not shipped and not downloaded:
         say(f"Dogear has no voice files yet. Downloads go into {models}.")
         say("Run `dogear download` to get the voice now, or let `dogear make` do it.")
@@ -116,6 +121,26 @@ def downloaded_files(models: Path) -> list[VoiceFile]:
     label = "spaCy's English model, as downloaded"
     spacy = VoiceFile(label, wheel.path, wheel.sha256, False, wheel)
     return [*_kokoro_files(models), spacy, _spacy_folder(models)]
+
+
+def engine_files(config: Config) -> list[VoiceFile]:
+    """Every file the installed engines other than Kokoro pin (`pinned_files`), on disk or
+    not. An engine that downloads nothing, such as a speech service, pins none."""
+    files = []
+    for engine in installed().engines:
+        pinned = getattr(engine.plugin, "pinned_files", None)
+        if pinned is None:
+            continue
+        for remote in run_plugin(engine, "listing its files", partial(pinned, config)):
+            if not isinstance(remote, RemoteFile):
+                raise VoiceError(
+                    f"The {engine.title} voice engine listed {remote!r} as a file it pins.",
+                    hint=f"This is a bug in {engine.package}: it must list RemoteFiles. Please "
+                    f"report it to {engine.report_to}.",
+                )
+            label = f"the {engine.title} file {remote.path.name}"
+            files.append(VoiceFile(label, remote.path, remote.sha256, False, remote))
+    return files
 
 
 def bundled_files(models: Path) -> list[VoiceFile]:

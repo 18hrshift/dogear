@@ -51,6 +51,9 @@ If another engine ever has a voice of the same name, put `piper:` first, as in
 dogear download --voice en_US-ljspeech-high
 ```
 
+`dogear download --check` checks Piper's files on disk along with Kokoro's, and downloads
+any damaged one again.
+
 To use a Piper voice every time, put this in your settings file:
 
 ```toml

@@ -482,9 +482,9 @@ Your own pronunciation files come first.
 Every voice file Dogear downloads is checked against a checksum pinned in Dogear before it
 is used, and the files that come with an installer were checked when it was built. If a
 file is damaged later, by a failing disk, say, Dogear may stop with an error that says
-so. `dogear download --check` checks every Kokoro voice file Dogear has against its
-checksum, including the ones that came with an installer, lists each as good or damaged, and
-downloads the damaged ones again. Files that came with an installer can't be downloaded
+so. `dogear download --check` checks every voice file Dogear has against its checksum,
+including the ones that came with an installer and those of voice engine plugins such as
+Piper, lists each as good or damaged, and downloads the damaged ones again. Files that came with an installer can't be downloaded
 again in place: reinstall Dogear to fix one. The command exits with status 1 if a file is
 still damaged at the end. The model alone is 325 MB, so the check takes a few seconds,
 with a progress line now and then.

@@ -114,7 +114,9 @@ class EnginePlugin(Protocol):
 #   configured_voices(config) -> Sequence[Voice]: the voices with these settings, for an
 #     engine whose voices are set in its settings table, as a speech service's are. Then
 #     `voices()` gives the voices of its default settings. Nothing is sent to list them.
-OPTIONAL_METHODS = ("configured_voices",)
+#   pinned_files(config) -> Sequence[RemoteFile]: every file it downloads (for any of its
+#     voices), pinned by SHA-256, where each lives on disk, for `dogear download --check`.
+OPTIONAL_METHODS = ("configured_voices", "pinned_files")
 
 
 @dataclass(frozen=True)

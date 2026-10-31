@@ -12,7 +12,7 @@ from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.paths import models_dir
 from dogear.pronunciations import PronunciationDictionary
-from dogear.voice.downloads import Report, ensure_downloaded
+from dogear.voice.downloads import RemoteFile, Report, ensure_downloaded
 from dogear.voice.engine import VoiceEngine
 from dogear.voice.engines import Voice, VoicePace
 
@@ -77,6 +77,12 @@ class PiperPlugin:
 
     def sends_text_to(self, config: Config, voice: Voice) -> None:
         return None  # Piper runs on this computer
+
+    def pinned_files(self, config: Config) -> list[RemoteFile]:
+        """Every voice's two files, for `dogear download --check`."""
+        models = models_dir(config)
+        every = [voice_files(voice.name, models) for voice in piper_voices()]
+        return [file for files in every for file in (files.model, files.config)]
 
 
 ENGINE = PiperPlugin()

@@ -7,12 +7,13 @@ from dogear import cli
 from dogear.config import load_config
 from dogear.errors import ConfigError, VoiceError
 from dogear.unknown_words import WordsRequest, find_unknown_words
-from dogear.voice import VoicePace, downloads, make_engine, prepare_voice, voice_pace
+from dogear.voice import VoicePace, check, downloads, make_engine, prepare_voice, voice_pace
 from dogear.voice.engines import choose_voice, find_voice, installed
 from dogear.web import choices
 from piper_fakes import write_voice_config
 
 from dogear_piper.catalog import voice_files, words_per_minute
+from dogear_piper.plugin import ENGINE
 
 VOICE = "en_US-ljspeech-high"
 
@@ -147,3 +148,26 @@ def test_a_voice_whose_config_disagrees_with_the_catalog_is_refused(
     choose_voice(config, "piper:es_ES-carlfm-x_low")  # the stand-in config says 22050
     with pytest.raises(VoiceError, match="catalog says 16000 Hz"):
         make_engine(config, print)
+
+
+def test_it_pins_both_files_of_every_voice(config, models):
+    pinned = ENGINE.pinned_files(config)
+    assert len(pinned) == 2 * len(ENGINE.voices())
+    files = voice_files(VOICE, models)
+    assert pinned[:2] == [files.model, files.config]
+
+
+def test_download_check_checks_its_files_and_downloads_a_damaged_one(config, models, monkeypatch):
+    files = voice_files(VOICE, models)
+    files.model.path.parent.mkdir(parents=True)
+    files.model.path.write_bytes(b"not the model")
+    asked = []
+    monkeypatch.setattr(check, "download", lambda remote, timeout, report: asked.append(remote))
+    lines = []
+    check.check_voice_files(config, lines.append, lines.append)
+    assert f"1. Damaged: the Piper file {VOICE}.onnx. It doesn't match its checksum." in lines
+    assert asked == [files.model]
+
+
+def test_it_keeps_the_text_on_this_computer(config):
+    assert ENGINE.sends_text_to(config, find_voice(VOICE).voice) is None
