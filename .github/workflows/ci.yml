@@ -129,6 +129,28 @@ jobs:
           # Section 1 is the book's own title page, so there is no separate title track.
           test "$chapters" -eq 2
 
+  openai-speech:
+    # The speech service plugin (plugins/openai_speech), installed beside Dogear: its own
+    # tests, against a fake speech service on the runner, one of them making a short
+    # audiobook through it. No network service is called and no key is needed, so the job
+    # has no secrets.
+    name: Speech service plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOGEAR_REQUIRE_TOOLS: ffmpeg,ffprobe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.13"
+      - name: Install ffmpeg, Tesseract, and eSpeak NG
+        timeout-minutes: 10
+        uses: ./.github/actions/install-tools
+      - name: Test the plugin
+        shell: bash
+        run: uv run --frozen --with-editable ./plugins/openai_speech pytest plugins/openai_speech/tests
+
   talking-books:
     # Talking books checked by the standard validators: EPUBCheck and Ace by DAISY for
     # EPUB 3, DAISY Pipeline 2 for DAISY 2.02. Two sections of the fixture, spoken with

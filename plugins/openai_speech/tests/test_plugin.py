@@ -2,6 +2,7 @@
 its settings and marked with where they send text, refused unless allowed, and speaking
 through the fake service when allowed. No request leaves this computer."""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -171,8 +172,12 @@ def test_its_settings_are_checked_like_dogears(tmp_path):
         load_config(path)
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
 def test_make_speaks_a_book_through_the_service(service, far_away, tmp_path, capsys):
+    if shutil.which("ffmpeg") is None:
+        # CI installs it and says so, so a broken runner can't skip this quietly.
+        if "ffmpeg" in os.environ.get("DOGEAR_REQUIRE_TOOLS", ""):
+            pytest.fail("ffmpeg is required (DOGEAR_REQUIRE_TOOLS) but was not found on PATH")
+        pytest.skip("ffmpeg not installed")
     path = settings_file(tmp_path, far_away)
     book = str(next(FIXTURES.glob("*.epub")))
     args = ["make", book, "--sections", "2", "--voice", "openai_speech:marin", "--allow-cloud"]
