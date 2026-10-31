@@ -139,7 +139,8 @@ def test_cache_keys_change_with_what_changes_the_audio(service, config):
 
 
 def test_it_downloads_nothing(service, config, capsys, tmp_path):
-    assert engine_files(config) == []
+    assert not hasattr(installed().get("openai_speech").plugin, "pinned_files")
+    assert not [f for f in engine_files(config) if "OpenAI" in f.label]
     path = settings_file(tmp_path, "https://api.openai.com/v1")
     assert cli.main(["download", "--voice", "marin", "--config", path]) == 0
     assert "has nothing to download: it is spoken by a service at api.openai.com" in (
@@ -158,7 +159,8 @@ def test_its_pace_comes_from_the_settings(config):
 
 def test_the_web_page_offers_its_voices_only_when_allowed(config):
     config["openai_speech"]["base_url"] = "https://api.openai.com/v1"
-    assert [g.label for g in choices.voice_options(config)] == ["Kokoro voices"]
+    groups = [g.label for g in choices.voice_options(config)]
+    assert "Kokoro voices" in groups and "OpenAI-compatible speech voices" not in groups
     config["voice"]["allow_cloud"] = True
     groups = {g.label: g for g in choices.voice_options(config)}
     first = groups["OpenAI-compatible speech voices"].options[0]
