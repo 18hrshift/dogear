@@ -227,6 +227,62 @@ def test_size_limit_must_be_positive(tmp_path):
         read(tmp_path, config, "Text.\n")
 
 
+def wide_table(columns: int, rows: int) -> str:
+    """A header `columns` wide over `rows` rows of one short cell each, which markdown-it
+    fills out to the header's width: a small file with many cells."""
+    return "|" + "h|" * columns + "\n|" + "-|" * columns + "\n" + "x\n" * rows + "\n"
+
+
+def test_a_wide_table_is_refused_before_it_fills_the_memory(tmp_path, config):
+    """Before, a 1.6 MB table of 2,000 columns by 400 rows took over 1 GB to read."""
+    config["markdown"]["max_pieces"] = 5_000
+    small = wide_table(100, 10)  # 1,100 cells, about 3,300 pieces
+    assert read(tmp_path, config, small).sections
+    text = wide_table(100, 20)  # under 700 bytes, but 2,100 cells
+    assert len(text) < 700
+    with pytest.raises(ExtractionError, match="more than 5,000 pieces") as e:
+        read(tmp_path, config, text)
+    assert "filled out to its header's width" in e.value.hint
+    assert "markdown.max_pieces" in e.value.hint
+
+
+def test_pieces_inside_paragraphs_count_too(tmp_path, config):
+    config["markdown"]["max_pieces"] = 5_000
+    assert read(tmp_path, config, "*a* " * 1_000 + "\n").sections  # 3 pieces each
+    with pytest.raises(ExtractionError, match="more than 5,000 pieces"):
+        read(tmp_path, config, "*a* " * 2_000 + "\n")
+
+
+def test_tables_in_quotes_and_lists_count_too(tmp_path, config):
+    config["markdown"]["max_pieces"] = 5_000
+    quoted = "\n".join("> " + line for line in wide_table(100, 20).splitlines())
+    listed = "- " + "\n  ".join(wide_table(100, 20).splitlines())
+    for text in (quoted, listed):
+        with pytest.raises(ExtractionError, match="more than 5,000 pieces"):
+            read(tmp_path, config, text + "\n")
+
+
+def test_too_many_lines_are_refused_before_they_are_parsed(tmp_path, config):
+    config["markdown"]["max_lines"] = 1_000
+    assert read(tmp_path, config, "Text.\n" + "\n" * 998).sections  # 1,000 lines
+    with pytest.raises(ExtractionError, match="has 1,001 lines, more than the 1,000") as e:
+        read(tmp_path, config, "Text.\n" + "\n" * 999)
+    assert "markdown.max_lines" in e.value.hint
+
+
+def test_the_default_limits_read_a_long_novel(tmp_path, config):
+    paragraph = "A sentence of a novel, written out at some length, " * 4
+    novel = "".join(f"## Chapter {n}\n\n" + (paragraph + "*Now*.\n\n") * 100 for n in range(60))
+    assert len(read(tmp_path, config, novel).sections) == 60
+
+
+@pytest.mark.parametrize("name", ["max_lines", "max_pieces"])
+def test_the_work_limits_must_be_positive(tmp_path, name):
+    config = load_config(_write(tmp_path / "dogear.toml", f"[markdown]\n{name} = 0\n"))
+    with pytest.raises(ConfigError, match=f"markdown.{name}"):
+        read(tmp_path, config, "Text.\n")
+
+
 def test_an_empty_file_has_no_text(tmp_path, config):
     with pytest.raises(ExtractionError, match="no readable text"):
         read(tmp_path, config, FRONT)

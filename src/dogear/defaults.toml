@@ -89,6 +89,14 @@ max_file_mb = 64
 [markdown]
 # Largest Markdown file Dogear reads, in megabytes. A long novel is under 3 MB.
 max_file_mb = 32
+# Most lines a Markdown file may have: reading one takes memory for each line, even a
+# blank one. A 3 MB novel hard-wrapped at 72 characters has under 60,000.
+max_lines = 500000
+# Most pieces a Markdown file may be read into, each paragraph, heading, list item,
+# table cell, line break, link, and stretch of text or emphasis being one or a few. The
+# same 3 MB novel is about 120,000. A table's rows are filled out to its header's width,
+# so without this a small file with a wide table could fill the memory.
+max_pieces = 1000000
 
 [ocr]
 # How scanned PDFs are read with OCR: by itself when [pdf] auto_ocr is true, and by
