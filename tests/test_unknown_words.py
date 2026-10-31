@@ -3,6 +3,7 @@
 spaCy's blank English pipeline stands in for the downloaded model, as in test_g2p.py.
 """
 
+import json
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -12,7 +13,13 @@ import pytest
 from dogear import cli, unknown_words
 from dogear.document import Book, Heading, Metadata, Paragraph, Section
 from dogear.errors import VoiceError
-from dogear.unknown_words import UnknownWord, WordsRequest, find_unknown_words, rank_words
+from dogear.unknown_words import (
+    UnknownWord,
+    WordsRequest,
+    find_unknown_words,
+    rank_words,
+    words_from_json,
+)
 from dogear.voice import downloads
 from dogear.voice.catalog import catalog
 
@@ -188,3 +195,50 @@ def test_cli_words_when_every_word_is_known(fakes, capsys, monkeypatch):
     monkeypatch.setattr("dogear.voice.g2p.count_unknown_words", lambda *args: Counter())
     assert cli.main(["words", "notes.epub"]) == 0
     assert capsys.readouterr().out == "The voice knows every word in this book.\n"
+
+
+def test_cli_words_json_is_the_same_list_in_ascii(fakes, capsys, monkeypatch):
+    monkeypatch.setattr(
+        "dogear.voice.g2p.count_unknown_words",
+        lambda *args: Counter({"Zoë": 2, "Utterson": 3, '"Back\\slash"': 1}),
+    )
+    assert cli.main(["words", "notes.epub", "--json"]) == 0
+    out = capsys.readouterr().out
+    assert out.isascii()
+    assert json.loads(out) == {
+        "words": [
+            {"word": "Utterson", "count": 3},
+            {"word": "Zoë", "count": 2},
+            {"word": "Back\\slash", "count": 1},
+        ]
+    }
+    assert words_from_json(json.loads(out)) == [
+        UnknownWord("Utterson", 3),
+        UnknownWord("Zoë", 2),
+        UnknownWord("Back\\slash", 1),
+    ]
+
+
+def test_cli_words_json_when_every_word_is_known(fakes, capsys, monkeypatch):
+    monkeypatch.setattr("dogear.voice.g2p.count_unknown_words", lambda *args: Counter())
+    assert cli.main(["words", "notes.epub", "--sections", "2", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"words": []}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [],
+        {"words": {}},
+        {"words": [{"word": "Hyde"}]},
+        {"words": [{"word": "Hyde", "count": 0}]},
+        {"words": [{"word": "Hyde", "count": True}]},
+        {"words": [{"word": "Hyde", "count": 1.5}]},
+        {"words": [{"word": " ", "count": 1}]},
+        {"words": [{"word": 3, "count": 1}]},
+        {"words": ["Hyde"]},
+    ],
+)
+def test_words_from_json_checks_every_word(data):
+    with pytest.raises(ValueError):
+        words_from_json(data)

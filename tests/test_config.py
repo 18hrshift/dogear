@@ -17,6 +17,24 @@ def test_no_file_means_defaults():
     assert load_config(None) == default_config()
 
 
+def test_environment_names_the_file_when_none_is_given(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOGEAR_CONFIG", str(write(tmp_path, "[pdf]\npage_split_size = 5\n")))
+    assert load_config(None)["pdf"]["page_split_size"] == 5
+
+
+def test_a_given_file_wins_over_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOGEAR_CONFIG", str(tmp_path / "missing.toml"))
+    given = write(tmp_path, "[pdf]\npage_split_size = 7\n")
+    assert load_config(given)["pdf"]["page_split_size"] == 7
+
+
+def test_a_missing_file_from_the_environment_says_where_it_came_from(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOGEAR_CONFIG", str(tmp_path / "missing.toml"))
+    with pytest.raises(ConfigError) as raised:
+        load_config(None)
+    assert "DOGEAR_CONFIG" in raised.value.hint
+
+
 def test_user_values_override_defaults(tmp_path):
     config = load_config(write(tmp_path, "[pdf]\npage_split_size = 5\n[ocr]\nlanguage = 'fra'\n"))
     assert config["pdf"]["page_split_size"] == 5

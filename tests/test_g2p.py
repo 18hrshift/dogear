@@ -7,6 +7,7 @@ pipeline, so nothing here needs a download. `test_espeak_program.py` runs the re
 import json
 import logging
 import sys
+from pathlib import Path
 
 import pytest
 from misaki.en import MToken
@@ -23,6 +24,7 @@ PROGRAM = "espeak-ng-under-test"
 
 FAKE_ESPEAK = """\
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +33,7 @@ sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
 text = sys.stdin.read()
 with (here / "calls.jsonl").open("a", encoding="utf-8") as log:
-    log.write(json.dumps({"args": sys.argv[1:], "stdin": text}) + "\\n")
+    log.write(json.dumps({"args": sys.argv[1:], "stdin": text, "cwd": os.getcwd()}) + "\\n")
 answers = json.loads((here / "answers.json").read_text(encoding="utf-8"))
 sys.stdout.write(answers.get(text.strip(), ""))
 """
@@ -149,7 +151,8 @@ def test_fallback_sends_the_word_on_stdin(espeak):
     espeak.answer("Jekyll", "d^ʒˈɛkɪl")
     assert EspeakFallback(PROGRAM, british=False)(token("Jekyll")) == ("ʤˈɛkɪl", 1)
     [call] = espeak.calls()
-    assert call == {"args": ["-q", "--ipa", "--tie=^", "-v", "en-us"], "stdin": "Jekyll\n"}
+    assert call["args"] == ["-q", "--ipa", "--tie=^", "-v", "en-us"]
+    assert call["stdin"] == "Jekyll\n"
 
 
 @pytest.mark.parametrize("word", ["--help", "-v", "--version", "-w", "/tmp/out.wav"])
@@ -158,13 +161,26 @@ def test_words_that_look_like_options_stay_words(espeak, word):
     phonemes, rating = EspeakFallback(PROGRAM, british=False)(token(word))
     assert (phonemes, rating) == ("hˈɛlp", 1)
     [call] = espeak.calls()
-    assert call == {"args": ["-q", "--ipa", "--tie=^", "-v", "en-us"], "stdin": word + "\n"}
+    assert call["args"] == ["-q", "--ipa", "--tie=^", "-v", "en-us"]
+    assert call["stdin"] == word + "\n"
 
 
 def test_british_voices_use_british_espeak(espeak):
     espeak.answer("Hyde", "hˈa^ɪd")
     EspeakFallback(PROGRAM, british=True)(token("Hyde"))
     assert espeak.calls()[0]["args"][-2:] == ["-v", "en-gb"]
+
+
+def test_a_data_folder_is_where_espeak_runs(espeak, tmp_path):
+    # A standalone build's espeak-ng runs beside its data and is told it's there; the
+    # folder's name never goes on its command line. Other copies find their own.
+    espeak.answer("Jekyll", "d^ʒˈɛkɪl")
+    data = tmp_path / "tools"
+    data.mkdir()
+    EspeakFallback(PROGRAM, british=False, data=data)(token("Jekyll"))
+    [call] = espeak.calls()
+    assert call["args"] == ["--path=.", "-q", "--ipa", "--tie=^", "-v", "en-us"]
+    assert Path(call["cwd"]).resolve() == data.resolve()
 
 
 def test_fallback_asks_once_per_word(espeak):
@@ -245,6 +261,16 @@ def test_unknown_words_go_to_espeak(blank_spacy, tmp_path, espeak):
     g = EnglishG2P(tmp_path, british=True, espeak=PROGRAM)
     assert g("Hello Zorblax") == "həlˈQ zˈɔːblæks"
     assert [(c["args"][-1], c["stdin"]) for c in espeak.calls()] == [("en-gb", "Zorblax\n")]
+
+
+def test_espeak_data_folder_reaches_the_fallback(blank_spacy, tmp_path, espeak):
+    espeak.answer("Zorblax", "zˈɔːblæks")
+    data = tmp_path / "tools"
+    data.mkdir()
+    EnglishG2P(tmp_path, british=False, espeak=PROGRAM, espeak_data=data)("Hello Zorblax")
+    [call] = espeak.calls()
+    assert call["args"][0] == "--path=."
+    assert Path(call["cwd"]).resolve() == data.resolve()
 
 
 def test_output_has_no_edge_whitespace(blank_spacy, tmp_path):

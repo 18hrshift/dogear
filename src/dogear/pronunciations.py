@@ -105,7 +105,7 @@ def load_dictionary(paths: Iterable[Path]) -> PronunciationDictionary:
     entries: dict[str, Pronunciation] = {}
     for path in paths:
         for entry in read_pronunciation_file(path):
-            entries[_identity(entry.word)] = entry
+            entries[word_key(entry.word)] = entry
     return PronunciationDictionary(entries.values())
 
 
@@ -132,13 +132,13 @@ def read_pronunciation_file(path: Path) -> list[Pronunciation]:
     entries: dict[str, Pronunciation] = {}
     for key, value in words.items():
         entry = _entry(key, value, path)
-        earlier = entries.get(_identity(entry.word))
+        earlier = entries.get(word_key(entry.word))
         if earlier:
             raise PronunciationError(
                 f"{path} lists '{earlier.word}' and '{entry.word}', which are the same word.",
                 hint="Keep one of them. Capital letters don't matter when matching words.",
             )
-        entries[_identity(entry.word)] = entry
+        entries[word_key(entry.word)] = entry
     return list(entries.values())
 
 
@@ -228,6 +228,6 @@ def _is_letter(c: str) -> bool:
     return unicodedata.category(c)[0] in "LM"  # letters, and accents written separately
 
 
-def _identity(word: str) -> str:
+def word_key(word: str) -> str:
     """What makes two entries the same word: case and apostrophe style don't count."""
     return word.replace("’", "'").casefold()

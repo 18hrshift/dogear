@@ -61,11 +61,18 @@ _ESPEAK_TIMEOUT = 30  # seconds for one word; espeak-ng normally answers in mill
 
 
 class EspeakFallback:
-    """Phonemes for words misaki doesn't know, from the espeak-ng program."""
+    """Phonemes for words misaki doesn't know, from the espeak-ng program.
 
-    def __init__(self, program: str, british: bool) -> None:
+    `data` is the folder holding the espeak-ng-data that `program` should read, for a
+    copy that can't find its own (the one in a standalone build). None lets it look.
+    espeak-ng is run in that folder and told `--path=.`, because on Windows it reads its
+    arguments in the system code page, which can't spell every user's folder name.
+    """
+
+    def __init__(self, program: str, british: bool, data: Path | None = None) -> None:
         self.program = program
         self.british = british
+        self.data = data
         self._known: dict[str, str | None] = {}
 
     def __call__(self, token: en.MToken) -> tuple[str | None, int | None]:
@@ -77,10 +84,12 @@ class EspeakFallback:
 
     def _lookup(self, word: str) -> str | None:
         voice = "en-gb" if self.british else "en-us"
+        data = ["--path=."] if self.data else []
         result = run_tool(
-            [self.program, "-q", "--ipa", "--tie=^", "-v", voice],
+            [self.program, *data, "-q", "--ipa", "--tie=^", "-v", voice],
             input=word + "\n",
             timeout=_ESPEAK_TIMEOUT,
+            cwd=self.data,
         )
         ipa = " ".join(result.stdout.split())
         return to_misaki(ipa, self.british) if ipa else None
@@ -180,8 +189,9 @@ class EnglishG2P:
         british: bool,
         espeak: str | None,
         dictionary: PronunciationDictionary | None = None,
+        espeak_data: Path | None = None,
     ) -> None:
-        fallback = EspeakFallback(espeak, british) if espeak else None
+        fallback = EspeakFallback(espeak, british, espeak_data) if espeak else None
         self._g2p = _MisakiG2P(_load_spacy(spacy_model), british, fallback, dictionary)
         self._unknown: set[str] = set()
 

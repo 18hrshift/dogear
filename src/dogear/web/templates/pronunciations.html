@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import error_summary, error_message, describedby, word_group, listen_form %}
+{% block head %}
+<script src="/static/listen.js" defer></script>
+{% endblock %}
+{% block main %}
+<h1>Pronunciations</h1>
+{% if errors %}{{ error_summary(errors, targets) }}{% endif %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+<p>The voice reads most English well, but can say names and made-up words wrong. Here you can tell it how to say them. Dogear uses these spellings in every book it makes. To find the words a book needs, choose "check how words are said" on the book's page.</p>
+
+<h2>Add a word</h2>
+<form method="post" action="/pronunciations/add" novalidate>
+  <div class="field{% if errors.get('add-word') %} has-error{% endif %}">
+    <label for="add-word">Word, as the book writes it (required)</label>
+    <p class="hint" id="add-word-hint">Such as Utterson, or St. John. Capital letters don't matter: Utterson also changes UTTERSON and Utterson's.</p>
+    {{ error_message(errors, "add-word", "add-word-error") }}
+    <input type="text" id="add-word" name="word" value="{{ added_word }}" autocomplete="off" spellcheck="false" aria-describedby="{{ describedby('add-word-hint', errors, 'add-word', 'add-word-error') }}">
+  </div>
+  <div class="field{% if errors.get('add-spelling') %} has-error{% endif %}">
+    <label for="add-spelling">Say it like (required)</label>
+    <p class="hint" id="add-spelling-hint">Ordinary words or parts of words that sound right read together, such as "utter son" for Utterson.</p>
+    {{ error_message(errors, "add-spelling", "add-spelling-error") }}
+    <input type="text" id="add-spelling" name="spelling" value="{{ added_spelling }}" autocomplete="off" spellcheck="false" aria-describedby="{{ describedby('add-spelling-hint', errors, 'add-spelling', 'add-spelling-error') }}">
+  </div>
+  <button type="submit">Add the word</button>
+</form>
+
+<h2 id="try">Try saying something</h2>
+<form method="post" action="/pronunciations/try" data-listen="try-status" novalidate>
+  <div class="field{% if errors.get('try-text') %} has-error{% endif %}">
+    <label for="try-text">Words to say</label>
+    <p class="hint" id="try-text-hint">A word or a sentence, up to {{ max_try }} characters, said with the spellings on this page.</p>
+    {{ error_message(errors, "try-text", "try-text-error") }}
+    <input type="text" id="try-text" name="text" value="{{ tried }}" autocomplete="off" aria-describedby="{{ describedby('try-text-hint', errors, 'try-text', 'try-text-error') }}">
+  </div>
+  <button type="submit">Listen</button>
+  <p class="listen-status" id="try-status" role="status"></p>
+</form>
+
+<h2>Your words</h2>
+{% if items %}
+<p>Change how a word is said, or empty its field to remove the word. Then choose Save.</p>
+<form method="post" action="/pronunciations" novalidate>
+  {% for item in items %}
+  {{ word_group(item, errors) }}
+  {% endfor %}
+  <button type="submit">Save</button>
+</form>
+{% for item in items %}
+{{ listen_form(item, "/pronunciations") }}
+{% endfor %}
+{% else %}
+<p>No words yet. Add one above, or check a book's words from its page.</p>
+{% endif %}
+
+{% if phonemes %}
+<h2>Words with exact phonemes</h2>
+<p>These were written by hand into Dogear's word file, {{ words_file }}, as phonemes for the voice, so this page lists them but doesn't change them.</p>
+<ul class="phoneme-list">
+  {% for entry in phonemes %}
+  <li>{{ entry.word }}: {{ entry.phonemes }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

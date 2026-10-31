@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import error_summary, error_message, describedby %}
+{% block main %}
+<h1>Make a talking book</h1>
+{% if errors %}{{ error_summary(errors, {"book": "book-file"}) }}{% endif %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+<p>Dogear reads a book aloud with a computer voice and saves it as an audiobook or a talking book. Upload a book file to start. Next, you choose what to make.</p>
+
+<h2>Add a book</h2>
+<form method="post" action="/books" enctype="multipart/form-data" novalidate>
+  <div class="field{% if errors.get('book') %} has-error{% endif %}">
+    <label for="book-file">Book file (required)</label>
+    <p class="hint" id="book-file-hint">An EPUB, PDF, MOBI, or AZW3 file, up to {{ max_upload }}. A PDF that is only pictures of pages, such as a scan, can't be read.</p>
+    {{ error_message(errors, "book", "book-file-error") }}
+    <input type="file" id="book-file" name="book" accept="{{ accept }}" aria-describedby="{{ describedby('book-file-hint', errors, 'book', 'book-file-error') }}">
+  </div>
+  <button type="submit">Upload the book</button>
+</form>
+
+<h2>Your books</h2>
+{% if books %}
+<ul class="book-list">
+  {% for book in books %}
+  <li><a href="/books/{{ book.id }}">{{ book.title }}</a>: {{ book.status }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>No books yet.</p>
+{% endif %}
+{% endblock %}

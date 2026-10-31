@@ -1,4 +1,4 @@
-"""Per-user folders for downloaded voice models and the speech cache.
+"""Per-user folders for downloaded voice models, the speech cache, and the web page's books.
 
 Each can be set in config; empty means the usual place for the platform.
 """
@@ -20,6 +20,11 @@ def models_dir(config: Config) -> Path:
 
 def cache_dir(config: Config) -> Path:
     return _configured(config["render"]["cache_dir"]) or _platform_dir("cache")
+
+
+def web_dir(config: Config) -> Path:
+    """Where `dogear serve` keeps uploaded books, what's made from them, and its access key."""
+    return _configured(config["web"]["dir"]) or _platform_dir("data") / "web"
 
 
 def _configured(value: str) -> Path | None:

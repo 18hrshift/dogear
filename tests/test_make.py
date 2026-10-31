@@ -122,6 +122,17 @@ def test_second_run_speaks_nothing_new(setup, config, tmp_path):
     assert setup["engine"].rendered == []
 
 
+def test_a_run_clears_away_the_work_folder_of_a_run_that_died(setup, config, tmp_path):
+    require_tool("ffmpeg")
+    work = tmp_path / "cache" / "work"
+    died = work / "run-died"
+    died.mkdir(parents=True)
+    (died / "in-use.lock").write_bytes(b"")
+    (died / "001.wav").write_bytes(b"x" * 1000)
+    run(config, tmp_path, setup)
+    assert list(work.iterdir()) == []
+
+
 def test_old_ffmpeg_stops_before_any_speaking(setup, config, tmp_path, monkeypatch):
     def too_old(cfg):
         raise ToolNotFoundError("This ffmpeg is too old for Dogear.")

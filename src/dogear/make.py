@@ -6,7 +6,6 @@ progress as plain sentences.
 
 from __future__ import annotations
 
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from dogear.paths import cache_dir
 from dogear.readalong import build_readalong
 from dogear.render import render_book
 from dogear.render.progress import Progress, Report
+from dogear.render.work import work_folder
 from dogear.voice import make_engine
 
 # m4b: one audiobook file with chapters. mp3: a folder of MP3 files with a playlist.
@@ -67,13 +67,11 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
         f"voice {config['voice']['voice']}."
     )
     engine = make_engine(config, report)
-    work_root = cache_dir(config) / "work"
-    work_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=work_root) as work:
-        chapters = render_book(narrations, engine, config, Path(work), report, progress)
+    with work_folder(cache_dir(config) / "work") as work:
+        chapters = render_book(narrations, engine, config, work, report, progress)
         report(progress.summary())
         report("Evening out the volume across chapters.")
-        chapters = normalize_chapters(chapters, Path(work), config)
+        chapters = normalize_chapters(chapters, work, config)
         request.output_dir.mkdir(parents=True, exist_ok=True)
         if "m4b" in formats:
             report("Building the M4B audiobook file.")
@@ -83,7 +81,7 @@ def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list
             build_mp3_folder(chapters, book.metadata, outputs["mp3"], config, normalized=True)
         if "epub" in formats or "daisy" in formats:
             sections = build_readalong(narrations, chapters, book.metadata.language)
-            sections = encode_talking_audio(sections, Path(work), config)
+            sections = encode_talking_audio(sections, work, config)
             if "epub" in formats:
                 report("Building the EPUB talking book.")
                 build_epub3(sections, book.metadata, outputs["epub"], config)
@@ -113,9 +111,14 @@ def _output_paths(book: Book, request: MakeRequest, formats: list[str]) -> dict[
     return paths
 
 
+def speaks_language(language: str | None) -> bool:
+    """Whether the voice speaks a book in `language` (a BCP 47 tag; None if unknown)."""
+    return not language or language.lower().startswith("en")
+
+
 def check_language(book: Book) -> None:
     language = book.metadata.language
-    if language and not language.lower().startswith("en"):
+    if not speaks_language(language):
         raise VoiceError(
             f"This book is marked as being in '{language}', but Dogear's voice only speaks "
             "English so far.",

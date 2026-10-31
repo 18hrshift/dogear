@@ -7,7 +7,51 @@ low-vision listeners can actually navigate: by chapter, by heading, by print pag
 > and DAISY 2.02, with the text and the narration in step) with a natural-sounding voice
 > that runs on an ordinary computer, offline. [`ROADMAP.md`](ROADMAP.md) has the plan.
 
+**Making books for someone, with no programming?** Start with the
+[guide for helpers](docs/guide-for-helpers.md). The rest of this page covers everything,
+including the `dogear` command.
+
 ## Install
+
+There are three ways: an installer, which needs nothing else; Python; or, for a shared
+computer or server, Docker.
+
+### With an installer
+
+The installers hold everything Dogear needs: its own Python, ffmpeg, eSpeak NG, and the
+voice, so it can make a book without an internet connection. On Windows and Linux they
+install Dogear for you alone, with no administrator password. They aren't offered as
+downloads yet; until they are, someone comfortable with a terminal can build one (see
+below).
+
+- **Windows** (64-bit): run `Dogear-<version>-windows-x86_64-setup.exe`. The installer
+  isn't signed yet, so Windows may say "Windows protected your PC". Choose "More info",
+  then "Run anyway". The installer can also put the `dogear` command on your PATH. To
+  remove Dogear, use Settings, Apps, Installed apps.
+- **Mac** (Apple silicon, macOS 14 or newer): open `Dogear-<version>-macos-arm64.dmg` and
+  drag Dogear into Applications. Dogear isn't signed by Apple yet, so macOS stops it the
+  first time; "Read me first.txt" on the disk image says how to open it.
+- **Linux** (64-bit PC): unpack `Dogear-<version>-linux-x86_64.tar.gz`, open a terminal in
+  its folder, and run `sh install.sh`. To remove Dogear, run
+  `sh ~/.local/opt/dogear/uninstall.sh`.
+
+Choosing Dogear in the Start menu, in Applications, or in your applications menu opens a
+window running `dogear serve`, and your web browser opens at Dogear's page (see "Use it
+in a web browser" below). On Windows and Linux, "Dogear for phones and tablets" next to it
+runs `dogear serve --lan` instead. Keep that window open while you use Dogear, and close it to stop
+Dogear. The `dogear` command works in a terminal too (on a Mac, it's
+`/Applications/Dogear.app/Contents/Resources/dogear/dogear`).
+
+To build an installer, on the system it's for, from a copy of this repository:
+
+```bash
+uv run --no-dev --group installer python packaging/build.py
+```
+
+It saves the installer in `dist/`. Each system needs a few build tools as well;
+[`packaging/README.md`](packaging/README.md) lists them.
+
+### With Python
 
 Dogear runs on Windows, macOS, and Linux with Python 3.11 or newer. It needs two free
 programs first:
@@ -27,6 +71,88 @@ uv tool install git+https://github.com/18hrshift/dogear-app
 (`pipx install git+https://github.com/18hrshift/dogear-app` works too.) Dogear isn't on PyPI
 yet. Don't `pip install dogear`: that name on PyPI belongs to a different project. For Kindle books, also install [Calibre](https://calibre-ebook.com). For scanned PDFs,
 install Tesseract OCR.
+
+### With Docker
+
+For a shared computer or a server, such as at a library or school, there is a Docker image
+with everything inside, the voice included, running the web page: see
+[`docker/README.md`](docker/README.md).
+
+## Use it in a web browser
+
+If you'd rather not type commands, Dogear has a web page. Start it with:
+
+```bash
+dogear serve
+```
+
+Dogear opens your web browser at its page, with a link that works only once. If it
+doesn't, open the link Dogear shows in its window. That link looks like
+`http://127.0.0.1:8765/start?key=abcde-fghjk-mnpqr-stuvw-xyz23`.
+
+On the page:
+
+1. Choose a book file (EPUB, PDF, MOBI, or AZW3) and upload it. Dogear reads it to find
+   its chapters.
+2. Choose what to make, the voice, the speed, and which sections to read. To hear the
+   voice before making a whole book, choose one or two sections.
+3. To fix names the voice says wrong, follow "check how words are said" on that page
+   (or on a finished book's page). Dogear lists the words the voice doesn't know, most
+   frequent first, each with a Listen button and a "Say it like" field. Write "utter son"
+   for Utterson, say, choose Save, and Listen again. Save changes only the words you
+   changed, so a page left open in another tab never undoes a change made since; if one
+   of your words was also changed there, Dogear saves nothing and says so beside it. The
+   Pronunciations page lists every word you have fixed, and can say any short text. The
+   page keeps these words in `words.toml` in its web folder and uses them for every book
+   it makes, after any pronunciation files in your settings, so the page's spellings win.
+4. Choose Start making. The book's page says how far it has got, with its latest
+   progress lines. A warning repeated many times in a row is one line that says how many
+   times. Dogear makes one book at a time, and others wait their turn. You can close the
+   page and come back later.
+5. When the book is ready, download what Dogear made. Folders (MP3 and DAISY) download
+   as a zip file. The page also shows the folder on the computer where everything is
+   saved.
+
+If Dogear can't read a book, its page says why and what to do. Once that's done (for a
+Kindle book, say, installing Calibre), choose Read again on the book's page.
+
+The page works without a mouse and without JavaScript, and it is built to work with
+screen readers. If something on it is hard to use, please tell us.
+
+**Keep Dogear running.** The page only works while Dogear runs. Keep the window where
+you started it open. To stop Dogear, press Ctrl+C in that window. A book being made
+stops too. Its page then has a Start again button, which carries on where it stopped:
+every sentence already spoken is kept. A book that was still being read is read again
+when Dogear next starts. Closing the window stops Dogear and its books as well.
+
+Dogear runs once for each web folder. Starting it again while it runs says so: use the
+link in the window where it's running.
+
+On Linux and macOS, only the user who runs Dogear can open its web folder's books and
+what's made from them.
+
+**The access link.** The part after `key=` is a password, made the first time Dogear's
+page starts and kept for later. Opening the link lets this browser in, so you need it
+once per browser. Anyone without it sees a page asking for it. To make a new key, for
+example after sharing the link by mistake, delete `access-key.txt` from Dogear's web
+folder (Dogear names the folder when it starts) and start Dogear again.
+
+**From a phone or tablet.** To use Dogear from a phone on the same Wi-Fi network as the
+computer, start it with:
+
+```bash
+dogear serve --lan
+```
+
+Dogear shows a second link, with the computer's address on the network. Open it on the
+phone. Anyone on the network who has the link can use Dogear, and the connection isn't
+encrypted, so use `--lan` only on a network you trust, such as your home Wi-Fi.
+
+Other options: `--port 8766` uses another port (if another program has 8765), and
+`--no-browser` doesn't open a browser. In a settings file, `[web]` sets the port, the largest book file
+the page accepts (200 MB at first), how long reading a book (or checking its words, or
+saying something for Listen) may take, the folder where books are kept, and how many
+words the page's pronunciation file holds and how long each word and spelling may be.
 
 ## Make an audiobook
 
@@ -123,6 +249,12 @@ dogear download                           # fetch the voice now, before going of
 
 Everything Dogear prints is plain text, written to read well with a screen reader.
 
+For other programs, `dogear outline mybook.epub --json` prints the same facts as JSON: the
+`title`, `authors`, `language`, `source_format`, and `words`, and `sections`, each with its
+`number`, `title`, `kind` (`front`, `body`, or `back`), `words`, `first_page` and
+`last_page` (print page labels, or null), and counts of `images`, `notes`, and `tables`.
+Errors are still the plain `Error:` and `What to do:` lines, and the exit status is 1.
+
 ### Fix how a word is said
 
 The voice reads most English well, but names and made-up words can come out wrong. You
@@ -190,6 +322,14 @@ To fix a book's words:
 `dogear text mybook.epub --spoken --words names.toml` shows every line with your
 spellings in place.
 
+For other programs, `dogear words mybook.epub --json` prints the same list as JSON, in
+ASCII: an object whose `words` is a list, most frequent first, of objects with the
+`word` and its `count`. Errors are still the plain `Error:` and `What to do:` lines, and
+the exit status is 1.
+
+To say a text that starts with a hyphen, put `--` before it, so it isn't read as an
+option: `dogear say -o test.wav -- "-ing words"`.
+
 **Exact phonemes, for experts.** An entry can give the phonemes the voice should use,
 written in the symbols of misaki, the voice's pronunciation dictionary
 ([the list of symbols](https://github.com/hexgrad/misaki/blob/main/EN_PHONES.md)).
@@ -229,6 +369,9 @@ announce_pages = true          # say "Page 42" where each print page begins
 The full list, with what each one does, is in
 [`src/dogear/defaults.toml`](src/dogear/defaults.toml).
 
+To use the same settings file for every command without typing `--config` each time, set
+the `DOGEAR_CONFIG` environment variable to its full path. `--config` still wins when given.
+
 ## Why another audiobook tool?
 
 There are good ebook-to-audiobook converters already. None of them are built for people who
@@ -240,8 +383,10 @@ can't see the screen. Dogear is:
   not dumped as a wall of text. Page numbers become navigation points instead of being spoken.
 - **Offline and CPU-first.** A normal computer is enough. No GPU, no account, and your books
   never leave your machine.
-- **Accessible to run.** The command line, and the web interface planned for later, are
-  designed to work with screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca).
+- **Accessible to run.** The command line and the web page are designed to work with
+  screen readers (NVDA, JAWS, VoiceOver, TalkBack, Orca). The web page aims at WCAG 2.2
+  AA, and CI checks every page with axe-core; testing with screen-reader users is still
+  to come.
 
 ## Outputs
 

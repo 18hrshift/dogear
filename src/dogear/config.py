@@ -7,6 +7,7 @@ dict this module returns instead of keeping its own copies.
 from __future__ import annotations
 
 import copy
+import os
 import tomllib
 from importlib import resources
 from pathlib import Path
@@ -34,6 +35,9 @@ EMPTY_LIST_ITEMS: dict[tuple[str, ...], type] = {
 
 Config = dict[str, Any]
 
+# Environment variable naming a settings file to use when --config isn't given.
+CONFIG_ENV = "DOGEAR_CONFIG"
+
 
 def default_config() -> Config:
     text = resources.files("dogear").joinpath("defaults.toml").read_text(encoding="utf-8")
@@ -41,14 +45,26 @@ def default_config() -> Config:
 
 
 def load_config(path: Path | None = None) -> Config:
-    """Defaults, with `path` (if given) merged on top after validation."""
+    """Defaults, with `path` merged on top after validation.
+
+    With no `path`, the file named by the DOGEAR_CONFIG environment variable is used, if
+    set: one settings file for every command, as a Docker image or a shortcut needs.
+    """
     config = default_config()
+    from_env = path is None and bool(os.environ.get(CONFIG_ENV))
+    if from_env:
+        path = Path(os.environ[CONFIG_ENV])
     if path is None:
         return config
     try:
         user = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError(f"Config file not found: {path}") from None
+        raise ConfigError(
+            f"Config file not found: {path}",
+            hint=f"The {CONFIG_ENV} environment variable names it. Fix the path or unset it."
+            if from_env
+            else "",
+        ) from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(
             f"Config file {path} is not valid TOML: {e}",

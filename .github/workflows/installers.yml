@@ -1,0 +1,201 @@
+name: Installers
+
+# Builds the standalone installers for Linux, macOS, and Windows, installs each one the
+# way a user would, and smoke-tests the installed copy offline. The installers are kept
+# as workflow artifacts only: nothing is published or released from here.
+
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/installers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request cancels the run it replaces.
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The Python the bundle is frozen with: uv's own build of it. PyInstaller needs a Python
+  # built with a shared library, which the manylinux image's own Pythons are not.
+  PYTHON: "3.13"
+  UV_PYTHON_PREFERENCE: only-managed
+
+jobs:
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Built on AlmaLinux 8 (glibc 2.28), the base onnxruntime's Linux wheels need anyway,
+    # so the bundle runs on any Linux at least that new, not only on the runner's.
+    container: quay.io/pypa/manylinux_2_28_x86_64@sha256:e0adf18521ad35192df733a6c62d35df7801957d24e0470238aacecfab2188a3
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Actions are pinned to commit SHAs; the comment says which release.
+      - name: Install nasm, for FFmpeg's assembly
+        run: dnf install -y nasm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON }}
+      - name: Restore downloads and built programs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/packaging/downloads
+            build/packaging/programs
+            build/packaging/voice
+          key: installer-linux-${{ hashFiles('packaging/pins.toml', 'packaging/build-programs.sh', 'src/dogear/voice/catalog.toml') }}
+      - name: Build the bundle and installer
+        run: uv run --frozen --no-dev --group installer python packaging/build.py
+      - name: Install, smoke-test offline, and uninstall
+        run: |
+          home=$(mktemp -d)
+          tar -xzf dist/Dogear-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
+          HOME=$home sh "$RUNNER_TEMP"/Dogear-*-linux-x86_64/install.sh
+          test -f "$home/.local/share/applications/dogear.desktop"
+          uv run --no-project python packaging/smoke_test.py "$home/.local/opt/dogear/dogear"
+          HOME=$home sh "$home/.local/opt/dogear/uninstall.sh"
+          test ! -e "$home/.local/opt/dogear"
+      - name: Report the size
+        run: ls -l dist/*.tar.gz && du -sh dist/dogear
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-linux-x86_64
+          path: dist/Dogear-*-linux-x86_64.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+  linux-newer:
+    # The Linux build again, installed on the runner's own, newer Ubuntu.
+    name: Linux x86_64, installed on ubuntu-latest
+    needs: linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: installer-linux-x86_64
+          path: dist
+      - name: Install, smoke-test offline, and uninstall
+        shell: bash
+        run: |
+          home=$(mktemp -d)
+          tar -xzf dist/Dogear-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
+          HOME=$home sh "$RUNNER_TEMP"/Dogear-*-linux-x86_64/install.sh
+          uv run --no-project python packaging/smoke_test.py "$home/.local/opt/dogear/dogear"
+          HOME=$home sh "$home/.local/opt/dogear/uninstall.sh"
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON }}
+      - name: Restore downloads and built programs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/packaging/downloads
+            build/packaging/programs
+            build/packaging/voice
+          key: installer-macos-${{ hashFiles('packaging/pins.toml', 'packaging/build-programs.sh', 'src/dogear/voice/catalog.toml') }}
+      - name: Build the bundle and installer
+        run: uv run --frozen --no-dev --group installer python packaging/build.py
+      - name: Install from the disk image, smoke-test offline
+        shell: bash
+        run: |
+          mount=$(mktemp -d)
+          hdiutil attach dist/Dogear-*-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount"
+          test -f "$mount/Read me first.txt"
+          apps=$(mktemp -d)
+          cp -R "$mount/Dogear.app" "$apps/"
+          hdiutil detach "$mount"
+          test -x "$apps/Dogear.app/Contents/MacOS/Dogear"
+          uv run --no-project python packaging/smoke_test.py \
+            "$apps/Dogear.app/Contents/Resources/dogear/dogear"
+      - name: Report the size
+        run: ls -l dist/*.dmg && du -sh dist/dogear
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-macos-arm64
+          path: dist/Dogear-*-macos-arm64.dmg
+          retention-days: 14
+          if-no-files-found: error
+
+  windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON }}
+      # MSYS2's UCRT64 shell runs packaging/build-programs.sh, with MinGW-w64 GCC.
+      - id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          install: >-
+            make diffutils tar xz
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-zlib
+      - name: Restore downloads and built programs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/packaging/downloads
+            build/packaging/programs
+            build/packaging/voice
+          key: installer-windows-${{ hashFiles('packaging/pins.toml', 'packaging/build-programs.sh', 'src/dogear/voice/catalog.toml') }}
+      - name: Build the bundle and installer
+        shell: pwsh
+        env:
+          DOGEAR_MSYS2: ${{ steps.msys2.outputs.msys2-location }}
+        run: uv run --frozen --no-dev --group installer python packaging/build.py
+      - name: Install silently, smoke-test offline, and uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\Dogear-*-windows-x86_64-setup.exe
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=addtopath" -Wait
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Dogear"
+          if (-not (Test-Path "$app\dogear.exe")) { throw "dogear.exe wasn't installed in $app" }
+          $path = (Get-ItemProperty HKCU:\Environment).Path
+          if ($path -notlike "*$app*") { throw "The install folder wasn't added to PATH: $path" }
+          uv run --no-project python packaging/smoke_test.py "$app\dogear.exe"
+          if ($LASTEXITCODE -ne 0) { throw "The smoke test failed." }
+          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          # The uninstaller hands over to a copy of itself, which may still be working.
+          for ($i = 0; ($i -lt 60) -and (Test-Path "$app\dogear.exe"); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path "$app\dogear.exe") { throw "The uninstaller left dogear.exe behind." }
+          $path = (Get-ItemProperty HKCU:\Environment).Path
+          if ($path -like "*$app*") { throw "The uninstaller left the folder on PATH: $path" }
+      - name: Report the size
+        shell: bash
+        run: ls -l dist/*.exe && du -sh dist/dogear
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-windows-x86_64
+          path: dist/Dogear-*-windows-x86_64-setup.exe
+          retention-days: 14
+          if-no-files-found: error

@@ -247,7 +247,8 @@ convert_timeout_seconds = 600
 
 [tools]
 # Command name or full path for each external program.
-# An empty value means: search PATH, then common install locations.
+# An empty value means: use the copy that came with Dogear's installer, if there is one,
+# else search PATH, then common install locations.
 ffmpeg = ""
 ffprobe = ""
 tesseract = ""
@@ -271,6 +272,7 @@ threads = 0
 
 [models]
 # Where downloaded voice files are kept. Empty means the usual per-user data folder.
+# Dogear's installers carry the default voice inside the app, so it isn't downloaded.
 dir = ""
 download_timeout_seconds = 60
 
@@ -334,3 +336,30 @@ edge_silence_keep_ms = 60
 # the text and the audio in step, for reading apps such as Thorium Reader), and "daisy"
 # (a DAISY 2.02 talking book, for DAISY players and apps).
 formats = ["m4b"]
+
+[web]
+# `dogear serve`: make books from a web browser, on this computer or (with --lan) from a
+# phone or another computer on the same network.
+# The port the page is served on. --port changes it for one run.
+port = 8765
+# Largest book file the page accepts, in megabytes. Most EPUB and Kindle books are under
+# 20 MB, and a long PDF with pictures can reach 100 to 200 MB. 200 lets nearly any book
+# in while keeping one upload from filling the disk.
+max_upload_mb = 200
+# Reading a book to list its sections stops after this many seconds. Kindle books are
+# converted with Calibre first, which can take up to kindle.convert_timeout_seconds.
+# The same limit applies to checking a book's words and to saying something for Listen
+# (the first Listen may download the voice).
+read_timeout_seconds = 900
+# Where uploaded books, everything made from them, and the page's access key are kept.
+# Empty means a folder named web in the usual per-user data folder. Each book has its own
+# folder, deleted with it.
+dir = ""
+# The page keeps the words fixed on it in its own pronunciation file, words.toml in the
+# folder above, and uses it for every book it makes, after the files in
+# pronunciation.files, so its entries win. The page saves at most this many words...
+max_pronunciations = 1000
+# ...each at most this many characters long, as the book writes it...
+max_word_chars = 80
+# ...and each spelling (such as "utter son" for Utterson) at most this many characters.
+max_spelling_chars = 160

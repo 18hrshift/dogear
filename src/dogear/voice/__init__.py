@@ -1,7 +1,9 @@
 """Voices: turning sentences into audio.
 
 `engine.py` defines what every engine provides. Kokoro is the built-in engine; its model
-files are downloaded on first use and checked against `catalog.toml`.
+files are downloaded on first use and checked against `catalog.toml`. A standalone build
+carries the default voice's files (see `dogear.bundle`), so it downloads only other voices.
+One Dogear at a time downloads into a models folder (`downloads.download_lock`).
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from dogear import bundle
 from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.paths import models_dir
@@ -22,7 +25,7 @@ from dogear.voice.catalog import (
     spacy_model_dir,
     spacy_wheel,
 )
-from dogear.voice.downloads import RemoteFile, Report, ensure_files
+from dogear.voice.downloads import RemoteFile, Report, download_lock, ensure_files
 from dogear.voice.engine import VoiceEngine
 from dogear.voice.spacy_model import unpack_spacy_model
 
@@ -55,7 +58,13 @@ def make_engine(config: Config, report: Report) -> VoiceEngine:
         model=setup.model.path,
         tokenizer=setup.tokenizer.path,
         voice=setup.voice_file.path,
-        g2p=EnglishG2P(spacy_model_dir(models), setup.voice.british, espeak, dictionary),
+        g2p=EnglishG2P(
+            spacy_model_dir(models),
+            setup.voice.british,
+            espeak,
+            dictionary,
+            espeak_data=bundle.espeak_data(espeak),
+        ),
         speed=config["voice"]["speed"],
         threads=config["kokoro"]["threads"],
         sample_rate=kokoro["sample_rate"],
@@ -82,9 +91,7 @@ def prepare_kokoro(config: Config, report: Report) -> KokoroSetup:
         tokenizer=kokoro_file("tokenizer", "", models),
         voice_file=kokoro_file("voice", voice.name, models),
     )
-    needed = [setup.model, setup.tokenizer, setup.voice_file, *_spacy_download(models)]
-    ensure_files(needed, config, report)
-    unpack_spacy_model(models)
+    _ensure_downloaded([setup.model, setup.tokenizer, setup.voice_file], models, config, report)
     return setup
 
 
@@ -94,9 +101,21 @@ def prepare_spacy(config: Config, report: Report) -> Path:
     Enough for misaki to tag and look up words without the Kokoro model, as
     `dogear words` does.
     """
-    models = models_dir(config)
-    ensure_files(_spacy_download(models), config, report)
-    return unpack_spacy_model(models)
+    return _ensure_downloaded([], models_dir(config), config, report)
+
+
+def _ensure_downloaded(
+    files: list[RemoteFile], models: Path, config: Config, report: Report
+) -> Path:
+    """Make sure `files` and spaCy's unpacked model are on disk, downloading whatever
+    isn't, under the models folder's lock. Returns spaCy's model folder."""
+    spacy = spacy_model_dir(models)
+    if spacy.is_dir() and all(f.path.is_file() for f in files):
+        return spacy  # nothing to download, so no lock, and nothing written
+    with download_lock(models, report):
+        # Asked again: another Dogear may have downloaded them while this one waited.
+        ensure_files([*files, *_spacy_download(models)], config, report)
+        return unpack_spacy_model(models)
 
 
 def _spacy_download(models: Path) -> list[RemoteFile]:

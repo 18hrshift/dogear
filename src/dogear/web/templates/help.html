@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Help</h1>
+
+<h2>Make a book</h2>
+<ol>
+  <li>On Your books, choose a book file and upload it. Dogear reads EPUB, PDF, MOBI, and AZW3 files.</li>
+  <li>Dogear reads the book to find its chapters. Then choose what to make, the voice, the speed, and which sections to read.</li>
+  <li>Choose Start making. A long book takes hours. The book's page says how far it has got, and you can close the page and come back.</li>
+  <li>When it's ready, download what Dogear made from the book's page.</li>
+</ol>
+
+<h2>What Dogear makes</h2>
+<ul>
+  {% for format in formats %}
+  <li><strong>{{ format.title }}</strong>: {{ format.description }}</li>
+  {% endfor %}
+</ul>
+
+<h2>Fix how a word is said</h2>
+<p>The voice reads most English well, but can say names and made-up words wrong. To fix them:</p>
+<ol>
+  <li>Before making a book, or on its page once it's made, choose "check how words are said". Dogear lists the words the voice doesn't know, most frequent first.</li>
+  <li>Choose Listen beside a word to hear how the voice says it.</li>
+  <li>If it sounds wrong, write how it sounds in "Say it like", with ordinary words or parts of words: Utterson as "utter son", say. Choose Save, then Listen again.</li>
+  <li>Make the book, or make it again. Dogear uses your spellings in every book.</li>
+</ol>
+<p>The Pronunciations page lists every word you have fixed. There you can change or remove them, add a word, and listen to any short text.</p>
+<p>Save changes only the words you changed on the page. If one of them was changed in another window since you opened the page, Dogear saves nothing and says so beside that word.</p>
+
+<h2>If Dogear can't read a book</h2>
+<p>The book's page says why, and what to do. Once that's done (for a Kindle book, say, installing Calibre), choose Read again on the book's page.</p>
+
+<h2>Stopping and starting again</h2>
+<p>Stopping a book is safe. Every sentence Dogear has spoken is kept, so Start again carries on where it stopped.</p>
+<p>Dogear makes one book at a time. Other books wait their turn.</p>
+
+<h2>Using Dogear from a phone</h2>
+<p>Start Dogear on the computer with <code>dogear serve --lan</code>. It shows a second link for phones and other computers on the same network. Open that link on the phone. Anyone on the network who has the link can use Dogear, so share it only with people you trust.</p>
+
+<h2>Keep Dogear running</h2>
+<p>This page works only while Dogear is running on the computer. Keep its window open. To stop Dogear, press Ctrl+C in that window, or close it. A book being made stops too, and Start again carries on later. A book that was being read is read again when Dogear next starts.</p>
+{% endblock %}

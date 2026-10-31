@@ -1,0 +1,45 @@
+Dogear for Mac
+
+Dogear turns books into audiobooks and talking books you can navigate by chapter,
+heading, and page. Everything it needs is in the app, including its voice, so it works
+without an internet connection. It needs a Mac with Apple silicon (M1 or newer) and
+macOS 14 Sonoma or newer.
+
+To install, drag Dogear into the Applications folder.
+
+The first time you open it, macOS stops it. Dogear isn't signed by Apple yet: signing
+needs a paid Apple Developer account, which the project hasn't got. To open it anyway:
+
+On macOS 15 Sequoia and newer:
+1. Open Dogear from Applications. macOS says it can't be opened. Choose Done.
+2. Open System Settings, then Privacy & Security.
+3. Near the bottom, next to the message about Dogear, choose Open Anyway.
+4. Confirm with your password. Dogear opens, and from then on opens normally.
+
+On macOS 14 Sonoma: in Applications, Control-click Dogear, choose Open, then choose
+Open in the dialog. With VoiceOver: select Dogear in Finder, press VO-Shift-M to open
+its shortcut menu, choose Open, then choose Open in the dialog.
+
+If macOS still refuses, open Terminal and run this command, then open Dogear again:
+xattr -dr com.apple.quarantine /Applications/Dogear.app
+
+When Dogear opens, it opens a Terminal window that shows a link for your web browser.
+Keep that window open while you use Dogear; close it, or press Ctrl+C in it, to stop
+Dogear.
+
+From Terminal, the dogear command works too:
+/Applications/Dogear.app/Contents/Resources/dogear/dogear --help
+
+To use Dogear from a phone or tablet on the same network as well, start it from Terminal
+instead, with this command. Its window shows a second link to open on the phone:
+/Applications/Dogear.app/Contents/Resources/dogear/dogear serve --lan
+
+To remove Dogear, drag it from Applications to the Trash.
+
+These steps follow Apple's instructions for apps from unidentified developers. They
+haven't yet been tried with Dogear on a Mac; if something differs, please tell us at
+https://github.com/18hrshift/dogear-app/issues
+
+Dogear is free software under the Apache License 2.0. The other software it includes,
+and where to get its source code, is listed in
+Dogear.app/Contents/Resources/dogear/THIRD-PARTY-NOTICES.txt

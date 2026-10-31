@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block head %}
+{% if watching %}<script src="/static/progress.js" defer></script>{% endif %}
+{% endblock %}
+{% block main %}
+<h1>{{ status.heading }}</h1>
+<p>What to say: <strong>{{ listen.text }}</strong></p>
+
+<div id="live-status"{% if watching %} data-status-url="/listen/{{ listen.id }}/status" data-continues="waiting saying" data-changed="Follow the Show the recording link to go on." data-changed-link="Show the recording"{% endif %}>
+  <p id="status" class="status" role="status">{{ status.sentence }}</p>
+</div>
+
+{% if watching %}
+<p><a id="check-progress" href="/listen/{{ listen.id }}">Check progress</a></p>
+{% endif %}
+
+{% if listen.state == "done" %}
+{% for sentence in listen.said %}
+<p>Said: {{ sentence }}</p>
+{% endfor %}
+<p class="player"><audio controls preload="metadata" src="/listen/{{ listen.id }}/audio" aria-label="Recording of {{ listen.text }}">This browser can't play it here. Use the download link instead.</audio></p>
+<p><a href="/listen/{{ listen.id }}/audio" download="{{ download_name }}">Download the recording</a> (a WAV file{% if size %}, {{ size }}{% endif %})</p>
+{% elif listen.state == "failed" %}
+<p><strong>Error:</strong> {{ listen.error }}</p>
+{% if listen.hint %}<p><strong>What to do:</strong> {{ listen.hint }}</p>{% endif %}
+{% endif %}
+
+<p><a href="{{ back }}">{{ back_label }}</a></p>
+{% endblock %}

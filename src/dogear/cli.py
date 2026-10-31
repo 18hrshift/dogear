@@ -7,11 +7,14 @@ numbered lists, no tables, colors, or animations. Progress and errors go to stde
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 from dogear import __version__
+from dogear.book_summary import count, describe_section, summarize, summary_to_json
 from dogear.config import Config, load_config
 from dogear.document import (
     Book,
@@ -33,18 +36,20 @@ from dogear.narration import narrate_book
 from dogear.ocr import default_output_path, ocr_pdf
 from dogear.pronunciations import dictionary_from_config
 from dogear.say import say_text
-from dogear.unknown_words import WordsRequest, find_unknown_words
+from dogear.unknown_words import WordsRequest, find_unknown_words, words_to_json
 from dogear.voice import find_voice, prepare_kokoro
-from dogear.voice.catalog import kokoro_voices
+from dogear.voice.catalog import describe_voice, kokoro_voices_best_first
+from dogear.web.child import UTF8_OUTPUT_ENV
+from dogear.web.server_watch import stop_with_server_when_asked
 
-KIND_NAMES = {"front": "front matter", "body": "main text", "back": "back matter"}
-_GRADE_ORDER = "ABCDF"
 PROGRESS_EVERY = 10  # pages between OCR progress lines
 BOOK_HELP = "the book file: EPUB, PDF, MOBI, or AZW3"
 SECTIONS_HELP = "only these sections from outline, such as 3 or 1-3,7"
 
 
 def main(argv: list[str] | None = None) -> int:
+    _utf8_output_when_asked()
+    stop_with_server_when_asked()
     args = _parser().parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
@@ -67,6 +72,19 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
         return 130
+
+
+def _utf8_output_when_asked() -> None:
+    """Write UTF-8 when `dogear serve` runs this as a child process and reads its output.
+
+    It asks through an environment variable of its own because a frozen (installer)
+    build ignores PYTHONIOENCODING, and Windows would otherwise write its ANSI code page.
+    """
+    if os.environ.get(UTF8_OUTPUT_ENV) != "1":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -97,6 +115,11 @@ def _parser() -> argparse.ArgumentParser:
         description="List a book's title, authors, and sections with word counts and print pages.",
     )
     outline.add_argument("book", type=Path, help=BOOK_HELP)
+    outline.add_argument(
+        "--json",
+        action="store_true",
+        help="print the same facts as JSON, for other programs to read",
+    )
     outline.set_defaults(run=_outline)
 
     text = commands.add_parser(
@@ -158,6 +181,11 @@ def _parser() -> argparse.ArgumentParser:
     words.add_argument("--sections", metavar="LIST", help=SECTIONS_HELP)
     words.add_argument("--language", help="the book's language, if its own label is wrong")
     words.add_argument("--voice", help="voice name, from `dogear voices` (accents differ)")
+    words.add_argument(
+        "--json",
+        action="store_true",
+        help="print the same list as JSON, for other programs to read",
+    )
     words.set_defaults(run=_words)
 
     say = commands.add_parser(
@@ -214,38 +242,47 @@ def _parser() -> argparse.ArgumentParser:
     ocr.add_argument("--language", help="Tesseract language, such as eng or eng+fra")
     ocr.add_argument("--dpi", type=int, help="scan resolution to read pages at")
     ocr.set_defaults(run=_ocr)
+
+    serve = commands.add_parser(
+        "serve",
+        parents=[common],
+        help="make books from a web browser",
+        description=(
+            "Start Dogear's web page, for making books in a web browser on this computer, "
+            "or with --lan from a phone or another computer on the same network. Keep the "
+            "window open while you use it, and press Ctrl+C to stop."
+        ),
+    )
+    serve.add_argument("--port", type=int, help="the port to use (default: web.port in config)")
+    serve.add_argument(
+        "--lan",
+        action="store_true",
+        help="let phones and other computers on the same network use it, with the link",
+    )
+    serve.add_argument("--no-browser", action="store_true", help="don't open a web browser")
+    serve.set_defaults(run=_serve)
     return parser
 
 
 def _outline(args: argparse.Namespace, config: Config) -> int:
-    book = extract_book(args.book, config)
-    print(f"Title: {book.metadata.title}")
-    if book.metadata.authors:
-        print(f"By: {', '.join(book.metadata.authors)}")
-    if book.metadata.language:
-        print(f"Language: {book.metadata.language}")
+    summary = summarize(extract_book(args.book, config))
+    if args.json:
+        # ASCII only, so any program can read it whatever the console's encoding.
+        print(json.dumps(summary_to_json(summary), indent=2))
+        return 0
+    print(f"Title: {summary.title}")
+    if summary.authors:
+        print(f"By: {', '.join(summary.authors)}")
+    if summary.language:
+        print(f"Language: {summary.language}")
     print(
-        f"{book.source_format.upper()} file, {_count(len(book.sections), 'section')}, "
-        f"{_count(book.word_count(), 'word')}."
+        f"{summary.source_format.upper()} file, {count(len(summary.sections), 'section')}, "
+        f"{count(summary.words, 'word')}."
     )
     print()
-    for number, section in enumerate(book.sections, start=1):
-        print(f"{number}. {_describe(section)}")
+    for section in summary.sections:
+        print(f"{section.number}. {describe_section(section)}")
     return 0
-
-
-def _describe(section: Section) -> str:
-    parts = [f"{section.title}: {KIND_NAMES[section.kind]}", _count(section.word_count(), "word")]
-    pages = section.page_labels()
-    if len(pages) == 1:
-        parts.append(f"print page {pages[0]}")
-    elif pages:
-        parts.append(f"print pages {pages[0]} to {pages[-1]}")
-    for kind, name in [(Image, "image"), (Footnote, "note"), (Table, "table")]:
-        count = sum(isinstance(b, kind) for b in section.blocks)
-        if count:
-            parts.append(_count(count, name))
-    return ", ".join(parts) + "."
 
 
 def _text(args: argparse.Namespace, config: Config) -> int:
@@ -342,17 +379,21 @@ def _words(args: argparse.Namespace, config: Config) -> int:
         language=args.language,
     )
     unknown = find_unknown_words(request, config, _report)
+    if args.json:
+        # ASCII only, so any program can read it whatever the console's encoding.
+        print(json.dumps(words_to_json(unknown), indent=2))
+        return 0
     where = "these sections" if args.sections else "this book"
     if not unknown:
         print(f"The voice knows every word in {where}.")
         return 0
     print(
-        f"{_count(len(unknown), 'word')} in {where} the voice doesn't know, most frequent "
+        f"{count(len(unknown), 'word')} in {where} the voice doesn't know, most frequent "
         "first. It guesses how to say them."
     )
     print()
     for number, word in enumerate(unknown, start=1):
-        print(f"{number}. {word.word}, {_count(word.count, 'time')}.")
+        print(f"{number}. {word.word}, {count(word.count, 'time')}.")
     print()
     print(
         'To hear one, run: dogear say "the word in a sentence" -o test.wav. To fix one, add '
@@ -382,23 +423,15 @@ def _use_word_files(args: argparse.Namespace, config: Config) -> None:
 
 def _voices(args: argparse.Namespace, config: Config) -> int:
     default = config["voice"]["voice"]
-    ranked = sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
-    print(f"{_count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
+    ranked = kokoro_voices_best_first()
+    print(f"{count(len(ranked), 'voice')}, best rated first. Grades are Kokoro's own, A best.")
     print()
     for number, voice in enumerate(ranked, start=1):
         note = " This is the one Dogear uses now." if voice.name == default else ""
-        print(
-            f"{number}. {voice.name}: {voice.accent} English, {voice.gender}, "
-            f"grade {voice.grade}.{note}"
-        )
+        print(f"{number}. {describe_voice(voice)}.{note}")
     print()
     print("To use another, add --voice NAME to `dogear make`, or set voice in your config.")
     return 0
-
-
-def _grade_rank(grade: str) -> tuple[int, int]:
-    """Sort key for grades such as "A", "B-", or "C+": best first."""
-    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
 
 
 def _download(args: argparse.Namespace, config: Config) -> int:
@@ -436,9 +469,18 @@ def _ocr(args: argparse.Namespace, config: Config) -> int:
             print(f"OCR: page {done} of {total} done.", file=sys.stderr)
 
     pages = ocr_pdf(args.pdf, output, config, progress)
-    print(f"Saved {_count(pages, 'page')} with a text layer to {output}")
+    print(f"Saved {count(pages, 'page')} with a text layer to {output}")
     return 0
 
 
-def _count(n: int, noun: str) -> str:
-    return f"{n:,} {noun}{'' if n == 1 else 's'}"
+def _serve(args: argparse.Namespace, config: Config) -> int:
+    # Imported here so the other commands don't load the web server.
+    from dogear.web.server import ServeOptions, serve
+
+    options = ServeOptions(
+        port=args.port,
+        lan=args.lan,
+        open_browser=not args.no_browser,
+        config_file=args.config,
+    )
+    return serve(options, config)

@@ -1,4 +1,8 @@
-"""The pinned list of files Dogear downloads for its built-in voice (`catalog.toml`)."""
+"""The pinned list of files Dogear downloads for its built-in voice (`catalog.toml`).
+
+Each file lives in the models folder, unless a standalone build carries the same file
+(same SHA-256): then that read-only copy is used and nothing is downloaded.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,10 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from dogear import bundle
 from dogear.voice.downloads import RemoteFile
+
+_GRADE_ORDER = "ABCDF"
 
 
 @dataclass(frozen=True)
@@ -37,6 +44,20 @@ def kokoro_voices() -> list[VoiceInfo]:
     ]
 
 
+def kokoro_voices_best_first() -> list[VoiceInfo]:
+    return sorted(kokoro_voices(), key=lambda v: _grade_rank(v.grade))
+
+
+def _grade_rank(grade: str) -> tuple[int, int]:
+    """Sort key for grades such as "A", "B-", or "C+": best first."""
+    return _GRADE_ORDER.index(grade[0]), {"+": -1, "-": 1}.get(grade[1:], 0)
+
+
+def describe_voice(voice: VoiceInfo) -> str:
+    """'af_heart: American English, female, grade A'"""
+    return f"{voice.name}: {voice.accent} English, {voice.gender}, grade {voice.grade}"
+
+
 def kokoro_file(kind: str, name: str, models_dir: Path) -> RemoteFile:
     """A Kokoro file: kind "model" (name is a build such as "full"), "voice", or "tokenizer"."""
     kokoro = catalog()["kokoro"]
@@ -51,11 +72,12 @@ def kokoro_file(kind: str, name: str, models_dir: Path) -> RemoteFile:
         path, sha256, size = entry["path"], entry["sha256"], entry["size"]
     else:
         raise ValueError(f"unknown Kokoro file kind: {kind}")
+    relative = f"kokoro/{path}"
     return RemoteFile(
         url=f"{kokoro['base_url']}/{path}",
         sha256=sha256,
         size=size,
-        path=models_dir / "kokoro" / path,
+        path=bundle.model(relative, sha256) or models_dir / relative,
     )
 
 
@@ -70,4 +92,7 @@ def spacy_wheel(models_dir: Path) -> RemoteFile:
 
 
 def spacy_model_dir(models_dir: Path) -> Path:
-    return models_dir / "spacy" / Path(catalog()["spacy"]["model_dir"]).name
+    """The unpacked model folder. A bundled one is known by the SHA-256 of its wheel."""
+    spacy = catalog()["spacy"]
+    relative = f"spacy/{Path(spacy['model_dir']).name}"
+    return bundle.model(relative, spacy["sha256"]) or models_dir / relative

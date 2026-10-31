@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_macros.html" import error_summary, error_message, describedby %}
+{% block main %}
+<h1>Choose what to make</h1>
+{% if errors %}{{ error_summary(errors, {"english": "english", "format": "format-" ~ formats[0].name, "voice": "voice", "speed": "speed-" ~ speeds[0].value, "section": "section-" ~ summary.sections[0].number}) }}{% endif %}
+<p>Book: <strong>{{ summary.title }}</strong>{% if summary.authors %}, by {{ summary.authors | join(", ") }}{% endif %}. It has {{ about }}.</p>
+<p>Before making it, you can <a href="/books/{{ book_id }}/words">check how words are said</a>: find the names the voice may say wrong, listen to them, and fix them.</p>
+
+<form method="post" action="/books/{{ book_id }}/choose" novalidate>
+  {% if ask_language %}
+  <fieldset class="{% if errors.get('english') %}has-error{% endif %}" aria-describedby="{{ describedby('english-hint', errors, 'english', 'english-error') }}">
+    <legend>Language (required)</legend>
+    <p class="hint" id="english-hint">This book says it is in the language with the code "{{ summary.language }}". Dogear's voice speaks only English. Books are sometimes marked with the wrong language, so if this one is in English, choose Read it as English.</p>
+    {{ error_message(errors, "english", "english-error") }}
+    <div class="choice">
+      <input type="checkbox" id="english" name="english" value="yes"{% if picked.as_english %} checked{% endif %}>
+      <label for="english">Read it as English</label>
+    </div>
+  </fieldset>
+  {% endif %}
+
+  <fieldset class="{% if errors.get('format') %}has-error{% endif %}" aria-describedby="{{ describedby('format-hint', errors, 'format', 'format-error') }}">
+    <legend>What to make (choose at least one)</legend>
+    <p class="hint" id="format-hint">You can choose more than one.</p>
+    {{ error_message(errors, "format", "format-error") }}
+    {% for format in formats %}
+    <div class="choice">
+      <input type="checkbox" id="format-{{ format.name }}" name="format" value="{{ format.name }}"{% if format.name in picked.formats %} checked{% endif %} aria-describedby="format-{{ format.name }}-hint">
+      <label for="format-{{ format.name }}">{{ format.title }}</label>
+      <p class="hint" id="format-{{ format.name }}-hint">{{ format.description }}</p>
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <div class="field{% if errors.get('voice') %} has-error{% endif %}">
+    <label for="voice">Voice</label>
+    <p class="hint" id="voice-hint">Best rated first. The grades are the voice makers' own, A best.</p>
+    {{ error_message(errors, "voice", "voice-error") }}
+    <select id="voice" name="voice" aria-describedby="{{ describedby('voice-hint', errors, 'voice', 'voice-error') }}">
+      {% for voice in voices %}
+      <option value="{{ voice.value }}"{% if voice.value == picked.voice %} selected{% endif %}>{{ voice.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <fieldset class="{% if errors.get('speed') %}has-error{% endif %}"{% if errors.get('speed') %} aria-describedby="speed-error"{% endif %}>
+    <legend>Speed</legend>
+    {{ error_message(errors, "speed", "speed-error") }}
+    {% for speed in speeds %}
+    <div class="choice">
+      <input type="radio" id="speed-{{ speed.value }}" name="speed" value="{{ speed.value }}"{% if speed.value == picked.speed %} checked{% endif %}>
+      <label for="speed-{{ speed.value }}">{{ speed.label }}</label>
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset class="{% if errors.get('section') %}has-error{% endif %}" aria-describedby="{{ describedby('section-hint', errors, 'section', 'section-error') }}">
+    <legend>Sections to read (choose at least one)</legend>
+    <p class="hint" id="section-hint">Each section is one chapter or part of the book. To hear the voice before making the whole book, choose just one or two.</p>
+    {{ error_message(errors, "section", "section-error") }}
+    {% for section in sections %}
+    <div class="choice">
+      <input type="checkbox" id="section-{{ section.number }}" name="section" value="{{ section.number }}"{% if section.number in picked.sections %} checked{% endif %}>
+      <label for="section-{{ section.number }}">{{ section.number }}. {{ section.description }}</label>
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <button type="submit">Start making</button>
+</form>
+{% endblock %}
