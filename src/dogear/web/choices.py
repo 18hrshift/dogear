@@ -3,15 +3,26 @@ what comes back. Defaults come from the config, or from the book's last choices.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from dogear.book_summary import BookSummary
 from dogear.config import Config
-from dogear.errors import VoiceError
+from dogear.errors import DogearError, VoiceError
 from dogear.make import FORMATS, speaks_language
-from dogear.voice.engines import configured_voice, describe_voice, find_voice, installed
+from dogear.voice.cloud import CloudVoice, cloud_voices, sends_text, text_goes_to
+from dogear.voice.engines import (
+    ChosenVoice,
+    Engine,
+    configured_voice,
+    describe_voice,
+    find_voice,
+    installed,
+)
 from dogear.web.books import Choices
 from dogear.web.forms import every, first
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -66,6 +77,7 @@ SPEEDS: tuple[tuple[float, str], ...] = (
 class Option:
     value: str
     label: str
+    sends_to: str = ""  # for a voice, the computer it sends the book's text to, if another
 
 
 @dataclass(frozen=True)
@@ -91,20 +103,48 @@ def format_options() -> list[FormatInfo]:
     return list(FORMAT_INFO.values())
 
 
-def voice_options() -> list[VoiceGroup]:
+def voice_options(config: Config) -> list[VoiceGroup]:
     """Each installed engine's voices, best first. A value names the engine as well as
-    the voice ("kokoro:af_heart"), so it stays clear whatever other engines have."""
-    return [
-        VoiceGroup(
-            f"{engine.title} voices",
-            tuple(Option(f"{engine.name}:{v.name}", describe_voice(v)) for v in engine.voices),
-        )
-        for engine in installed().engines
-    ]
+    the voice ("kokoro:af_heart"), so it stays clear whatever other engines have. Voices
+    that send the book's text off this computer are offered only when the settings allow
+    them ([voice] allow_cloud), and say where the text goes."""
+    groups = []
+    for engine in installed().engines:
+        try:
+            options = _engine_options(engine, config)
+        except DogearError as e:
+            # Its settings are wrong: `dogear make` would say so too. The rest still work.
+            log.warning("The %s voices aren't offered: %s %s", engine.title, e.message, e.hint)
+            continue
+        if options:
+            groups.append(VoiceGroup(f"{engine.title} voices", options))
+    return groups
 
 
-def voice_values() -> set[str]:
-    return {option.value for group in voice_options() for option in group.options}
+def _engine_options(engine: Engine, config: Config) -> tuple[Option, ...]:
+    options = []
+    for voice in engine.voices_in(config):
+        host = text_goes_to(ChosenVoice(engine, voice), config)
+        if host is not None and not config["voice"]["allow_cloud"]:
+            continue
+        label = describe_voice(voice) + (f" ({sends_text(host)})" if host else "")
+        options.append(Option(f"{engine.name}:{voice.name}", label, host or ""))
+    return tuple(options)
+
+
+def voice_values(config: Config) -> set[str]:
+    return {option.value for group in voice_options(config) for option in group.options}
+
+
+def cloud_voice(spec: str, config: Config) -> CloudVoice | None:
+    """The chosen voice, with where it sends the book's text, if it sends it off this
+    computer. `spec` is one of `voice_values`."""
+    found = cloud_voices([find_voice(spec, config)], config)
+    return found[0] if found else None
+
+
+def offers_cloud_voices(groups: list[VoiceGroup]) -> bool:
+    return any(option.sends_to for group in groups for option in group.options)
 
 
 def speed_options(config: Config) -> list[Option]:
@@ -132,7 +172,7 @@ def defaults(summary: BookSummary, config: Config, last: Choices | None) -> Pick
     if last is not None:
         return Picked(
             formats=frozenset(last.formats),
-            voice=_named_with_engine(last.voice),
+            voice=_named_with_engine(last.voice, config),
             speed=_speed_text(last.speed),
             sections=frozenset(last.sections),
             as_english=last.as_english,
@@ -155,7 +195,7 @@ def check(
     sent_sections = [section_number(v) for v in every(fields, "section")]
     picked = Picked(
         formats=frozenset(f for f in every(fields, "format") if f in FORMATS),
-        voice=_named_with_engine(first(fields, "voice")),
+        voice=_named_with_engine(first(fields, "voice"), config),
         speed=first(fields, "speed"),
         sections=frozenset(n for n in sent_sections if n in numbers),
         as_english=first(fields, "english") == "yes",
@@ -168,7 +208,7 @@ def check(
         )
     if not picked.formats:
         errors["format"] = "Choose at least one thing to make."
-    if picked.voice not in voice_values():
+    if picked.voice not in voice_values(config):
         errors["voice"] = "Choose a voice from the list."
     if picked.speed not in {option.value for option in speed_options(config)}:
         errors["speed"] = "Choose a speed."
@@ -189,12 +229,20 @@ def check(
     return picked, choices, {}
 
 
-def _named_with_engine(voice: str) -> str:
+def form_fields(picked: Picked) -> list[tuple[str, str]]:
+    """The choose form's fields, as `check` reads them, for what was picked."""
+    fields = [("format", f) for f in FORMATS if f in picked.formats]
+    fields += [("voice", picked.voice), ("speed", picked.speed)]
+    fields += [("section", str(n)) for n in sorted(picked.sections)]
+    return fields + ([("english", "yes")] if picked.as_english else [])
+
+
+def _named_with_engine(voice: str, config: Config) -> str:
     """A voice as the form's values name it, with its engine. Books chosen before there
     were other engines saved the voice's name alone, such as "af_heart", and a page
     opened before then sends it that way too."""
     try:
-        return find_voice(voice).spec
+        return find_voice(voice, config).spec
     except VoiceError:
         return voice  # no longer installed: nothing in the list starts out chosen
 

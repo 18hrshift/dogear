@@ -41,8 +41,8 @@ def test_its_voices_are_chosen_by_name_or_with_the_engines_name(config):
     assert (config["voice"]["engine"], config["voice"]["voice"]) == ("piper", "en_GB-cori-high")
 
 
-def test_the_web_page_offers_them_under_piper():
-    groups = {group.label: group for group in choices.voice_options()}
+def test_the_web_page_offers_them_under_piper(config):
+    groups = {group.label: group for group in choices.voice_options(config)}
     assert list(groups) == ["Kokoro voices", "Piper voices"]
     assert groups["Piper voices"].options[0].value == f"piper:{VOICE}"
 

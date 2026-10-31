@@ -34,7 +34,7 @@
 
   <div class="field{% if errors.get('voice') %} has-error{% endif %}">
     <label for="voice">Voice</label>
-    <p class="hint" id="voice-hint">Grouped by the voice engine that speaks them, best first in each group. Grades are the voice makers' own, A best.</p>
+    <p class="hint" id="voice-hint">Grouped by the voice engine that speaks them, best first in each group. Grades are the voice makers' own, A best.{% if cloud_voices %} A voice marked "sends the book's text" is spoken by a service on another computer, which is sent the book's text. Dogear asks before sending any.{% endif %}</p>
     {{ error_message(errors, "voice", "voice-error") }}
     <select id="voice" name="voice" aria-describedby="{{ describedby('voice-hint', errors, 'voice', 'voice-error') }}">
       {% for group in voices %}

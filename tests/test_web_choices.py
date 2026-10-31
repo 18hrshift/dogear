@@ -66,8 +66,8 @@ def test_speeds_are_words_and_mark_the_usual_one(config):
     assert options[-1].label == "Your usual speed (1.25), the usual"
 
 
-def test_voices_are_grouped_by_engine_and_best_rated_first():
-    [kokoro] = choices.voice_options()
+def test_voices_are_grouped_by_engine_and_best_rated_first(config):
+    [kokoro] = choices.voice_options(config)
     assert kokoro.label == "Kokoro voices"
     assert kokoro.options[0] == choices.Option(
         "kokoro:af_heart", "af_heart: American English, female, grade A"
@@ -75,9 +75,9 @@ def test_voices_are_grouped_by_engine_and_best_rated_first():
     assert kokoro.options[-1].label.endswith("grade F+")
 
 
-def test_each_installed_engine_has_its_own_group(installed_engines):
+def test_each_installed_engine_has_its_own_group(installed_engines, config):
     installed_engines(fake_engine("hum", "Hum", [hum_voice("low"), hum_voice("high")]))
-    groups = choices.voice_options()
+    groups = choices.voice_options(config)
     assert [g.label for g in groups] == ["Hum voices", "Kokoro voices"]
     assert [o.value for o in groups[0].options] == ["hum:low", "hum:high"]
 

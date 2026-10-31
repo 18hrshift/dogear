@@ -14,17 +14,20 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
 import lxml.html
+from engine_fakes import entry_point_for, fake_engine, hum_voice
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from dogear.book_summary import BookSummary, SectionSummary
 from dogear.config import Config, default_config
 from dogear.unknown_words import UnknownWord
+from dogear.voice import engines
 from dogear.web.access_key import AccessKey
 from dogear.web.app import STATIC, create_app
 from dogear.web.books import Choices, Output
@@ -216,6 +219,7 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
             data={"format": "m4b", "voice": "kokoro:af_heart", "speed": "0.9", "section": "1"},
         ).text
         pages["delete"] = client.get(f"/books/{books['done']}/delete").text
+        pages.update(_cloud_pages(folder / "cloud"))
         pages.update(_word_pages(app, client, folder))
         pages.update(_listen_pages(app, client))
         pages.update(_pronunciation_pages(app, client))
@@ -232,6 +236,47 @@ def render_pages(out_dir: Path) -> dict[str, Path]:
         saved[name].write_text(html, encoding="utf-8")
     shutil.copytree(STATIC, out_dir / "static", dirs_exist_ok=True)
     return saved
+
+
+CLOUD_HOST = "speech.example.com"
+
+
+@contextmanager
+def cloud_voices_installed() -> Iterator[None]:
+    """A stand-in voice engine beside the installed ones, whose voices send the text they
+    speak to CLOUD_HOST. Nothing is sent: its voices hum, and no page here makes a book."""
+    plugin = fake_engine(
+        "cloud",
+        "Cloud speech",
+        [hum_voice("nova"), hum_voice("onyx", gender="male")],
+        sends_to=CLOUD_HOST,
+    )
+    found = engines._entry_points
+    engines._entry_points = lambda: [*found(), entry_point_for(plugin)]
+    engines.installed.cache_clear()
+    try:
+        yield
+    finally:
+        engines._entry_points = found
+        engines.installed.cache_clear()
+
+
+def _cloud_pages(folder: Path) -> dict[str, str]:
+    """With cloud voices allowed: the choose form listing them, and the page that says
+    where the book's text goes before it starts."""
+    folder.mkdir()
+    with cloud_voices_installed():
+        config = sample_config(folder)
+        config["voice"]["allow_cloud"] = True
+        app = sample_app(folder, config)
+        client = visitor(app)
+        summary = sample_summary("Kidnapped")
+        book = add_book(app.state.library, folder, state="ready", summary=summary)
+        chosen = {"format": "m4b", "voice": "cloud:nova", "speed": "0.9", "section": ["1", "2"]}
+        return {
+            "choose-cloud": client.get(f"/books/{book}/choose").text,
+            "send-text": client.post(f"/books/{book}/choose", data=chosen).text,
+        }
 
 
 # Words a check found, most frequent first. The book has more than the check kept.

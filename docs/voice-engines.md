@@ -177,7 +177,8 @@ before the book is read, unless the user allows it: `allow_cloud = true` under `
 or `--allow-cloud` for one run of `dogear make` or `dogear say`. When it is allowed,
 Dogear says once, in plain sentences, which computer the text goes to, that the service's
 own terms apply, and how to stop, before the engine is made. `dogear voices` marks these
-voices.
+voices, and the web page lists them only when the setting allows them, marked the same
+way, and shows the same warning before a book with one starts.
 
 So an engine needs no opt-in or warning of its own. It must answer honestly from its
 settings: a server at `localhost`, `127.0.0.1`, or `[::1]` keeps the text here, and any
