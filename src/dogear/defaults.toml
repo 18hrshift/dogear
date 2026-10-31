@@ -84,7 +84,9 @@ max_member_mb = 64
 
 [html]
 # Largest HTML file Dogear reads, in megabytes. A long novel is under 5 MB of HTML.
-max_file_mb = 64
+# Reading HTML takes about 50 times the file's size in memory (16 MB took about 870 MB),
+# so a larger limit could exhaust an ordinary computer's memory.
+max_file_mb = 16
 
 [markdown]
 # Largest Markdown file Dogear reads, in megabytes. A long novel is under 3 MB.
