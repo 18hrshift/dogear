@@ -17,7 +17,7 @@ from pathlib import Path
 
 from dogear.config import Config
 from dogear.document import Book
-from dogear.errors import ScannedPdfError, UnsupportedFormatError
+from dogear.errors import UnsupportedFormatError
 from dogear.render.progress import Report
 
 log = logging.getLogger(__name__)
@@ -104,11 +104,8 @@ def extract_book(path: Path, config: Config, report: Report | None = None) -> Bo
             f"Dogear can't read {path.suffix or 'files without an extension'} files yet.",
             hint=f"Supported formats: {supported}.",
         )
-    try:
-        return extractor(path, config)
-    except ScannedPdfError:
-        if not config["pdf"]["auto_ocr"]:
-            raise
-    from dogear.extract import pdf
+    if extractor is _pdf:
+        from dogear.extract import pdf
 
-    return pdf.extract_scanned(path, config, report or log.info)
+        return pdf.extract(path, config, report=report or log.info)
+    return extractor(path, config)

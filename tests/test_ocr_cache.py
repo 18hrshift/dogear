@@ -116,6 +116,26 @@ def test_a_stopped_read_carries_on_from_the_page_it_stopped_at(fake, scan, confi
     assert texts(layer)[1] == PAGE_TEXT.format(n=2)
 
 
+def test_selected_pages_resume_and_have_their_own_cache(fake, scan, config):
+    fake.stop_at = 2
+    with pytest.raises(KeyboardInterrupt):
+        text_layer(scan, config, print, pages=(0, 2))
+    assert fake.read == [0]
+
+    fake.stop_at = None
+    selected = text_layer(scan, config, print, pages=(0, 2))
+    assert fake.read == [0, 2]
+    assert texts(selected) == [PAGE_TEXT.format(n=n) for n in (1, 3)]
+    assert text_layer(scan, config, print, pages=(0, 2)) == selected
+    assert fake.read == [0, 2]
+
+    other = text_layer(scan, config, print, pages=(1,))
+    whole = text_layer(scan, config, print)
+    assert len({selected, other, whole}) == 3
+    assert fake.read == [0, 2, 1, 0, 1, 2]
+    assert texts(other) == [PAGE_TEXT.format(n=2)]
+
+
 def test_the_cache_key_covers_the_file_the_ocr_settings_and_tesseract(scan, config, tmp_path):
     settings = OcrSettings.from_config(config)
     key = cache_key(scan, settings, TESSERACT)

@@ -285,6 +285,15 @@ recognition) by the free program [Tesseract](https://github.com/tesseract-ocr/te
 on your computer, then goes on as with any book. Every command that reads a book does
 this (`outline`, `text`, `make`, and `words`), and so does the web page.
 
+A PDF can mix searchable text with scanned pages. Dogear keeps the searchable pages as
+they are and reads only pages with no text whose largest picture covers at least 80%
+of the page. Smaller illustrations and blank pages are kept without OCR. If OCR finds
+no words on a full-page picture, Dogear keeps its image block and says so. Under `[pdf]`,
+`scanned_image_min_page_share` changes that threshold (0.8 by default). Pages with some
+searchable text, such as a page number over a scanned picture, are not detected this way;
+use `dogear ocr` first for those files. Scans made of several smaller pictures may also
+need that command.
+
 It takes a while: on the 2017 desktop processor above, a full page of a novel took about
 2.5 seconds at the usual 300 dpi, so a 300-page book would take about 12 minutes. Dogear
 says so when it starts, then says how far it has got after the first page and every 10

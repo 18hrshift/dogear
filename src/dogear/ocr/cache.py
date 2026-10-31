@@ -7,8 +7,9 @@ picture of the page, which Dogear doesn't read. Each is written under a temporar
 and renamed when complete. Once every page is read they are joined (pypdf) into
 `text-layer.pdf`, written the same way, and the page files are deleted. The key is the
 SHA-256 of the PDF's bytes together with the [ocr] settings, Tesseract's version, and
-the SHA-256 of each language's data file (tesseract.py), so changing any of them reads
-the book again.
+the SHA-256 of each language's data file (tesseract.py), and the selected page indices
+when only some pages need OCR, so changing any of them reads the book again. A selected
+text layer contains only those pages, in selection order.
 
 One run at a time works in a key's folder, holding the lock on its `in-use.lock`
 (file_lock.py) while it reads pages or joins them. Another run on the same file waits,
@@ -65,17 +66,21 @@ DAMAGED = (
 )
 
 
-def text_layer(path: Path, config: Config, report: Report) -> Path:
+def text_layer(
+    path: Path, config: Config, report: Report, *, pages: tuple[int, ...] | None = None
+) -> Path:
     """The text of the scanned PDF at `path`, read with OCR: a PDF with a page for each of
     its pages, holding that page's words where they are printed. Reads only the pages that
-    weren't read before, reporting how it goes."""
+    weren't read before, reporting how it goes. With `pages`, reads only those original
+    page indices and keeps them in that order, without placeholders for other pages."""
     settings = OcrSettings.from_config(config)
     tesseract = find_tesseract(config, settings)
-    folder = cache_dir(config) / FOLDER / cache_key(path, settings, tesseract)
+    folder = cache_dir(config) / FOLDER / cache_key(path, settings, tesseract, pages=pages)
     joined = folder / TEXT_LAYER
     document = open_pdf(path)
     try:
-        total = len(document)
+        indices = tuple(range(len(document))) if pages is None else pages
+        total = len(indices)
         if joined.is_file() and _problem(joined, total) is None:  # only renamed into place
             report(ALREADY_READ)
             return joined
@@ -89,8 +94,8 @@ def text_layer(path: Path, config: Config, report: Report) -> Path:
                 report(DAMAGED.format(problem=problem))
                 joined.unlink()
             _clear_leftovers(folder)
-            _read_pages(document, folder, tesseract, settings, report)
-            _join(folder, total, joined)
+            _read_pages(document, folder, tesseract, settings, report, indices)
+            _join(folder, indices, joined)
     finally:
         document.close()
     return joined
@@ -123,7 +128,13 @@ def _problem(joined: Path, total: int) -> str | None:
     return None
 
 
-def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
+def cache_key(
+    path: Path,
+    settings: OcrSettings,
+    tesseract: Tesseract,
+    *,
+    pages: tuple[int, ...] | None = None,
+) -> str:
     """What the text read from `path` with these settings is kept under."""
     digest = hashlib.sha256()
     with path.open("rb") as file:
@@ -139,6 +150,8 @@ def cache_key(path: Path, settings: OcrSettings, tesseract: Tesseract) -> str:
         "tesseract": tesseract.version,
         "language_data": tesseract.language_data,
     }
+    if pages is not None:
+        facts["pages"] = pages
     return hashlib.sha256(json.dumps(facts, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -152,16 +165,23 @@ def _read_pages(
     tesseract: Tesseract,
     settings: OcrSettings,
     report: Report,
+    indices: tuple[int, ...],
 ) -> None:
-    total = len(document)
-    missing = [index for index in range(total) if not page_file(folder, index).is_file()]
+    total = len(indices)
+    missing = [index for index in indices if not page_file(folder, index).is_file()]
     if not missing:  # read before, but not joined
         report(ALREADY_READ)
         return
-    report(
-        f"This PDF is scanned, so Dogear is reading its {count(total, 'page')} with OCR, "
-        f"{TAKES_A_WHILE}."
-    )
+    if total == len(document):
+        report(
+            f"This PDF is scanned, so Dogear is reading its {count(total, 'page')} with OCR, "
+            f"{TAKES_A_WHILE}."
+        )
+    else:
+        report(
+            f"This PDF has {count(total, 'scanned page')} among its {len(document):,} pages. "
+            f"Dogear is reading those pages with OCR, {TAKES_A_WHILE}."
+        )
     if len(missing) < total:
         report(
             f"Dogear read {total - len(missing):,} of the {total:,} pages before, so it "
@@ -173,18 +193,19 @@ def _read_pages(
             ocr_page(document, index, page_file(folder, index), tesseract, settings, text_only=True)
         except KeyboardInterrupt:
             report(
-                f"Stopped reading with OCR at page {index + 1} of {total:,}. The pages read "
-                "so far are kept, so running the same command again carries on from there."
+                f"Stopped reading with OCR at page {index + 1} of {len(document):,}. "
+                "The pages read so far are kept, so running the same command again "
+                "carries on from there."
             )
             raise
         progress.page_done()
 
 
-def _join(folder: Path, total: int, joined: Path) -> None:
+def _join(folder: Path, indices: tuple[int, ...], joined: Path) -> None:
     """Join the pages into `joined`, then delete them. A page that can't be read was
     damaged in the cache folder; it's deleted, so the next run reads it again."""
     writer = PdfWriter()
-    for index in range(total):
+    for index in indices:
         page = page_file(folder, index)
         try:
             writer.append(str(page))
@@ -199,7 +220,7 @@ def _join(folder: Path, total: int, joined: Path) -> None:
     with partial.open("wb") as file:
         writer.write(file)
     os.replace(partial, joined)
-    for index in range(total):
+    for index in indices:
         page_file(folder, index).unlink(missing_ok=True)
 
 

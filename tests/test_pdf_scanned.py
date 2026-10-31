@@ -6,13 +6,13 @@ import copy
 
 import pytest
 from conftest import require_tool
-from pdf_builder import novel, scanned, scanned_words
+from pdf_builder import PdfBuilder, alice, novel, scanned, scanned_words
 from pdfplumber.utils.exceptions import PdfminerException
 from pypdf import PdfReader, PdfWriter
 from test_ocr_cache import TESSERACT, FakeOcr
 
 from dogear import cli
-from dogear.document import PageMarker
+from dogear.document import Heading, Image, PageMarker, Paragraph
 from dogear.errors import (
     ExtractionError,
     OcrLanguageError,
@@ -47,6 +47,149 @@ def fast_settings(tmp_path):
     path = tmp_path / "fast.toml"
     path.write_text(FAST)
     return path
+
+
+@pytest.fixture
+def mixed_pdf(tmp_path):
+    native = PdfBuilder(tmp_path / "native.pdf")
+    native.heading("Opening")
+    native.paragraph(alice(1)[0])
+    native.new_page()
+    native.heading("Ending")
+    native.paragraph(alice(2)[1])
+    native.save()
+    pictures = scanned_words(tmp_path / "pictures.pdf", ["MIDDLE", "MORE"], dpi=100)
+    text = PdfReader(native.path)
+    scan = PdfReader(pictures)
+    writer = PdfWriter()
+    writer.add_page(text.pages[0])
+    writer.add_page(scan.pages[0])
+    writer.add_blank_page(width=612, height=792)
+    writer.add_page(scan.pages[1])
+    writer.add_page(text.pages[1])
+    writer.add_metadata({"/Title": "A Mixed Book", "/Author": "Ann Author"})
+    writer.add_outline_item("Opening", 0)
+    writer.add_outline_item("Scanned middle", 1)
+    writer.add_outline_item("Ending", 4)
+    writer.set_page_label(0, 4, style="/r")
+    path = tmp_path / "mixed.pdf"
+    writer.write(path)
+    return path
+
+
+def test_only_scanned_pages_are_read_in_a_mixed_pdf(mixed_pdf, config, fake):
+    reports = []
+    book = extract_book(mixed_pdf, config, reports.append)
+    assert fake.read == [1, 3]
+    assert book.metadata.title == "A Mixed Book"
+    assert book.metadata.authors == ["Ann Author"]
+    assert book.source_path == mixed_pdf
+    assert [section.title for section in book.sections] == ["Opening", "Scanned middle", "Ending"]
+    paragraphs = [
+        block.text
+        for section in book.sections
+        for block in section.blocks
+        if isinstance(block, Paragraph)
+    ]
+    assert paragraphs == [alice(1)[0], fake.text.format(n=2), fake.text.format(n=4), alice(2)[1]]
+    labels = [
+        block.label
+        for section in book.sections
+        for block in section.blocks
+        if isinstance(block, PageMarker)
+    ]
+    assert labels == ["i", "ii", "iii", "iv", "v"]
+    assert reports[0].startswith("This PDF has 2 scanned pages among its 5 pages.")
+    assert reports[-1] == "Finished reading 2 pages with OCR."
+
+    reports.clear()
+    assert extract_book(mixed_pdf, config, reports.append) == book
+    assert fake.read == [1, 3]
+    assert reports == [ALREADY_READ]
+
+
+def test_mixed_pdf_can_stop_and_resume(mixed_pdf, config, fake):
+    fake.stop_at = 3
+    with pytest.raises(KeyboardInterrupt):
+        extract_book(mixed_pdf, config)
+    assert fake.read == [1]
+    fake.stop_at = None
+    assert extract_book(mixed_pdf, config).sections
+    assert fake.read == [1, 3]
+
+
+def test_searchable_pages_survive_even_below_the_book_wide_threshold(mixed_pdf, config, fake):
+    config["pdf"]["min_chars_per_page"] = 1_000_000
+    book = extract_book(mixed_pdf, config)
+    assert fake.read == [1, 3]
+    assert any(
+        isinstance(block, Paragraph) and block.text == alice(1)[0]
+        for section in book.sections
+        for block in section.blocks
+    )
+
+
+def test_mixed_pdf_with_ocr_off_reports_the_scanned_pages(mixed_pdf, config, fake):
+    config["pdf"]["auto_ocr"] = False
+    with pytest.raises(ScannedPdfError, match="2 pages with page-sized pictures"):
+        extract_book(mixed_pdf, config)
+    assert fake.read == []
+
+
+def test_full_page_illustrations_are_kept_when_ocr_finds_no_text(mixed_pdf, config, fake):
+    fake.text = ""
+    reports = []
+    book = extract_book(mixed_pdf, config, reports.append)
+    images = [b for section in book.sections for b in section.blocks if isinstance(b, Image)]
+    assert len(images) == 2
+    assert fake.read == [1, 3]
+    assert reports[-2:] == [
+        "OCR found no text on page ii of mixed.pdf; Dogear keeps it as an image.",
+        "OCR found no text on page iv of mixed.pdf; Dogear keeps it as an image.",
+    ]
+
+
+def test_smaller_illustrations_are_not_ocrd_unless_the_setting_changes(tmp_path, config, fake):
+    source = PdfBuilder(tmp_path / "illustration.pdf")
+    source.paragraph(alice(1)[0])
+    source.new_page()
+    source.image()  # about a third of the page
+    path = source.save()
+    assert extract_book(path, config).sections
+    assert fake.read == []
+    config["pdf"]["scanned_image_min_page_share"] = 0.3
+    assert extract_book(path, config).sections
+    assert fake.read == [1]
+
+
+def test_real_ocr_reads_only_the_scanned_pages(mixed_pdf, config, monkeypatch):
+    require_tool("tesseract")
+    config["ocr"]["dpi"] = 150
+    real = cache.ocr_page
+    read = []
+
+    def record(document, index, *args, **kwargs):
+        read.append(index)
+        return real(document, index, *args, **kwargs)
+
+    monkeypatch.setattr(cache, "ocr_page", record)
+    book = extract_book(mixed_pdf, config)
+    paragraphs = [
+        block.text
+        for section in book.sections
+        for block in section.blocks
+        if isinstance(block, Paragraph)
+    ]
+    assert read == [1, 3]
+    assert paragraphs == [alice(1)[0], alice(2)[1]]
+    headings = [
+        block.text
+        for section in book.sections
+        for block in section.blocks
+        if isinstance(block, Heading)
+    ]
+    assert "MIDDLE" in headings
+    assert "MORE" in headings
 
 
 def test_outline_reads_a_scanned_pdf_with_ocr_and_reuses_it(

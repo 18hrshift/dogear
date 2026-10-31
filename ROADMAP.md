@@ -143,8 +143,12 @@ Goal: a helper with no Python experience can make a book.
       volume is evened per chapter, not per voice, and no native speaker has checked the
       word tables yet.
 - [x] More inputs: DOCX, HTML, Markdown, MOBI/AZW3 via Calibre, automatic OCR for scanned PDFs.
-      Known limits: a PDF with only some pages scanned isn't OCR'd, and the installers
-      don't include Tesseract (the Docker image does).
+      The installers don't include Tesseract (the Docker image does).
+- [x] Read mixed searchable and scanned PDFs: OCR only textless pages with a page-sized
+      raster image, preserving searchable pages, bookmarks, and print-page labels. The
+      selected pages resume after a stop and have their own cache. Known limits: scans
+      with some searchable text (even just a page number), or made of smaller image tiles,
+      need `dogear ocr` first.
 
 ## Ground rules for every phase
 
