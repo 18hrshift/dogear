@@ -117,6 +117,13 @@ Defined in `src/dogear/voice/engines.py` as `EnginePlugin`:
 | `prepare(config, voice, report)` | Make sure every file the voice needs is on disk and checked, downloading whatever is missing. `dogear download` calls it. |
 | `engine(config, voice, pronunciations, report)` | Prepare the voice, then load it: return a `VoiceEngine`. |
 | `pace(config, voice)` | The voice's sample rate and about how many words a minute it says at `config["voice"]["speed"]`, as a `VoicePace`, with nothing loaded or downloaded. `dogear make` uses it to work out the disk space a book needs before speaking it, so a generous estimate is better than a low one. Measure it on a real book with your engine's pauses. |
+| `sends_text_to(config, voice)` | Where the voice sends the text it speaks, with these settings: `None` if the text stays on this computer, or else the name of the computer it goes to, such as `"api.openai.com"`. A server on this computer counts as staying here. Answer from the settings alone: nothing may be sent to find out. See "Voices that send text off this computer" below. |
+
+One more method is optional:
+
+| Part | What it is |
+|---|---|
+| `configured_voices(config)` | For an engine whose voices are set in its settings table, as a speech service's are: the voices with these settings. `voices()` then gives the voices of its default settings. Dogear lists and finds voices with this whenever it has the settings, and checks them as it checks `voices()`. Nothing may be sent to list them. |
 
 A `Voice` has a `name` (unique within the engine, with no colon or spaces), a `language`
 (a BCP 47 tag such as `en-GB`, so Dogear can later choose a voice per language), a
@@ -160,6 +167,24 @@ a `RemoteFile` (its URL, SHA-256, size in bytes, and where it goes, inside
 missing, checks each file against its SHA-256 before using it, says what it's doing in
 plain sentences, and lets one Dogear at a time download into the folder. Pin URLs to a
 fixed revision, so a file can't change under its pin.
+
+### Voices that send text off this computer
+
+Dogear is offline by default, so an engine that sends the text it speaks to another
+computer (a cloud voice) says so in `sends_text_to`, and Dogear's core does the rest. A
+run whose voice sends text off this computer is refused, before anything is sent and
+before the book is read, unless the user allows it: `allow_cloud = true` under `[voice]`,
+or `--allow-cloud` for one run of `dogear make` or `dogear say`. When it is allowed,
+Dogear says once, in plain sentences, which computer the text goes to, that the service's
+own terms apply, and how to stop, before the engine is made. `dogear voices` marks these
+voices.
+
+So an engine needs no opt-in or warning of its own. It must answer honestly from its
+settings: a server at `localhost`, `127.0.0.1`, or `[::1]` keeps the text here, and any
+other address doesn't, including one on the same network. It must not send anything
+before `engine()` is called, and must not follow a redirect to somewhere else. A secret
+such as an API key belongs in an environment variable that a setting names, never in a
+settings file, a cache key, or a message.
 
 ### Errors
 

@@ -27,6 +27,8 @@ from dogear.render import render_book
 from dogear.render.progress import Progress, Report
 from dogear.render.work import work_folder
 from dogear.voice import make_engine, voice_pace
+from dogear.voice.cloud import refuse_unless_allowed
+from dogear.voice.engines import configured_voice
 
 # m4b: one audiobook file with chapters. mp3: a folder of MP3 files with a playlist.
 # epub: an EPUB 3 talking book, text and audio in step. daisy: a DAISY 2.02 talking book.
@@ -44,6 +46,9 @@ class MakeRequest:
 def make_audiobook(request: MakeRequest, config: Config, report: Report) -> list[Path]:
     """Make the configured outputs for one book. Returns what was saved, in order."""
     formats = _formats(config)
+    # A voice that would send the text off this computer, unless allowed, stops it before
+    # the book is even read. make_engine says where the text goes, just before it is sent.
+    refuse_unless_allowed([configured_voice(config)], config)
     book = extract_book(request.book, config, report)
     if request.language:
         book.metadata.language = request.language

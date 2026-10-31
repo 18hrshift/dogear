@@ -71,6 +71,9 @@ class KokoroPlugin:
             kokoro["sample_rate"], kokoro["words_per_minute"] * config["voice"]["speed"]
         )
 
+    def sends_text_to(self, config: Config, voice: Voice) -> None:
+        return None  # Kokoro runs on this computer
+
     def engine(
         self,
         config: Config,

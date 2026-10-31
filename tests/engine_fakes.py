@@ -26,12 +26,16 @@ class FakePlugin:
     settings: str = ""
     reads_misaki_phonemes: bool = False
     about_voices: str = "Best first."
+    sends_to: str | None = None  # where its voices send text: None, this computer
     prepared: list[str] = field(default_factory=list)
     made: list[dict[str, Any]] = field(default_factory=list)
     engine_made: HumEngine | None = None
 
     def voices(self) -> list[Voice]:
         return list(self.voice_list)
+
+    def sends_text_to(self, config, voice) -> str | None:
+        return self.sends_to
 
     def prepare(self, config, voice, report) -> None:
         self.prepared.append(voice.name)

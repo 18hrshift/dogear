@@ -11,6 +11,7 @@ from __future__ import annotations
 from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.pronunciations import PronunciationDictionary, dictionary_from_config
+from dogear.voice.cloud import refuse_unless_allowed, warning
 from dogear.voice.downloads import Report
 from dogear.voice.engine import VoiceEngine
 from dogear.voice.engines import (
@@ -25,8 +26,12 @@ __all__ = ["VoicePace", "make_engine", "prepare_voice", "voice_pace"]
 
 
 def make_engine(config: Config, report: Report) -> VoiceEngine:
-    """The configured voice, downloading its files first if needed."""
+    """The configured voice, downloading its files first if needed. A voice that sends
+    text off this computer is refused unless the settings allow it, and is said to before
+    it is made (cloud.py)."""
     chosen = configured_voice(config)
+    for cloud in refuse_unless_allowed([chosen], config):
+        report(" ".join(warning(cloud)))
     # Read first, so a mistake in a pronunciation file is reported before a long download.
     pronunciations = dictionary_from_config(config)
     _say_if_phoneme_entries_are_skipped(chosen, pronunciations, report)
