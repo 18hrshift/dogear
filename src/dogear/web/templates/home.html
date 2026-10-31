@@ -10,7 +10,7 @@
 <form method="post" action="/books" enctype="multipart/form-data" novalidate>
   <div class="field{% if errors.get('book') %} has-error{% endif %}">
     <label for="book-file">Book file (required)</label>
-    <p class="hint" id="book-file-hint">An EPUB, PDF, MOBI, or AZW3 file, up to {{ max_upload }}. A PDF that is only pictures of pages, such as a scan, can't be read.</p>
+    <p class="hint" id="book-file-hint">An {{ book_formats }} file, up to {{ max_upload }}. A PDF that is only pictures of pages, such as a scan, can't be read.</p>
     {{ error_message(errors, "book", "book-file-error") }}
     {# No accept attribute, on purpose: the hint above names the kinds of book, and the
        server checks the name (uploads.check_name) and says what to choose instead.

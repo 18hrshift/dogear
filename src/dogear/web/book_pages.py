@@ -11,6 +11,7 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from dogear.book_summary import count, describe_section
 from dogear.config import Config
 from dogear.errors import DogearError
+from dogear.extract import format_names
 from dogear.web import choices
 from dogear.web.books import ID_PATTERN, MADE, BookRecord
 from dogear.web.downloads import NotAvailable, downloads, media_type, output_path
@@ -62,6 +63,7 @@ def _home(
         "Your books",
         status_code=status_code,
         errors=errors,
+        book_formats=format_names("or"),
         current="books",
         books=books,
         notice=notice,

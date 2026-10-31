@@ -9,13 +9,13 @@ and low-vision listeners. Read [`ROADMAP.md`](ROADMAP.md) before starting work. 
 each phase and what "done" means.
 
 **Current state:** Phase 4 (more voices and languages). `dogear make` reads an EPUB, PDF,
-or Kindle book into a structured document, narrates it with spoken structure, speaks it on
-the CPU with a voice engine (Kokoro, built in, or a plugin such as Piper in
-`plugins/piper/`), and packages an M4B, an MP3 folder, an EPUB 3 talking book, and/or a
-DAISY 2.02 talking book. `dogear serve` is a local web page that does the same from a
-browser, running `dogear` itself as a child process for each book. Standalone installers
-(`packaging/`) and a Docker image (`Dockerfile`, `docker/`) carry everything, the Kokoro
-voice included.
+Word (DOCX), HTML, Markdown, or Kindle book into a structured document, narrates it with
+spoken structure, speaks it on the CPU with a voice engine (Kokoro, built in, or a plugin
+such as Piper in `plugins/piper/`), and packages an M4B, an MP3 folder, an EPUB 3 talking
+book, and/or a DAISY 2.02 talking book. `dogear serve` is a local web page that does the
+same from a browser, running `dogear` itself as a child process for each book. Standalone
+installers (`packaging/`) and a Docker image (`Dockerfile`, `docker/`) carry everything,
+the Kokoro voice included.
 
 ## Working here
 
@@ -69,7 +69,7 @@ what each platform needs. The Installers workflow builds all three, installs eac
 | `src/dogear/tools.py` | Finding and running ffmpeg, Tesseract, and Calibre with install hints: the program set in config, else a standalone build's own copy, else PATH, else known install folders. |
 | `src/dogear/bundle.py` | What a standalone (PyInstaller) build carries: where its programs are, the folder to run espeak-ng in, with `--path=.`, so it finds its data, and its voice files, used when the build-time manifest's SHA-256 matches the catalog's. Every answer is None in a normal install. |
 | `src/dogear/file_lock.py` | An exclusive lock on a file (flock, or msvcrt.locking on Windows) that the system lets go of when the process ends, however it ends. Keeps a second `dogear serve` off a web folder in use, and `dogear make` off another run's work folder. |
-| `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `epub_sections` for sections from the table of contents, `epub_kind`, `epub_cover`, `xhtml`, `xhtml_blocks`, `xhtml_split`, `safe_xml`), `pdf.py` (+ `pdf_page`, `pdf_text`, `pdf_furniture` for running headers, `pdf_columns`, `pdf_notes` for page-foot footnotes, `pdf_headings`, `pdf_figures`, `pdf_hyphens`, `pdf_chapters`, `pdf_sections`), `calibre.py` for Kindle. `extract_book` (`__init__.py`) reads a PDF that `pdf.py` finds scanned with OCR first (`pdf.extract_scanned`), when `pdf.auto_ocr` is on. |
+| `src/dogear/extract/` | One module per format: `epub.py` (+ `epub_package`, `epub_nav`, `epub_sections` for sections from the table of contents, `epub_kind`, `epub_cover`, `xhtml`, `xhtml_blocks`, `xhtml_split`, `safe_xml`), `pdf.py` (+ `pdf_page`, `pdf_text`, `pdf_furniture` for running headers, `pdf_columns`, `pdf_notes` for page-foot footnotes, `pdf_headings`, `pdf_figures`, `pdf_hyphens`, `pdf_chapters`, `pdf_sections`), `docx.py` for Word (+ `docx_package` for the archive and its parts, `docx_styles` for heading levels through the style chain, `docx_numbering` for lists, `docx_runs` for a paragraph's text, images, and note references, `docx_blocks`, `docx_notes` for footnotes, endnotes, and their marks), `html_book.py` for HTML (+ `html_parse` for decoding and lenient parsing with the network off), `markdown_book.py` for Markdown (rendered to HTML, + `front_matter` for YAML metadata), `calibre.py` for Kindle. Shared: `__init__` holds `FORMATS`, the one list of what Dogear reads (the extensions and the names every help text and the web page use); `zip_archive` reads EPUB and Word archives in memory with a size limit; `limited_read` reads HTML and Markdown files with theirs; `stretches` cuts a book with no table of contents into sections at its top heading level; `note_links` labels notes once a book is read. `extract_book` reads a PDF that `pdf.py` finds scanned with OCR first (`pdf.extract_scanned`), when `pdf.auto_ocr` is on. |
 | `src/dogear/speech/` | `sentences.py` splits display text into sentences; `normalize.py` rewrites a sentence into what the voice should say, with `money`, `times`, `units`, and `roman` handling one kind of text each. |
 | `src/dogear/narration.py` | Spoken structure: a section becomes utterances with pauses (headings, image descriptions, notes, tables, scene breaks), per `[narration]`, plus passages that say which utterances read which block. Also the title track. |
 | `src/dogear/voice/` | Voice engines. `engine.py` is what a voice gives the renderer (`plan` is cheap and gives the cache key; `render` makes audio). `engines.py` is the plugin interface: what an engine gives Dogear, finding the installed ones through the `dogear.engines` entry points (setting aside any that fail, with a reason), choosing a voice (`engine:voice` or a name only one engine has), and `EngineVoice`, which adds the engine and voice to every cache key and turns an engine's unexpected errors into `VoiceError`s. `__init__.py` makes the configured voice. `kokoro_plugin.py` is Kokoro as a plugin, registered in `pyproject.toml` like any other, with its settings in `kokoro.toml`. `kokoro.py` runs Kokoro with onnxruntime; `g2p.py` turns English into phonemes (misaki, plus the espeak-ng program for unknown words); `downloads.py` and `catalog.toml` fetch model files pinned by SHA-256, one Dogear at a time per models folder (`spacy_model.py` unpacks spaCy's model). `__init__.py` also gives the voice's pace (`voice_pace`, from each engine's `pace`) for the disk space check. `check.py` is `dogear download --check`: it hashes every Kokoro and spaCy file on disk, downloaded or bundled, against the catalog (spaCy's unpacked model as one folder hash) and downloads the damaged ones again. |
@@ -136,7 +136,7 @@ Checked with `uv tree --no-dev` when added. Recheck when adding or upgrading.
 
 | Package | License | Used for |
 |---|---|---|
-| lxml | BSD-3-Clause | EPUB and XHTML parsing |
+| lxml | BSD-3-Clause | EPUB, XHTML, HTML, and Word (DOCX) parsing |
 | pdfplumber, pdfminer.six | MIT | PDF text, positions, font sizes |
 | pypdf | BSD-3-Clause | PDF outline, page labels, merging |
 | pypdfium2 | BSD-3-Clause / Apache-2.0 | Rendering PDF pages for OCR |
@@ -151,6 +151,9 @@ Checked with `uv tree --no-dev` when added. Recheck when adding or upgrading.
 | uvicorn (+ click, h11) | BSD-3-Clause (BSD-3-Clause, MIT) | Serving the web page |
 | Jinja2 (+ MarkupSafe) | BSD-3-Clause | The web page's HTML templates, autoescaped |
 | python-multipart | Apache-2.0 | Reading a book upload as it streams in |
+| markdown-it-py (+ mdurl) | MIT (MIT) | Markdown to HTML (CommonMark and tables) |
+| mdit-py-plugins | MIT | Markdown footnotes and front matter |
+| PyYAML | MIT | Markdown front matter, read with its BaseLoader (text, lists, and mappings only) |
 
 Downloaded on first use: the Kokoro-82M model and voices (Apache-2.0) and spaCy's
 `en_core_web_sm` model (MIT), each pinned by SHA-256 in `src/dogear/voice/catalog.toml`. The
