@@ -14,9 +14,10 @@ Dogear is installed it works without an internet connection.
 - **Check the listener's library first.** Libraries for print-disabled readers (such as
   Bookshare, or your country's library service for the blind) may already have the book,
   read by a person, at no cost. Dogear is for books they don't have.
-- **A book you have the right to convert,** as an EPUB, PDF, MOBI, or AZW3 file. Books
-  bought from some stores are copy-protected (DRM), and Dogear can't read those. Free
-  public-domain books from Standard Ebooks or Project Gutenberg work well.
+- **A book you have the right to convert,** as an EPUB, PDF, Word (DOCX), HTML, Markdown,
+  MOBI, or AZW3 file. Books bought from some stores are copy-protected (DRM), and Dogear
+  can't read those. Free public-domain books from Standard Ebooks or Project Gutenberg
+  work well.
 - **A computer:** Windows (64-bit), a Mac with Apple silicon and macOS 14 or newer, or a
   64-bit Linux PC, with about 1 GB of free space for Dogear and more for the books you
   make (see "Disk space" below).
@@ -142,6 +143,10 @@ Dogear says what went wrong and what to do next. The most common problems:
   before making it" section covers `dogear ocr`.
 - **A Kindle book (MOBI or AZW3) won't open:** Dogear needs the free program Calibre to
   read Kindle books. Install it from calibre-ebook.com, then try again.
+- **A Word document comes out as one long section:** Dogear starts a section at each
+  heading, and Word marks headings with its Heading styles. In Word, give each chapter's
+  title the Heading 1 style (on the Home tab, under Styles), save, and upload it again.
+  The same goes for HTML and Markdown files: each chapter needs a heading.
 - **"Dogear's voice speaks only English":** the book is marked as being in another
   language. If it really is in English (books are sometimes marked wrongly), check "Read
   it as English". Dogear's voice can't read other languages yet.

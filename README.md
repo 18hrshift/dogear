@@ -92,8 +92,8 @@ doesn't, open the link Dogear shows in its window. That link looks like
 
 On the page:
 
-1. Choose a book file (EPUB, PDF, MOBI, or AZW3) and upload it. Dogear reads it to find
-   its chapters.
+1. Choose a book file (EPUB, PDF, Word, HTML, Markdown, MOBI, or AZW3) and upload it.
+   Dogear reads it to find its chapters.
 2. Choose what to make, the voice, the speed, and which sections to read. To hear the
    voice before making a whole book, choose one or two sections.
 3. To fix names the voice says wrong, follow "check how words are said" on that page
@@ -343,6 +343,15 @@ voice doesn't have stops Dogear with an error that names it.
 
 - **EPUB, PDF, and Kindle** (MOBI and AZW3, through Calibre). EPUB chapters come from the
   book's table of contents.
+- **Word documents (DOCX), HTML, and Markdown.** These have no table of contents, so each
+  chapter starts at a heading. Dogear uses the highest heading level that appears more
+  than once, so a title above the chapters gets a short section of its own. Word's
+  heading styles count even when renamed or in another language, and its lists, tables,
+  footnotes, endnotes, and image descriptions (alt text) are read. Word's headers,
+  footers, and comments aren't, nor is its table of contents. An HTML file is read on its
+  own: nothing it links to, such as pictures or style sheets, is downloaded. A Markdown
+  file can start with YAML front matter giving its `title`, `author` (or `authors`), and
+  `lang`.
 - **A title track** opens the book with its title and who wrote it.
 - **Headings** are read with a pause after them. Longer pauses mark bigger breaks: a
   sentence, a paragraph, a scene break, a chapter.
