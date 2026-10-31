@@ -250,7 +250,11 @@ def cloud_voices_installed() -> Iterator[None]:
     plugin = fake_engine(
         "cloud",
         "Cloud speech",
-        [hum_voice("nova"), hum_voice("onyx", gender="male")],
+        [
+            hum_voice("nova"),
+            hum_voice("onyx", gender="male"),
+            hum_voice("amelie", "fr-FR", description="French"),
+        ],
         sends_to=CLOUD_HOST,
     )
     found = engines._entry_points
@@ -265,7 +269,8 @@ def cloud_voices_installed() -> Iterator[None]:
 
 def _cloud_pages(folder: Path) -> dict[str, str]:
     """With cloud voices allowed: the choose form listing them, and the page that says
-    where the book's text goes before it starts."""
+    where the book's text goes before it starts, for a cloud voice chosen and for a
+    voice on this computer with a cloud voice for French in the settings."""
     folder.mkdir()
     with cloud_voices_installed():
         config = sample_config(folder)
@@ -275,10 +280,14 @@ def _cloud_pages(folder: Path) -> dict[str, str]:
         summary = sample_summary("Kidnapped")
         book = add_book(app.state.library, folder, state="ready", summary=summary)
         chosen = {"format": "m4b", "voice": "cloud:nova", "speed": "0.9", "section": ["1", "2"]}
-        return {
+        pages = {
             "choose-cloud": client.get(f"/books/{book}/choose").text,
             "send-text": client.post(f"/books/{book}/choose", data=chosen).text,
         }
+        app.state.config["voice"]["languages"] = {"fr": "cloud:amelie"}
+        kokoro = {**chosen, "voice": "kokoro:af_heart"}
+        pages["send-text-languages"] = client.post(f"/books/{book}/choose", data=kokoro).text
+        return pages
 
 
 # Words a check found, most frequent first. The book has more than the check kept.

@@ -542,7 +542,9 @@ or with `allow_cloud = true` under `[voice]` in your settings file, which also l
 web page offer cloud voices. Without it, Dogear stops before reading the book, says which
 computer the voice would send the text to, and sends nothing. With it, Dogear says once,
 in plain sentences, where the text is going and that the service's terms apply, before
-sending any; the web page shows the same words and asks before it starts. `dogear voices`
+sending any; the web page shows the same words and asks before it starts, naming every
+cloud voice the book may use, including one `[voice.languages]` gives another language.
+`dogear voices`
 marks every such voice with the computer it sends text to, such as "(sends the book's
 text to api.openai.com)". The service's key goes in an environment variable
 (`OPENAI_API_KEY` at first), never in a settings file.

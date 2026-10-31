@@ -26,6 +26,7 @@ from dogear.voice.language_voices import (
     mapped_voices,
     other_languages,
     voices_for,
+    voices_for_run,
 )
 from dogear.web.books import Choices
 from dogear.web.forms import every, first
@@ -166,11 +167,12 @@ def voice_values(config: Config) -> set[str]:
     return {option.value for group in voice_options(config) for option in group.options}
 
 
-def cloud_voice(spec: str, config: Config) -> CloudVoice | None:
-    """The chosen voice, with where it sends the book's text, if it sends it off this
-    computer. `spec` is one of `voice_values`."""
-    found = cloud_voices([find_voice(spec, config)], config)
-    return found[0] if found else None
+def cloud_voices_for_run(spec: str, config: Config) -> list[CloudVoice]:
+    """Every voice a book made with `spec` as its voice may use that sends the book's
+    text off this computer, with where: the chosen voice, and any voice [voice.languages]
+    or other_languages = "best" would give another language (voices_for_run, as
+    `dogear make` checks). `spec` is one of `voice_values`."""
+    return cloud_voices(voices_for_run(config, find_voice(spec, config)), config)
 
 
 def offers_cloud_voices(groups: list[VoiceGroup]) -> bool:
