@@ -63,8 +63,8 @@ Open questions:
   CC BY 4.0, which are open but not OSI licenses. CC BY asks for credit, which the plugin's
   README gives.
 - The French and German voices were trained on many speakers, and Piper speaks with the
-  first. Nobody has listened to them closely yet; Dogear doesn't read French or German
-  books until language detection is built.
+  first. Nobody has listened to them closely yet. Dogear reads French, German, and
+  Spanish books and passages with them (below).
 - Dogear already runs the eSpeak NG program for Kokoro. Running Piper's voices from the
   Apache-2.0 core, with eSpeak NG as a separate program and onnxruntime, would avoid the
   GPL package, if the program's phonemes match the ones piper-tts makes. Not tried yet.
@@ -115,6 +115,86 @@ Checked on 2026-10-30:
 [Speaches]: https://speaches.ai/usage/text-to-speech/
 [LocalAI]: https://localai.io/features/text-to-audio/
 
+## A voice for each language (2026-10-30)
+
+Every utterance knows its language: the one the book marks on its paragraph or chapter,
+else the book's, else one language detection guessed. Its voice is, in order: the voice
+`[voice.languages]` gives the most specific tag that matches ("fr-CA", then "fr"); the
+main voice, if it speaks the language; with `[voice] other_languages = "best"`, the best
+installed voice for it (the main voice's engine first, then the others as `dogear voices`
+lists them, each engine's voices best first, a voice for the exact tag before one for
+the language); otherwise the main voice. `src/dogear/voice/language_voices.py` does the
+choosing, with nothing loaded; `voices_for_run` lists every voice a run's settings may
+use, before any book is read.
+
+`dogear make` works out which voices the book needs, loads each once, through
+`dogear.voice.make_voice` like the main voice, and gives the renderer
+`voice.book_voices.BookVoices`. The book's audio is written at the highest sample rate
+among them (Kokoro's 24 kHz over Piper's 22.05 kHz), so no voice loses sound, and the
+others are resampled as each sentence is written (`render/resample.py`, a Kaiser-windowed
+sinc in numpy: about 40 ms for a 5-second sentence). The cache keeps each sentence at its
+own voice's rate, under its own engine's and voice's key. Marks are counted in the
+section's samples as it is written, so read-along syncs stay exact.
+
+Why the default is `other_languages = "main"`: only Piper has voices in other languages
+so far, and it isn't installed with Dogear; another engine's voice sounds different,
+mid-chapter; and books are sometimes marked with the wrong language. A stray change of
+voice is worse than an English voice reading a French phrase, so a second voice reads
+only when the settings ask for one.
+
+What an engine is given. Dogear's own rewrites (abbreviations, numbers, currency, times,
+units, roman numerals) are English. Text in another language reaches its voice as
+written, tidied only (plain quotes, dashes as pauses, invisible characters removed), so
+an engine for other languages must read numbers and symbols itself, as Piper's eSpeak NG
+does ("3 500" as "trois mille cinq cents", "1,5" as "un virgule cinq"). Spellings in
+pronunciation files apply to English text unless an entry lists its languages.
+
+Open questions: a second voice is often quieter or louder than the first, since Dogear
+evens out the volume once per chapter, not per voice (in a test chapter, Piper's French
+was 3 to 9 dB quieter than Kokoro). Nobody who speaks French, German, or Spanish has
+listened to Dogear's words for those languages yet.
+
+## Decision: py3langid for languages a book doesn't mark (2026-10-30)
+
+Many books mark no languages at all, so `[language_detection]` (off by default) guesses
+them. Candidates checked on 2026-10-30, on PyPI:
+
+| Library | License | Size | Short text | Verdict |
+|---|---|---|---|---|
+| py3langid 0.4.0 (2026-09-02) | BSD-3-Clause | 4.6 MB wheel, pure Python with numpy | Length-calibrated confidences: a short phrase stays unsure | **Chosen** |
+| lingua-language-detector 2.2.0 (2026-03-09) | Apache-2.0 | 170 MB wheel for each platform | The most accurate on short text | Too big: it would more than double the installers |
+| langdetect 1.0.9 (2021) | MIT on PyPI (Apache-2.0 upstream) | 1 MB | Poor; gives different answers unless seeded | Unmaintained and not deterministic |
+| eld 1.0.6 (2023) | Apache-2.0 | 5.4 MB | Good, but its scores aren't probabilities | No confidence to set a threshold on |
+| fastText lid.176 (fast-langdetect 1.1.0) | MIT code, CC BY-SA 3.0 weights | 1 MB model, downloaded | Good | Share-alike weights, and the wrapper downloads the model at run time |
+
+Why py3langid ([repository][py3langid], [changelog][py3langid-history]). Its 0.4.0 model
+(139 languages, trained on Wikipedia leads, Leipzig news, CC-100, Tatoeba, GlotCC, and
+Glot500 sentences, per its [TRAINING.md][py3langid-training]) ships inside the package,
+so it runs offline and is in the installers. It gives the same answer every time, takes
+about 0.1 ms a sentence, and loads in a third of a second (85 MB of memory), only when
+detection is on. Its confidences are normalized by length, so asked about every language
+it knows, a short or mixed sentence comes out unsure instead of forced into English or
+French. Told to choose among English and French only, it called a German sentence English
+(0.82); asked about all of them, it said German. Dogear therefore asks about all of them
+and keeps a guess only if it is a language with a voice.
+
+How careful it is: every block (paragraph, list, note, table, heading) with at least
+`min_letters` letters (30) is checked whole, and a guess is used at `min_confidence`
+(0.9) or more; a paragraph or note of `sentence_check_min_letters` (300) or more is also
+checked a sentence at a time. A language the book marks on a passage, or on a chapter
+in another language than the book's, is never second-guessed. On Jekyll and Hyde, with
+voices for English, French, German, and Spanish, none of its 331 blocks, nor of the 662
+sentences of its long paragraphs, with 30 letters or more was guessed to be in another
+language (14 came out unsure and stayed English). Five French sentences written for the
+test, of 39 to 66 letters, came out French at 0.99 or more; two of 25 letters, at 0.75 and
+0.98. The package
+states no license for its model apart from the package's own, BSD-3-Clause, the same
+footing as spaCy's model.
+
+[py3langid]: https://github.com/adbar/py3langid
+[py3langid-history]: https://github.com/adbar/py3langid/blob/master/HISTORY.rst
+[py3langid-training]: https://github.com/adbar/py3langid/blob/master/TRAINING.md
+
 ## Writing a voice engine plugin
 
 A plugin is a Python package that registers one object under the entry point group
@@ -158,7 +238,7 @@ Two more methods are optional:
 | `pinned_files(config)` | Every file the engine downloads, for any of its voices, as `RemoteFile`s with where each lives on disk. `dogear download --check` hashes each one that is on disk against its pin, as it does Kokoro's, and downloads a damaged one again. Leave it out if the engine downloads nothing. |
 
 A `Voice` has a `name` (unique within the engine, with no colon or spaces), a `language`
-(a BCP 47 tag such as `en-GB`, so Dogear can later choose a voice per language), a
+(a BCP 47 tag such as `en-GB`, by which Dogear chooses a voice for each language), a
 `description` (the language in words, with any accent: "British English"), a `gender`
 ("female", "male", or "" if not known), and a `quality` (the engine's own grade in words,
 such as "grade A" or "high quality", or "").
@@ -176,7 +256,8 @@ engine's heavy libraries inside `engine()`.
 
 Defined in `src/dogear/voice/engine.py`. The renderer gives it one sentence at a time.
 
-- `sample_rate`: the audio's rate in Hz, a whole number.
+- `sample_rate`: the audio's rate in Hz, a whole number. It may differ from other voices': a
+  book read by two voices is written at the higher rate, and the other is resampled.
 - `plan(text)`: quick, no audio. Returns a `SpeechPlan` with the engine's input in
   `payload` (for Kokoro, its phonemes; `dogear say --phonemes` prints it) and a cache
   `key`. Equal keys must mean identical audio, so the key must cover the model files (their

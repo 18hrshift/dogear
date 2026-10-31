@@ -27,6 +27,7 @@ from dogear.make import (
     parse_formats,
     parse_sections,
 )
+from dogear.voice.language_voices import LanguageVoices
 
 
 def small_book(language: str | None = "en") -> Book:
@@ -48,7 +49,7 @@ def setup(monkeypatch, config, tmp_path):
     config["render"]["cache_dir"] = str(tmp_path / "cache")
     used = {"book": small_book(), "engine": HumEngine(), "lines": []}
     monkeypatch.setattr(make, "extract_book", lambda path, cfg, report: used["book"])
-    monkeypatch.setattr(make, "make_engine", lambda cfg, report: used["engine"])
+    monkeypatch.setattr(make, "make_voice", lambda cfg, chosen, report: used["engine"])
     return used
 
 
@@ -90,7 +91,7 @@ def test_a_scanned_pdf_is_read_with_ocr_then_made(monkeypatch, config, tmp_path)
     config["render"]["cache_dir"] = str(tmp_path / "cache")
     config["ocr"]["dpi"] = 150
     engine = HumEngine()
-    monkeypatch.setattr(make, "make_engine", lambda cfg, report: engine)
+    monkeypatch.setattr(make, "make_voice", lambda cfg, chosen, report: engine)
     text = novel(
         tmp_path / "text.pdf", headings=CHAPTER_TITLES[:2], paragraphs=4, running_header=False
     )
@@ -188,8 +189,8 @@ def test_language_override_lets_it_through(setup, config, tmp_path):
 
 
 @pytest.mark.parametrize("language", [None, "en", "en-GB", "EN-us"])
-def test_english_or_unlabeled_books_are_accepted(language):
-    check_language(small_book(language))
+def test_english_or_unlabeled_books_are_accepted(language, config):
+    check_language(small_book(language), LanguageVoices.from_config(config))
 
 
 def test_unknown_format_in_config_is_an_error(setup, config, tmp_path):
@@ -203,7 +204,7 @@ def test_talking_books_get_the_text_tied_to_the_audio(setup, config, tmp_path, m
     built = {}
 
     def fake_builder(name):
-        def build(sections, metadata, path, cfg):
+        def build(sections, metadata, path, cfg, voices=()):
             built[name] = (sections, path)
 
         return build
@@ -362,10 +363,10 @@ def test_cli_voices_says_only_stopped_after_ctrl_c(monkeypatch, capsys):
 def test_a_book_too_big_for_the_disk_stops_before_the_voice_loads(
     setup, config, tmp_path, monkeypatch
 ):
-    def no_voice(cfg, report):
+    def no_voice(cfg, chosen, report):
         raise AssertionError("the voice was loaded")
 
-    monkeypatch.setattr(make, "make_engine", no_voice)
+    monkeypatch.setattr(make, "make_voice", no_voice)
     monkeypatch.setattr(disk_space, "disk_of", lambda folder: Disk(1, 10**12, 1000))
     with pytest.raises(DiskSpaceError, match="This book needs about"):
         run(config, tmp_path, setup)

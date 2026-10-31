@@ -70,8 +70,11 @@ own, after Kokoro's.
 
 What's different from Kokoro:
 
-- **English books only, for now.** The French, German, and Spanish voices are ready for
-  when Dogear can read other languages; it can't yet.
+- **Books and passages in French, German, and Spanish.** Choose one of those voices to
+  read a whole book in its language, or give the language a voice in your settings so
+  it reads the passages in that language in a book Kokoro reads (Dogear's README, "Books
+  with more than one language"). Dogear leaves numbers and abbreviations in those
+  languages to Piper, whose eSpeak NG reads them by the language's own rules.
 - **Spellings in your pronunciation files work; phoneme entries don't.** Phoneme entries
   are written in Kokoro's symbols. With a Piper voice, Dogear skips them and says so.
 - **`dogear words` doesn't apply.** It lists the words missing from Kokoro's

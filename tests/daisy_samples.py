@@ -146,7 +146,7 @@ def make_daisy(
     """The DAISY folder `dogear make` writes for `book`, spoken by the humming voice."""
     with (
         patch.object(make, "extract_book", lambda path, cfg, report: book),
-        patch.object(make, "make_engine", lambda cfg, rep: HumEngine()),
+        patch.object(make, "make_voice", lambda cfg, chosen, rep: HumEngine()),
     ):
         request = MakeRequest(book=Path(book.source_path.name), output_dir=out_dir)
         [folder] = make_audiobook(request, config, report)

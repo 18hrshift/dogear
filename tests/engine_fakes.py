@@ -27,6 +27,7 @@ class FakePlugin:
     reads_misaki_phonemes: bool = False
     about_voices: str = "Best first."
     sends_to: str | None = None  # where its voices send text: None, this computer
+    sample_rate: int = HumEngine.sample_rate  # of the audio its voices hum
     prepared: list[str] = field(default_factory=list)
     made: list[dict[str, Any]] = field(default_factory=list)
     engine_made: HumEngine | None = None
@@ -42,11 +43,11 @@ class FakePlugin:
 
     def engine(self, config, voice, pronunciations, report) -> HumEngine:
         self.made.append({"config": config, "voice": voice, "pronunciations": pronunciations})
-        self.engine_made = HumEngine()
+        self.engine_made = HumEngine(self.sample_rate)
         return self.engine_made
 
     def pace(self, config, voice) -> VoicePace:
-        return VoicePace(HumEngine.sample_rate, 150 * config["voice"]["speed"])
+        return VoicePace(self.sample_rate, 150 * config["voice"]["speed"])
 
 
 def fake_engine(name: str, title: str, voices: list[Voice], **attributes: Any) -> FakePlugin:

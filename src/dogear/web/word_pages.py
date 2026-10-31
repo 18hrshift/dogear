@@ -22,7 +22,7 @@ from dogear.pronunciations import Pronunciation, word_key
 from dogear.unknown_words import UnknownWord
 from dogear.web.book_pages import requested_book
 from dogear.web.books import BookRecord
-from dogear.web.choices import asks_about_language
+from dogear.web.choices import book_in_english
 from dogear.web.forms import MAX_FIELDS, MAX_FORM_BYTES, FormTooBig, first, read_form
 from dogear.web.library import Library
 from dogear.web.page_words import PageWords
@@ -151,7 +151,7 @@ async def start_check(request: Request) -> Response:
         fields = await read_form(request)
     except FormTooBig:
         fields = []
-    as_english = first(fields, "english") == "yes" and asks_about_language(record.summary)
+    as_english = first(fields, "english") == "yes" and not book_in_english(record.summary)
     _library(request).words.request(record.id, check_for(record, as_english))
     return RedirectResponse(f"/books/{record.id}/words", status_code=303)
 
@@ -239,7 +239,7 @@ async def _page(
         status=status,
         watching=check is not None and check.state in ("waiting", "checking"),
         where=sections_in_words(shown.sections),
-        needs_english=asks_about_language(summary) and not upcoming.as_english,
+        needs_english=not book_in_english(summary) and not upcoming.as_english,
         language=summary.language or "",
         items=items,
         more=more,

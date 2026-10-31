@@ -14,6 +14,7 @@ ERROR_PAGES = {
     "home-upload-error",
     "choose-errors",
     "choose-language-errors",
+    "choose-language-voices-errors",
     "access-error",
     "words-errors",
     "words-changed",
@@ -26,6 +27,8 @@ ERROR_PAGES = {
 # or an error in one form or another.
 SAME_PAGE = [
     {"home-empty", "home-books", "home-deleted"},
+    {"choose-language", "choose-language-voices"},
+    {"choose-language-errors", "choose-language-voices-errors"},
     {"words-list", "words-saved", "words-many"},
     {"words-errors", "words-changed"},
     {"pronunciations-empty", "pronunciations-full", "pronunciations-added"},
@@ -84,6 +87,8 @@ def test_every_state_has_a_page(pages):
         "choose-language-errors",
         "choose-cloud",
         "send-text",
+        "choose-language-voices",
+        "choose-language-voices-errors",
         "waiting",
         "making",
         "making-long",
@@ -210,6 +215,22 @@ def test_error_pages_sum_up_the_errors_and_mark_each_field(pages):
         for message in page.xpath("//p[@class='error-message']"):
             assert message.text_content().startswith("Error: "), name
             assert page.xpath(f"//*[contains(@aria-describedby, '{message.get('id')}')]"), name
+
+
+def test_a_book_in_another_language_offers_its_voices_first(pages):
+    page = pages["choose-language-voices"]
+    groups = page.xpath("//select[@id='voice']/optgroup/@label")
+    assert groups[0] == "Voices for this book's language (fr)"
+    assert page.xpath("//select[@id='voice']//option[@selected]/@value") == ["lilt:fr_one"]
+    # With a voice for its language, reading it as English is a choice, not required.
+    assert "Language" in [legend.text_content() for legend in page.xpath("//legend")]
+    assert page.xpath("//input[@id='english'][not(@checked)]")
+    errors = pages["choose-language-voices-errors"]
+    [message] = errors.xpath("//p[@id='voice-error']")
+    assert "doesn't speak fr" in message.text_content()
+    # Without one, it is required, as before.
+    legends = [legend.text_content() for legend in pages["choose-language"].xpath("//legend")]
+    assert "Language (required)" in legends
 
 
 def test_choices_sent_back_with_errors_are_kept(pages):

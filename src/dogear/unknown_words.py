@@ -19,12 +19,13 @@ from typing import Any
 from dogear.config import Config
 from dogear.errors import VoiceError
 from dogear.extract import extract_book
-from dogear.make import check_language, chosen_narrations
+from dogear.make import check_language, chosen_narrations, guesser_for, settle_language
 from dogear.narration import narrate_book
 from dogear.pronunciations import dictionary_from_config
 from dogear.render.progress import Report
 from dogear.voice.engines import ChosenVoice, configured_voice
 from dogear.voice.kokoro_plugin import prepare_spacy
+from dogear.voice.language_voices import LanguageVoices
 
 _EDGES = re.compile(r"^\W+|\W+$")  # quotes, brackets, and punctuation around a word
 _POSSESSIVE = re.compile(r"(?<=\w)['’]s$", re.IGNORECASE)
@@ -50,15 +51,26 @@ def find_unknown_words(request: WordsRequest, config: Config, report: Report) ->
     book = extract_book(request.book, config, report)
     if request.language:
         book.metadata.language = request.language
-    check_language(book)
-    narrations = chosen_narrations(narrate_book(book, config), request.sections, len(book.sections))
+    choices = LanguageVoices.from_config(config, chosen)
+    settle_language(book, choices, report)
+    check_language(book, choices)
+    guesser = guesser_for(config, choices, report)
+    narrations = chosen_narrations(
+        narrate_book(book, config, guesser), request.sections, len(book.sections)
+    )
     british = chosen.voice.language.lower() == "en-gb"
     dictionary = dictionary_from_config(config)
     spacy_model = prepare_spacy(config, report)
 
     from dogear.voice.g2p import count_unknown_words  # loads misaki and spaCy: slow
 
-    spoken = [u.spoken for n in narrations for u in n.utterances if u.spoken]
+    # Only what this voice reads: a passage another voice reads is that voice's business.
+    spoken = [
+        u.spoken
+        for n in narrations
+        for u in n.utterances
+        if u.spoken and choices.voice_for(u.lang).spec == chosen.spec
+    ]
     return rank_words(count_unknown_words(spoken, spacy_model, british, dictionary))
 
 

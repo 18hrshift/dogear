@@ -7,7 +7,7 @@ from engine_fakes import fake_engine, hum_voice
 from dogear import cli
 from dogear.config import default_config
 from dogear.errors import VoiceError
-from dogear.voice import make_engine
+from dogear.voice import make_engine, make_voice
 from dogear.voice.cloud import refuse_unless_allowed, text_goes_to, warning
 from dogear.voice.engines import choose_voice, configured_voice, find_voice, installed
 
@@ -218,3 +218,23 @@ def test_dogear_voices_lists_the_voices_the_settings_give(service, tmp_path, cap
     out = capsys.readouterr().out
     assert "Service, licensed Apache-2.0: 1 voice. As your settings list them." in out
     assert f"1. onyx: American English (sends the book's text to {HOST})." in out
+
+
+def test_a_cloud_voice_for_one_language_stops_make_before_the_book_is_read(
+    installed_engines, tmp_path, capsys
+):
+    """Kokoro is the main voice, but French passages would go to a cloud voice: that is
+    refused as well, before anything is read or sent."""
+    plugin = cloud(voices=[hum_voice("nova_fr", "fr-FR", description="French")])
+    installed_engines(plugin)
+    settings = tmp_path / "settings.toml"
+    settings.write_text('[voice.languages]\nfr = "cloud:nova_fr"\n', encoding="utf-8")
+    assert cli.main(["make", "no-such-book.epub", "--config", str(settings)]) == 1
+    assert "The voice cloud:nova_fr sends the text it speaks to" in capsys.readouterr().err
+    assert plugin.made == [] and plugin.prepared == []
+
+
+def test_make_voice_checks_whichever_voice_it_is_given(cloud_installed, config):
+    with pytest.raises(VoiceError, match="unless you allow it"):
+        make_voice(config, find_voice("cloud:nova"), print)
+    assert cloud_installed.made == []

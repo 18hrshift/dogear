@@ -164,7 +164,9 @@ roman_numeral_keywords = [
 "fig." = "figure"
 "Fig." = "figure"
 
-# The rest of [speech] is English only, and leaves other languages' text as written.
+# Every table in [speech], above and below, is English only: Dogear spells out numbers,
+# abbreviations, and symbols in English text only, and leaves other languages' text for
+# their voices to read as written.
 
 # What follows a clock time ("3:30 pm", "10 a.m."), matched in any case, and how to say it.
 [speech.time_suffixes]
@@ -306,6 +308,48 @@ speed = 0.9
 # page lists them only when this is true. A server on this computer doesn't count.
 allow_cloud = false
 
+# The voice above is the book's main voice. A passage in another language (one the book
+# marks, or one [language_detection] finds) is read by the voice [voice.languages] gives
+# that language. This decides a language that table doesn't list and the main voice
+# doesn't speak:
+#   "main": the main voice reads it anyway, as an English voice reading a French phrase.
+#   "best": the best installed voice for the language reads it, if there is one: the
+#           main voice's engine first, then the others as `dogear voices` lists them,
+#           each engine's voices best first, but never a voice that sends text off this
+#           computer (name one below to use it). Without one, the main voice reads it.
+# "main" is the default. Only the Piper plugin has voices in other languages so far, and
+# it isn't installed with Dogear. A change of voice in the middle of a chapter is
+# jarring, the voices of another engine sound different, and books are sometimes marked
+# with the wrong language: a stray change of voice is worse than an English voice
+# reading a French phrase. Choose a voice per language below, or "best", to change it.
+other_languages = "main"
+
+# The voice for each language, as engine:voice, such as fr = "piper:fr_FR-mls-medium".
+# A language is a BCP 47 tag: "fr" is every kind of French, and "fr-CA" Canadian French
+# only. The most specific one that matches a passage wins. Each voice must speak the
+# language it is given (its own language's first part, such as fr, must match). Empty
+# by default: every passage is read by the main voice.
+[voice.languages]
+
+[language_detection]
+# Many books don't mark the passages in another language. With this on, Dogear guesses
+# them, on this computer, with a small language identifier (py3langid). It looks only
+# for languages it has a voice to read (in [voice.languages], the main voice's, and with
+# other_languages = "best" every installed voice's), and never changes a language the
+# book marks on a passage or on its chapter. Off by default: a wrong guess changes the
+# voice in the middle of a chapter, and books that mark their languages need no guessing.
+enabled = false
+# Each paragraph, list, note, table, and heading is checked as a whole, if it has at
+# least this many letters. Shorter text ("Oui, monsieur.") is too easily mistaken.
+min_letters = 30
+# A guess is used only when the identifier is at least this sure of it, from 0 to 1. On
+# Jekyll and Hyde, nothing of 30 letters or more was guessed to be in another language;
+# French sentences of 39 to 66 letters came out French at 0.99 or more.
+min_confidence = 0.9
+# A paragraph or note with at least this many letters is also checked a sentence at a
+# time, so a quotation inside it is found. Each sentence needs min_letters as well.
+sentence_check_min_letters = 300
+
 # Each voice engine has a settings table of its own, named after it, such as [kokoro].
 # Its defaults come with the engine: Kokoro's are in voice/kokoro.toml, next to this file.
 
@@ -345,7 +389,11 @@ scene_break_ms = 1800
 section_start_ms = 500  # before the first words of each track
 section_end_ms = 2000  # after the last words of each track
 
-# Words Dogear adds when it reads structure aloud.
+# Words Dogear adds when it reads structure aloud, in English. Passages and books in
+# another language use that language's table below (the most specific match, so "fr"
+# covers fr-CA), or these English words when it has none, which `dogear make` says.
+# To add a language, add a table named after it, such as [narration.words.it]; a word it
+# leaves out is said in English.
 [narration.words]
 image = "Image"
 note = "Note"
@@ -356,6 +404,39 @@ page = "Page"
 table_skipped = "Table not read."
 by = "By"  # the title track: "By Robert Louis Stevenson."
 and = "and"  # "By Ann Smith and Bob Jones."
+
+[narration.words.fr]
+image = "Image"
+note = "Note"
+notes = "Notes"
+table = "Tableau"
+row = "Ligne"
+page = "Page"
+table_skipped = "Tableau non lu."
+by = "Par"
+and = "et"
+
+[narration.words.de]
+image = "Bild"
+note = "Anmerkung"
+notes = "Anmerkungen"
+table = "Tabelle"
+row = "Zeile"
+page = "Seite"
+table_skipped = "Tabelle nicht vorgelesen."
+by = "Von"
+and = "und"
+
+[narration.words.es]
+image = "Imagen"
+note = "Nota"
+notes = "Notas"
+table = "Tabla"
+row = "Fila"
+page = "Página"
+table_skipped = "Tabla no leída."
+by = "Por"
+and = "y"
 
 [render]
 # Where rendered sentences, and the text read from scanned PDFs with OCR, are kept so

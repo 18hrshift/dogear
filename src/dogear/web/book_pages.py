@@ -180,7 +180,7 @@ def _choose(
     summary = record.summary
     assert summary is not None
     config: Config = request.app.state.config
-    voices = choices.voice_options(config)
+    voices = choices.voice_options(config, summary)
     return render(
         request,
         "choose.html",
@@ -198,7 +198,8 @@ def _choose(
             {"number": s.number, "description": describe_section(s)} for s in summary.sections
         ],
         picked=picked,
-        ask_language=choices.asks_about_language(summary),
+        ask_language=choices.asks_about_language(summary, config),
+        language_voices=any(group.for_book_language for group in voices),
     )
 
 
